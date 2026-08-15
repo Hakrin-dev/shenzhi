@@ -16,9 +16,11 @@ external service. They must not reimplement Better Auth verification, OTP,
 password-reset token, session, cookie, or rate-limit logic.
 
 `lib/auth/email/callbacks.ts` and `lib/auth/email/messages.ts` prepare the
-Better Auth callback boundary and message content, but they are not wired into
-`lib/auth/server.ts` in this stage. This keeps the already accepted email/
-password behavior unchanged.
+Better Auth callback boundary and message content. `lib/auth/server.ts` only
+resolves the provider-neutral factory; provider-specific SDK details stay in
+the adapter implementation.
 
-The real provider, sender identity, endpoint, region, and credentials have not
-been selected yet. No console, mock, or fallback provider is supplied.
+Alibaba Cloud DirectMail is the current provider implementation. It uses the
+official `@alicloud/dm20151123` SDK and `SingleSendMail`; no console, mock, or
+fallback provider is supplied. Missing deployment configuration leaves the
+application startable and fails only when a mail delivery path is invoked.

@@ -51,11 +51,21 @@
 - Reset Password 和 Change Password 复用同一纯 password policy；Better Auth 继续负责
   hash、verify 和 credential storage。
 
+### Alibaba Cloud DirectMail
+
+- 已接入官方 `@alicloud/dm20151123@1.10.2` SDK 的 DirectMail
+  `SingleSendMail` adapter。
+- Email OTP、Email Verification 和 Password Reset 三条邮件路径共用同一个
+  `AuthEmailProvider`，由 Better Auth callback 准备内容，DirectMail 只负责发送。
+- 未配置阿里云环境变量时，应用和 build 仍可启动；只有真正触发发送时才返回配置错误。
+- 当前仍保持 `sendOnSignUp: false` 和 `requireEmailVerification: false`，不改变注册成功
+  行为。
+
 ## 尚未完成
 
-- 实际 Email Provider、sender、credential、endpoint/region 和真实邮件投递。
-- 生产环境强制 Email Verification；当前 `emailDeliveryConfigured` 为 false，不改变
-  已验收的开发环境注册行为。
+- 生产环境的 DirectMail sender/domain、AK/SK、endpoint/region 配置和真实邮件投递验收。
+- 生产环境强制 Email Verification；当前仓库未提供部署邮件变量时
+  `emailDeliveryConfigured` 为 false，不改变已验收的开发环境注册行为。
 - OTP、Verification、Reset 邮件的真实投递验收。
 - 如果未来启用 Set Password，该创建新密码入口必须复用同一个 password policy。
 - trusted origins 的正式部署值、shared rate-limit storage、CAPTCHA。

@@ -84,7 +84,28 @@ password hash、JWT、Session、username login 或 phone/SMS。
 
 本阶段仍未完成：
 
-- 真实 Email Provider、sender、credential 和邮件投递。
+- DirectMail 控制台 sender/domain 验证、部署 AK/SK、区域/endpoint 填写和真实邮件投递
+  smoke test。
 - 生产强制 Email Verification 的启用与真实邮箱验收。
 - CAPTCHA、OAuth、2FA、Passkey、RBAC、业务身份协议和多实例 shared rate-limit storage。
 - 如果未来启用 Set Password，仍需把该入口接入同一个 password policy。
+
+## Alibaba Cloud DirectMail Provider
+
+本阶段完成：
+
+- 安装并固定官方 `@alicloud/dm20151123@1.10.2` SDK。
+- 在 `lib/auth/providers/email/alibaba-directmail.ts` 建立 Alibaba DirectMail
+  `SingleSendMail` adapter。
+- 在 `config/email.ts` 集中读取 Provider、AccessKey、Region、Endpoint 和发信地址。
+- 让 Email OTP、Email Verification、Password Reset 三个 Better Auth callback 共用
+  `AuthEmailProvider`，不创建 OTP、verification token 或 reset token。
+- 缺少邮件配置时保持开发服务器和 build 可用，仅在真实发送路径返回配置错误。
+- 保持 `sendOnSignUp: false` 与 `requireEmailVerification: false`，没有改变当前注册行为。
+- 增加 fake client 单元测试，覆盖请求映射、缺失配置和安全错误传播。
+
+尚未完成：
+
+- DirectMail 控制台 sender/domain、AK/SK、Region/Endpoint 的实际部署配置。
+- 使用真实邮箱完成 OTP、Email Verification、Password Reset 投递验收。
+- 真实投递验收通过后的生产强制邮箱验证启用。

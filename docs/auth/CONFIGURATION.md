@@ -27,6 +27,13 @@ repository.
 | `BETTER_AUTH_URL` | `config/auth.ts` | Better Auth 应用基础地址 | 当前必须；生产使用实际 HTTPS 地址 |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | `config/auth.ts` | 可选的逗号分隔 trusted origins | 正式跨域部署前配置；空值不产生 `['']` |
 | `BUSINESS_BACKEND_URL` | `config/backend.ts` | 未来业务后端的服务端地址 | 未来业务后端实现时再填写 |
+| `EMAIL_PROVIDER` | `config/email.ts` | 当前 Provider 选择；使用 `aliyun-directmail` | 配置 DirectMail 发送前填写 |
+| `ALIBABA_CLOUD_ACCESS_KEY_ID` | `config/email.ts` | DirectMail API AccessKey ID | 仅由 Deployment Secrets 注入 |
+| `ALIBABA_CLOUD_ACCESS_KEY_SECRET` | `config/email.ts` | DirectMail API AccessKey Secret | 仅由 Deployment Secrets 注入，不提交 Git |
+| `ALIYUN_DIRECTMAIL_REGION_ID` | `config/email.ts` | DirectMail 区域 | 必须与发信地址所在区域匹配 |
+| `ALIYUN_DIRECTMAIL_ENDPOINT` | `config/email.ts` | DirectMail OpenAPI endpoint | 显式配置，不依赖模糊默认值 |
+| `AUTH_EMAIL_FROM` | `config/email.ts` | DirectMail `AccountName` 发信地址 | 必须是阿里云控制台已验证地址 |
+| `AUTH_EMAIL_FROM_ALIAS` | `config/email.ts` | DirectMail `FromAlias` | 可选 |
 
 `BETTER_AUTH_TRUSTED_ORIGINS` 会被裁剪并过滤空项，例如：
 
@@ -40,18 +47,26 @@ https://example.com, https://admin.example.com
 
 ## Email Provider configuration boundary
 
-真实 Provider 尚未确定。`config/email.ts` 只预留供应商无关的元数据入口：
+当前 Provider 已确定为 Alibaba Cloud DirectMail，代码使用官方
+`@alicloud/dm20151123@1.10.2` SDK 的 `SingleSendMail` API（版本
+`2015-11-23`）。
 
-- `AUTH_EMAIL_PROVIDER`：Provider type 或 implementation 标识。
-- `AUTH_EMAIL_SENDER`：sender/from address。
-- `AUTH_EMAIL_SENDER_NAME`：sender name。
-- `AUTH_EMAIL_REPLY_TO`：可选 reply-to。
+所有邮件发送配置从 `config/email.ts` 进入运行时代码：
 
-这些字段当前不会实例化 Provider。`emailDeliveryConfigured` 当前为 `false`，因此
-不会在没有真实发送能力时强制 Email Verification，也不会伪造 OTP 或 reset 邮件
-发送成功。Provider 确定后，供应商特定 credential、endpoint/region 等才可以由负责
-人补入同一个配置区域；变量命名必须随正式 Provider 决策确认，不能预先绑定
-Resend、SMTP、SES、SendGrid、阿里云或腾讯云。
+- `EMAIL_PROVIDER=aliyun-directmail`：选择 Provider。
+- `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET`：只从部署
+  Secret 注入，不能进入源码、日志或 Git。
+- `ALIYUN_DIRECTMAIL_REGION_ID` / `ALIYUN_DIRECTMAIL_ENDPOINT`：显式指定区域与
+  endpoint，必须与发信地址所在区域一致。
+- `AUTH_EMAIL_FROM`：映射到 `AccountName`，必须是 DirectMail 控制台已验证的发信地址。
+- `AUTH_EMAIL_FROM_ALIAS`：可选，映射到 `FromAlias`。
+
+配置不完整时 `createAuthEmailProvider()` 返回未配置状态，不会让开发服务器或 build
+失败；只有触发 OTP、Verification 或 Reset 邮件发送时才返回配置错误。Provider 不会
+输出 AccessKey、邮件正文、OTP、token 或认证 URL。
+
+当前 `sendOnSignUp: false` 与 `requireEmailVerification: false` 保持不变。真实邮件
+联调和验收通过后，才单独评估是否开启生产强制邮箱验证。
 
 ## Current Better Auth configuration
 
@@ -71,7 +86,7 @@ Resend、SMTP、SES、SendGrid、阿里云或腾讯云。
 - Email OTP：6 位、300 秒有效、3 次尝试，发送 rate limit 为 60 秒窗口最多 3 次。
 - Reset Password：`revokeSessionsOnPasswordReset: true`。
 
-本阶段不绑定真实 Email Provider，也不增加 CAPTCHA、OAuth、2FA、Passkey、RBAC、
+本阶段不启用 Email Verification 强制注册、CAPTCHA、OAuth、2FA、Passkey、RBAC、
 Redis 或业务身份协议配置。
 
 ## 官方 Migration
@@ -88,7 +103,8 @@ Redis 或业务身份协议配置。
 下一阶段在启用对应能力前，需要负责人确定：
 
 - 正式 Web URL/domain 与 `BETTER_AUTH_TRUSTED_ORIGINS`。
-- Email Provider、sender/from、reply-to、credential 和 provider endpoint/region。
+- DirectMail 控制台的 sender/domain 验证、AK/SK、sender/from、endpoint/region，并完成
+  OTP/Verification/Reset 的真实邮件投递验收。
 - 生产强制 Email Verification，并完成 OTP/Verification/Reset 邮件的真实投递验收。
 - shared rate-limit storage（如果部署为多实例）。
 - CAPTCHA/Turnstile。

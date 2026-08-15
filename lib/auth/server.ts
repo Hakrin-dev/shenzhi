@@ -11,8 +11,11 @@ import {
   validatePasswordComposition,
 } from "@/lib/auth/policies/password";
 import { postgresPool } from "@/lib/infrastructure/postgres";
+import { createAuthEmailProvider } from "@/lib/auth/providers/email";
 
-const emailCallbacks = createBetterAuthEmailCallbacks(undefined);
+const emailCallbacks = createBetterAuthEmailCallbacks(
+  createAuthEmailProvider(),
+);
 const emailDeliveryRequiredPaths = [
   "/send-verification-email",
   "/request-password-reset",
@@ -27,7 +30,7 @@ export const auth = betterAuth({
   database: postgresPool,
   emailVerification: {
     sendVerificationEmail: emailCallbacks.sendVerificationEmail,
-    sendOnSignUp: emailDeliveryConfigured,
+    sendOnSignUp: false,
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
@@ -64,7 +67,7 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: PASSWORD_MIN_LENGTH,
     maxPasswordLength: PASSWORD_MAX_LENGTH,
-    requireEmailVerification: emailDeliveryConfigured,
+    requireEmailVerification: false,
     sendResetPassword: emailCallbacks.sendResetPassword,
     revokeSessionsOnPasswordReset: true,
   },

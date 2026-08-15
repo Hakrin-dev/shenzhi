@@ -32,7 +32,11 @@ Better Auth
       ↓
    AuthEmailProvider
       ↓
-   future real Email Provider
+   lib/auth/providers/email/factory.ts
+       ↓
+   AlibabaDirectMailProvider
+       ↓
+   Alibaba Cloud DirectMail SingleSendMail
 ```
 
 External deployment values flow separately:
@@ -119,15 +123,30 @@ lib/auth/email/messages.ts
   ↓
 AuthEmailProvider.send(message)
   ↓
-future real Email Provider
+lib/auth/providers/email/factory.ts
+  ↓
+AlibabaDirectMailProvider
+  ↓
+Alibaba DirectMail SingleSendMail
 ```
 
 Better Auth creates and validates verification/reset tokens and OTP values.
 ShenZhi only maps callback data to a small email message and delegates sending
-to a provider. The official Email OTP server/client plugins are enabled, but
-`emailDeliveryConfigured` remains false until a real provider adapter is
-selected. An unconfigured provider raises a clear configuration error and
-never logs a token, OTP, or complete authentication URL.
+to a provider. The official Email OTP server/client plugins are enabled, and
+the Alibaba DirectMail adapter is selected only when all required deployment
+configuration is present. An unconfigured provider leaves application startup
+and build available, then raises a clear configuration error when a delivery
+path is invoked. It never logs a token, OTP, or complete authentication URL.
+
+`lib/auth/server.ts` depends only on `createAuthEmailProvider()` and the
+provider-neutral callbacks. It does not import `SingleSendMailRequest`, access
+keys, endpoint values, or any Alibaba SDK type. This keeps a future SES,
+Resend, or other adapter replacement outside Better Auth configuration.
+
+Email Verification remains an explicit callback capability only. The current
+configuration keeps both `sendOnSignUp: false` and
+`requireEmailVerification: false`; a later production change must follow a
+successful real-mail smoke test.
 
 ## Future business backend boundary
 

@@ -21,12 +21,12 @@ emailVerification: {
 
 - callback data 是 `{ user, url, token }`，第二个参数是可选 `Request`。
 - Better Auth 创建 verification token 和 URL，并负责点击后的验证。
-- `sendOnSignUp` 与 `emailAndPassword.requireEmailVerification` 当前都由
-  `emailDeliveryConfigured` 控制，当前值为 `false`。
+- `sendOnSignUp` 与 `emailAndPassword.requireEmailVerification` 当前都显式为 `false`，
+  不因 Provider 配置完成而自动改变注册行为。
 - `autoSignInAfterVerification` 没有显式启用；验证后的 Session 行为继续遵循
   Better Auth 默认行为。
-- 未配置 Provider 时，当前开发环境注册不会被强制邮箱验证阻断；Provider 确定并完成
-  投递验收后，才应在生产环境启用强制验证。
+- Provider 配置完成后可发送显式验证邮件；当前开发环境注册仍不会强制邮箱验证。真实
+  投递验收通过后，才应在生产环境单独启用强制验证。
 
 ShenZhi 只将 callback 提供的 URL 转换为邮件消息并交给 `AuthEmailProvider`，不生成、
 存储或校验 token。
@@ -97,8 +97,8 @@ sign-in | email-verification | forget-password | change-email
   调用 `signIn.emailOtp({ email, otp })`。
 - Browser client 通过 `emailOTPClient()` 暴露这些官方 API。
 
-Provider 未配置时，发送请求会进入 `AuthEmailProvider` 的配置错误；不会假装发送成功，
-也不会在日志输出 OTP。
+Provider 未配置时，应用仍可启动，发送请求会进入 `AuthEmailProvider` 的配置错误；不
+会假装发送成功，也不会在日志输出 OTP。
 
 ### Schema 结论
 
@@ -118,10 +118,20 @@ lib/auth/email/messages.ts
   ↓
 AuthEmailProvider.send(message)
   ↓
-未确定的第三方邮件服务
+lib/auth/providers/email/factory.ts
+  ↓
+AlibabaDirectMailProvider
+  ↓
+Alibaba Cloud DirectMail `SingleSendMail`
 ```
 
-Verification、OTP、Password Reset 共用一个 Provider abstraction。当前 Provider、发件人、
-凭据、endpoint/region 均未确定，没有真实发送，也没有 token/OTP/reset URL/
-verification URL 日志。Provider 确定后，只补充 adapter 与配置，不重新实现 Better Auth
-的 token、OTP、verification 或 Session 逻辑。
+Verification、OTP、Password Reset 共用一个 `AuthEmailProvider`。Provider adapter 将
+统一消息映射为 DirectMail `SingleSendMailRequest`：`AddressType=1`、
+`ReplyToAddress=false`、`ClickTrace="0"`，并使用已验证的 `AccountName`。
+
+Better Auth 仍生成、存储和验证 OTP、verification token/URL 以及 reset token/URL。
+AlibabaDirectMailProvider 只负责发送，不重新实现任何 Better Auth 认证机制。阿里云
+调用失败时只保留安全的 error code/RequestId，不保留邮件正文或敏感认证值。
+
+真实 Provider 已有代码条件，但实际投递仍依赖负责人完成 DirectMail 控制台配置和
+真实邮箱 smoke test。当前不会输出 OTP、token、reset URL 或 verification URL 日志。

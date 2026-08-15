@@ -1,6 +1,20 @@
 import type { AuthEmailProvider } from "./types";
 
 export type { AuthEmailMessage, AuthEmailProvider } from "./types";
+export {
+  AlibabaDirectMailConfigurationError,
+  AlibabaDirectMailProvider,
+  AlibabaDirectMailProviderError,
+  createAlibabaDirectMailProvider,
+} from "./alibaba-directmail";
+export type {
+  AlibabaDirectMailConfig,
+  AlibabaDirectMailProviderDependencies,
+  DirectMailClient,
+  DirectMailClientFactory,
+  DirectMailRequest,
+} from "./alibaba-directmail";
+export { createAuthEmailProvider } from "./factory";
 
 export class AuthEmailProviderNotConfiguredError extends Error {
   constructor() {
