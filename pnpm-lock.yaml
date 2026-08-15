@@ -15,7 +15,7 @@ importers:
         specifier: ^5.62.0
         version: 5.101.4(react@19.2.8)
       better-auth:
-        specifier: ^1.6.28
+        specifier: 1.6.28
         version: 1.6.28(next@16.2.12(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(pg@8.23.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       class-variance-authority:
         specifier: ^0.7.1
