@@ -81,7 +81,12 @@ The server side does not import browser Client modules.
   `toNextJsHandler(auth)` and keeps the current GET/POST exports.
 - `lib/auth/server.ts` is the only Better Auth server instance. It owns
   Email/Password, Email OTP, Email Verification and Password Reset callbacks,
-  Session, Cookie, and Better Auth lifecycle behavior.
+  Session, Cookie, Better Auth lifecycle behavior, and the deployment-controlled
+  email-verification requirement.
+- `AUTH_REQUIRE_EMAIL_VERIFICATION` is parsed in `config/auth.ts` and mapped to
+  both Better Auth `emailVerification.sendOnSignUp` and
+  `emailAndPassword.requireEmailVerification`. `server.ts` does not read
+  `process.env` directly.
 - `lib/auth/policies/password.ts` is a pure product rule. The official
   `hooks.before` checks new passwords at `/sign-up/email`, `/reset-password`,
   and `/change-password`; Better Auth still owns password length enforcement,
@@ -136,17 +141,22 @@ to a provider. The official Email OTP server/client plugins are enabled, and
 the Alibaba DirectMail adapter is selected only when all required deployment
 configuration is present. An unconfigured provider leaves application startup
 and build available, then raises a clear configuration error when a delivery
-path is invoked. It never logs a token, OTP, or complete authentication URL.
+path is invoked. When `AUTH_REQUIRE_EMAIL_VERIFICATION=true`, the additional
+`/sign-up/email` guard runs before Better Auth persists a user. It never logs a
+token, OTP, or complete authentication URL.
 
 `lib/auth/server.ts` depends only on `createAuthEmailProvider()` and the
 provider-neutral callbacks. It does not import `SingleSendMailRequest`, access
 keys, endpoint values, or any Alibaba SDK type. This keeps a future SES,
 Resend, or other adapter replacement outside Better Auth configuration.
 
-Email Verification remains an explicit callback capability only. The current
-configuration keeps both `sendOnSignUp: false` and
-`requireEmailVerification: false`; a later production change must follow a
-successful real-mail smoke test.
+Email Verification remains an explicit Better Auth capability. The default
+configuration is `AUTH_REQUIRE_EMAIL_VERIFICATION=false`, which keeps both
+`sendOnSignUp` and `requireEmailVerification` false. Production can set the
+flag to `true` after successful real-mail readiness and smoke testing. This
+switch only changes Email/Password registration and sign-in enforcement;
+Email OTP continues to use its official plugin path, and Password Reset keeps
+its independent callback.
 
 ## Future business backend boundary
 

@@ -72,7 +72,8 @@ password hash、JWT、Session、username login 或 phone/SMS。
 - 继续复用 provider-neutral Email Provider callback；Provider 未配置时只返回明确配置
   错误，不输出 OTP、token、reset URL 或 verification URL。
 - 配置 Email Verification callback；由于 `emailDeliveryConfigured` 为 false，当前不强制
-  注册邮箱验证，保持已验收的开发环境注册行为。
+  注册邮箱验证，保持已验收的开发环境注册行为；现在该行为由
+  `AUTH_REQUIRE_EMAIL_VERIFICATION=false` 显式控制。
 - 配置 Password Reset callback、`revokeSessionsOnPasswordReset`，并将真实
   `/reset-password` 页面接入 Better Auth request/reset API。
 - 将同一纯 password policy 复用到注册、Reset Password 和 Change Password 的新密码入口；
@@ -86,7 +87,7 @@ password hash、JWT、Session、username login 或 phone/SMS。
 
 - DirectMail 控制台 sender/domain 验证、部署 AK/SK、区域/endpoint 填写和真实邮件投递
   smoke test。
-- 生产强制 Email Verification 的启用与真实邮箱验收。
+- 生产环境真实邮件 readiness、`AUTH_REQUIRE_EMAIL_VERIFICATION=true` 的部署设置与验收。
 - CAPTCHA、OAuth、2FA、Passkey、RBAC、业务身份协议和多实例 shared rate-limit storage。
 - 如果未来启用 Set Password，仍需把该入口接入同一个 password policy。
 
@@ -101,11 +102,39 @@ password hash、JWT、Session、username login 或 phone/SMS。
 - 让 Email OTP、Email Verification、Password Reset 三个 Better Auth callback 共用
   `AuthEmailProvider`，不创建 OTP、verification token 或 reset token。
 - 缺少邮件配置时保持开发服务器和 build 可用，仅在真实发送路径返回配置错误。
-- 保持 `sendOnSignUp: false` 与 `requireEmailVerification: false`，没有改变当前注册行为。
+- `AUTH_REQUIRE_EMAIL_VERIFICATION=false` 映射为 `sendOnSignUp: false` 与
+  `requireEmailVerification: false`；设置为 `true` 时同步启用 Better Auth 注册邮箱验证。
+- 强制验证开启而 Provider 缺失时，在 `/sign-up/email` 写入用户前返回稳定的
+  `EMAIL_PROVIDER_NOT_CONFIGURED`，不创建无法完成验证的用户。
 - 增加 fake client 单元测试，覆盖请求映射、缺失配置和安全错误传播。
 
 尚未完成：
 
 - DirectMail 控制台 sender/domain、AK/SK、Region/Endpoint 的实际部署配置。
 - 使用真实邮箱完成 OTP、Email Verification、Password Reset 投递验收。
-- 真实投递验收通过后的生产强制邮箱验证启用。
+- 真实投递验收通过后，将 `AUTH_REQUIRE_EMAIL_VERIFICATION=true` 注入生产环境。
+
+## Production Handoff — Email Verification Configuration
+
+代码侧已完成：
+
+- Better Auth Email/Password、Email OTP、Email Verification、Password Reset、Session
+  集成。
+- 统一 `AuthEmailProvider` 和 Alibaba DirectMail adapter。
+- 严格解析 `AUTH_REQUIRE_EMAIL_VERIFICATION`，默认关闭，非法值明确失败。
+- 强制验证开关与 Better Auth `sendOnSignUp`、`requireEmailVerification` 同步。
+- 强制验证且 Provider 缺失时，在用户持久化前安全失败。
+- 不生成或保存自定义 OTP、verification token 或 reset token，不输出敏感认证值。
+
+负责人部署时负责填写和完成：
+
+- `BETTER_AUTH_SECRET`、`BETTER_AUTH_URL`、`BETTER_AUTH_TRUSTED_ORIGINS`、`DATABASE_URL`。
+- `EMAIL_PROVIDER=aliyun-directmail`、Alibaba AK/SK、DirectMail region/endpoint、
+  `AUTH_EMAIL_FROM`、`AUTH_EMAIL_FROM_ALIAS`。
+- `AUTH_REQUIRE_EMAIL_VERIFICATION=true`（仅在真实邮件 readiness 通过后）。
+- `BUSINESS_BACKEND_URL`、正式 PostgreSQL、正式域名、Trusted Origins、DirectMail 开通、
+  发信域名验证、DNS/SPF/DKIM、sender address、RAM 权限和 Deployment Secrets。
+- OTP、Verification、Password Reset 的真实投递 smoke test。
+
+真实 DirectMail、PostgreSQL、DNS 和生产联调不属于本次代码实现；本轮不使用真实
+阿里云凭据、不部署、不 commit、不 push。

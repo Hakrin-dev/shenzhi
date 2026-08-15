@@ -21,12 +21,17 @@ emailVerification: {
 
 - callback data 是 `{ user, url, token }`，第二个参数是可选 `Request`。
 - Better Auth 创建 verification token 和 URL，并负责点击后的验证。
-- `sendOnSignUp` 与 `emailAndPassword.requireEmailVerification` 当前都显式为 `false`，
-  不因 Provider 配置完成而自动改变注册行为。
+- `AUTH_REQUIRE_EMAIL_VERIFICATION=false` 时，项目显式设置
+  `sendOnSignUp: false` 和 `emailAndPassword.requireEmailVerification: false`。
+- `AUTH_REQUIRE_EMAIL_VERIFICATION=true` 时，两个 Better Auth 选项同步为 `true`：注册
+  会发送验证邮件，注册响应返回 `token: null`，未验证用户不能通过 Email/Password
+  登录。
 - `autoSignInAfterVerification` 没有显式启用；验证后的 Session 行为继续遵循
   Better Auth 默认行为。
-- Provider 配置完成后可发送显式验证邮件；当前开发环境注册仍不会强制邮箱验证。真实
-  投递验收通过后，才应在生产环境单独启用强制验证。
+- 强制验证开启但 AuthEmailProvider 未配置时，项目在 `/sign-up/email` 的 Better Auth
+  `before` hook 中先返回 `EMAIL_PROVIDER_NOT_CONFIGURED`，不会先写入用户。
+- Provider 配置完成并通过真实投递验收后，负责人只需设置环境变量，不需要修改
+  `server.ts`。
 
 ShenZhi 只将 callback 提供的 URL 转换为邮件消息并交给 `AuthEmailProvider`，不生成、
 存储或校验 token。
@@ -97,8 +102,13 @@ sign-in | email-verification | forget-password | change-email
   调用 `signIn.emailOtp({ email, otp })`。
 - Browser client 通过 `emailOTPClient()` 暴露这些官方 API。
 
-Provider 未配置时，应用仍可启动，发送请求会进入 `AuthEmailProvider` 的配置错误；不
-会假装发送成功，也不会在日志输出 OTP。
+Provider 未配置时，应用仍可启动，实际邮件发送请求会进入 `AuthEmailProvider` 的配置
+错误；强制 Email/Password 注册会在用户写入前返回
+`EMAIL_PROVIDER_NOT_CONFIGURED`。不会假装发送成功，也不会在日志输出 OTP。
+
+Email OTP 是独立的 Better Auth plugin 路径，不由
+`emailAndPassword.requireEmailVerification` 控制。Password Reset 也继续使用独立的
+`sendResetPassword` callback；两者仍与 Verification 共用同一个 `AuthEmailProvider`。
 
 ### Schema 结论
 

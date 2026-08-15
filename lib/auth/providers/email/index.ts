@@ -1,5 +1,8 @@
 import type { AuthEmailProvider } from "./types";
 
+export const EMAIL_PROVIDER_NOT_CONFIGURED_CODE =
+  "EMAIL_PROVIDER_NOT_CONFIGURED" as const;
+
 export type { AuthEmailMessage, AuthEmailProvider } from "./types";
 export {
   AlibabaDirectMailConfigurationError,

@@ -17,10 +17,11 @@ implement business services.
 
 Configuration areas:
 
-- `auth.ts`: Better Auth secret, base URL, and optional trusted origins.
+- `auth.ts`: Better Auth secret, base URL, optional trusted origins, and the
+  deployment-controlled email-verification requirement.
 - `database.ts`: PostgreSQL connection URL.
-- `email.ts`: provider-neutral email provider and sender metadata; no
-  provider-specific credentials are selected yet.
+- `email.ts`: Alibaba DirectMail provider selection and sender/deployment
+  metadata; provider credentials remain deployment-only.
 - `backend.ts`: the future server-side business backend URL.
 
 Do not import server configuration from Client Components. Only values with an

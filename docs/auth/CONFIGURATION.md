@@ -26,6 +26,7 @@ repository.
 | `BETTER_AUTH_SECRET` | `config/auth.ts` | Better Auth 服务端加密、签名与认证安全所需 secret | 当前必须；高熵值，正式环境单独配置 |
 | `BETTER_AUTH_URL` | `config/auth.ts` | Better Auth 应用基础地址 | 当前必须；生产使用实际 HTTPS 地址 |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | `config/auth.ts` | 可选的逗号分隔 trusted origins | 正式跨域部署前配置；空值不产生 `['']` |
+| `AUTH_REQUIRE_EMAIL_VERIFICATION` | `config/auth.ts` | 是否强制 Email/Password 注册完成邮箱验证 | 默认 `false`；真实邮件 readiness 通过后生产设置为 `true` |
 | `BUSINESS_BACKEND_URL` | `config/backend.ts` | 未来业务后端的服务端地址 | 未来业务后端实现时再填写 |
 | `EMAIL_PROVIDER` | `config/email.ts` | 当前 Provider 选择；使用 `aliyun-directmail` | 配置 DirectMail 发送前填写 |
 | `ALIBABA_CLOUD_ACCESS_KEY_ID` | `config/email.ts` | DirectMail API AccessKey ID | 仅由 Deployment Secrets 注入 |
@@ -45,6 +46,10 @@ https://example.com, https://admin.example.com
 行为。`NEXT_PUBLIC_API_URL` 当前没有运行时代码引用，不作为未来业务后端的浏览器
 地址；浏览器也不应默认直接知道未来 Python/Go/Java 服务地址。
 
+`AUTH_REQUIRE_EMAIL_VERIFICATION` 由通用 boolean parser 严格解析：未设置为 `false`，
+首尾空格会被忽略，`true`/`false` 不区分大小写；空字符串及其他值会产生明确配置错误，
+不会静默转换为 `true`。
+
 ## Email Provider configuration boundary
 
 当前 Provider 已确定为 Alibaba Cloud DirectMail，代码使用官方
@@ -62,11 +67,14 @@ https://example.com, https://admin.example.com
 - `AUTH_EMAIL_FROM_ALIAS`：可选，映射到 `FromAlias`。
 
 配置不完整时 `createAuthEmailProvider()` 返回未配置状态，不会让开发服务器或 build
-失败；只有触发 OTP、Verification 或 Reset 邮件发送时才返回配置错误。Provider 不会
-输出 AccessKey、邮件正文、OTP、token 或认证 URL。
+失败；只有触发 OTP、Verification 或 Reset 邮件发送时才返回配置错误。若
+`AUTH_REQUIRE_EMAIL_VERIFICATION=true` 且 Provider 缺失，`/sign-up/email` 会在 Better
+Auth 写入用户前返回 `EMAIL_PROVIDER_NOT_CONFIGURED`。Provider 不会输出 AccessKey、
+邮件正文、OTP、token 或认证 URL。
 
-当前 `sendOnSignUp: false` 与 `requireEmailVerification: false` 保持不变。真实邮件
-联调和验收通过后，才单独评估是否开启生产强制邮箱验证。
+`AUTH_REQUIRE_EMAIL_VERIFICATION=false` 映射为 `sendOnSignUp: false` 和
+`requireEmailVerification: false`；设置为 `true` 时两个 Better Auth 选项同步为 `true`。
+真实邮件联调和验收通过后，负责人只需修改 Deployment Secret，不需要修改认证源码。
 
 ## Current Better Auth configuration
 
@@ -80,14 +88,15 @@ https://example.com, https://admin.example.com
 - password hash/verify、Session、Cookie：Better Auth 默认实现。
 - 注册、Reset Password、Change Password 的新密码组合规则：纯 policy 和 Better Auth
   官方 `hooks.before`。
-- `emailVerification.sendVerificationEmail`、`emailAndPassword.sendResetPassword`、
+- `emailVerification.sendVerificationEmail`、`emailVerification.sendOnSignUp`、
+  `emailAndPassword.requireEmailVerification`、`emailAndPassword.sendResetPassword`、
   `emailOTP()` 以及浏览器 `emailOTPClient()`：均使用 Better Auth 官方 API；邮件发送
   由 Provider abstraction 承接。
 - Email OTP：6 位、300 秒有效、3 次尝试，发送 rate limit 为 60 秒窗口最多 3 次。
 - Reset Password：`revokeSessionsOnPasswordReset: true`。
 
-本阶段不启用 Email Verification 强制注册、CAPTCHA、OAuth、2FA、Passkey、RBAC、
-Redis 或业务身份协议配置。
+Email Verification 强制注册默认关闭，由 `AUTH_REQUIRE_EMAIL_VERIFICATION` 控制。
+本阶段不启用 CAPTCHA、OAuth、2FA、Passkey、RBAC、Redis 或业务身份协议配置。
 
 ## 官方 Migration
 
@@ -105,7 +114,8 @@ Redis 或业务身份协议配置。
 - 正式 Web URL/domain 与 `BETTER_AUTH_TRUSTED_ORIGINS`。
 - DirectMail 控制台的 sender/domain 验证、AK/SK、sender/from、endpoint/region，并完成
   OTP/Verification/Reset 的真实邮件投递验收。
-- 生产强制 Email Verification，并完成 OTP/Verification/Reset 邮件的真实投递验收。
+- 生产设置 `AUTH_REQUIRE_EMAIL_VERIFICATION=true`，并完成 OTP/Verification/Reset 邮件的
+  真实投递验收；代码实现已完成，真实环境联调不属于本次代码实现。
 - shared rate-limit storage（如果部署为多实例）。
 - CAPTCHA/Turnstile。
 - 未来业务后端服务地址 `BUSINESS_BACKEND_URL` 和语言无关的身份协议。
