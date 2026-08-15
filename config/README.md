@@ -22,6 +22,8 @@ Configuration areas:
 - `database.ts`: PostgreSQL connection URL.
 - `email.ts`: Alibaba DirectMail provider selection and sender/deployment
   metadata; provider credentials remain deployment-only.
+- `oauth.ts`: GitHub OAuth client credentials; missing configuration is
+  tolerated at startup and only surfaces when GitHub sign-in is attempted.
 - `turnstile.ts`: Cloudflare Turnstile human-verification toggle, secret key,
   and optional token constraints.
 - `backend.ts`: the future server-side business backend URL.

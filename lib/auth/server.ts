@@ -7,6 +7,7 @@ import {
   getAuthEmailVerificationSettings,
 } from "@/config/auth";
 import { emailDeliveryConfigured } from "@/config/email";
+import { githubOAuthConfig } from "@/config/oauth";
 import { turnstileConfig } from "@/config/turnstile";
 import {
   getClientIP,
@@ -27,11 +28,24 @@ import {
   createAuthEmailProvider,
   EMAIL_PROVIDER_NOT_CONFIGURED_CODE,
 } from "@/lib/auth/providers/email";
+import {
+  generateRandomOAuthPassword,
+  OAUTH_CREDENTIAL_PROVIDER_ID,
+} from "@/lib/auth/providers/oauth/credential";
 
 const {
   requireEmailVerification: configuredRequireEmailVerification,
   ...betterAuthConfig
 } = authConfig;
+
+const socialProviders = githubOAuthConfig
+  ? {
+      github: {
+        clientId: githubOAuthConfig.clientId,
+        clientSecret: githubOAuthConfig.clientSecret,
+      },
+    }
+  : undefined;
 const requireEmailVerification =
   getAuthEmailVerificationSettings(configuredRequireEmailVerification)
     .requireEmailVerification;
@@ -42,6 +56,7 @@ const emailCallbacks = createBetterAuthEmailCallbacks(
 export const auth = betterAuth({
   ...betterAuthConfig,
   database: postgresPool,
+  ...(socialProviders ? { socialProviders } : {}),
   emailVerification: {
     sendVerificationEmail: emailCallbacks.sendVerificationEmail,
     sendOnSignUp: requireEmailVerification,
@@ -133,6 +148,28 @@ export const auth = betterAuth({
     requireEmailVerification,
     sendResetPassword: emailCallbacks.sendResetPassword,
     revokeSessionsOnPasswordReset: true,
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user, context) => {
+          // 仅在 OAuth 回调首次创建用户时补齐 credential 凭证。
+          // 邮箱/密码注册路径由 sign-up/email 自行写入 credential,
+          // 这里避免重复创建。
+          if (!context?.path.startsWith("/callback/")) return;
+
+          const password = generateRandomOAuthPassword();
+          const hash = await context.context.password.hash(password);
+
+          await context.context.internalAdapter.linkAccount({
+            userId: user.id,
+            providerId: OAUTH_CREDENTIAL_PROVIDER_ID,
+            accountId: user.id,
+            password: hash,
+          });
+        },
+      },
+    },
   },
   plugins: [
     emailOTP({

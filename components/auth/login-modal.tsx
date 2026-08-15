@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { X } from "lucide-react";
+import { Github, X } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
 import { CloudflareTurnstile } from "@/components/auth/turnstile";
 import {
@@ -81,6 +81,8 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [registerCodeNotice, setRegisterCodeNotice] =
     React.useState<string | null>(null);
   const [registerCodeCooldown, setRegisterCodeCooldown] = React.useState(0);
+  const [socialError, setSocialError] = React.useState<string | null>(null);
+  const [socialSubmitting, setSocialSubmitting] = React.useState(false);
 
   const resetForm = React.useCallback(() => {
     setTab("password");
@@ -105,6 +107,8 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterCodeNotice(null);
     setRegisterCodeCooldown(0);
     setRegisterShowTurnstile(false);
+    setSocialError(null);
+    setSocialSubmitting(false);
   }, []);
 
   const handleClose = React.useCallback(() => {
@@ -152,6 +156,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterNotice(null);
     setRegisterCodeError(null);
     setRegisterCodeNotice(null);
+    setSocialError(null);
   };
 
   const sendOtp = React.useCallback(
@@ -427,6 +432,31 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       );
     } finally {
       setSubmission(null);
+    }
+  };
+
+  const handleGithubLogin = async () => {
+    if (submission || socialSubmitting) return;
+    setSocialSubmitting(true);
+    setSocialError(null);
+
+    try {
+      const { error } = await authClient.signIn.social({
+        provider: "github",
+        callbackURL: "/",
+      });
+
+      if (error) {
+        setSocialError(
+          getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+        );
+        setSocialSubmitting(false);
+      }
+    } catch (error) {
+      setSocialError(
+        getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+      );
+      setSocialSubmitting(false);
     }
   };
 
@@ -718,6 +748,32 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
             </form>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-line" />
+            <span className="text-xs text-faint">或使用以下账号登录</span>
+            <div className="h-px flex-1 bg-line" />
+          </div>
+
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              aria-label="使用 GitHub 登录"
+              disabled={Boolean(submission) || socialSubmitting}
+              onClick={handleGithubLogin}
+              className="flex size-11 items-center justify-center rounded-full border border-line text-ink-2 transition hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Github className="size-5" />
+            </button>
+          </div>
+
+          {socialError && (
+            <p className="mt-3 text-center text-[13px] text-danger" role="alert">
+              {socialError}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

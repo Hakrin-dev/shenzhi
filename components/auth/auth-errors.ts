@@ -59,6 +59,10 @@ export function getAuthErrorMessage(
     return "人机验证未通过，请重试";
   }
 
+  if (code === "PROVIDER_NOT_FOUND") {
+    return "该登录方式尚未配置";
+  }
+
   if (code === "PASSWORD_POLICY_VIOLATION") return PASSWORD_POLICY_MESSAGE;
   if (code === "INVALID_EMAIL") return "请输入有效邮箱";
   if (code === "PASSWORD_TOO_SHORT" || code === "PASSWORD_TOO_LONG") {

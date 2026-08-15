@@ -35,6 +35,8 @@ repository.
 | `ALIYUN_DIRECTMAIL_ENDPOINT` | `config/email.ts` | DirectMail OpenAPI endpoint | 显式配置，不依赖模糊默认值 |
 | `AUTH_EMAIL_FROM` | `config/email.ts` | DirectMail `AccountName` 发信地址 | 必须是阿里云控制台已验证地址 |
 | `AUTH_EMAIL_FROM_ALIAS` | `config/email.ts` | DirectMail `FromAlias` | 可选 |
+| `GITHUB_CLIENT_ID` | `config/oauth.ts` | GitHub OAuth App Client ID | 启用 GitHub 登录时填写 |
+| `GITHUB_CLIENT_SECRET` | `config/oauth.ts` | GitHub OAuth App Client Secret | 仅由 Deployment Secrets 注入，不提交 Git |
 
 `BETTER_AUTH_TRUSTED_ORIGINS` 会被裁剪并过滤空项，例如：
 
@@ -97,7 +99,8 @@ Auth 写入用户前返回 `EMAIL_PROVIDER_NOT_CONFIGURED`。Provider 不会输�
 - Reset Password：`revokeSessionsOnPasswordReset: true`。
 
 Email Verification 强制注册默认关闭，由 `AUTH_REQUIRE_EMAIL_VERIFICATION` 控制。
-本阶段不启用 CAPTCHA、OAuth、2FA、Passkey、RBAC、Redis 或业务身份协议配置。
+本阶段不启用 CAPTCHA、2FA、Passkey、RBAC、Redis 或业务身份协议配置；OAuth 仅接入
+GitHub，凭据从 `config/oauth.ts` 读取，未配置时应用照常启动。
 
 ## 官方 Migration
 
@@ -117,9 +120,12 @@ Email Verification 强制注册默认关闭，由 `AUTH_REQUIRE_EMAIL_VERIFICATI
   OTP/Verification/Reset 的真实邮件投递验收。
 - 生产设置 `AUTH_REQUIRE_EMAIL_VERIFICATION=true`，并完成 OTP/Verification/Reset 邮件的
   真实投递验收；代码实现已完成，真实环境联调不属于本次代码实现。
+- GitHub OAuth App 的 Client ID/Secret 与回调地址
+  `<BETTER_AUTH_URL>/api/auth/callback/github`；OAuth 首次登录会自动为账号写入随机
+  占位密码的 credential 凭证，无需用户设置密码。
 - shared rate-limit storage（如果部署为多实例）。
 - CAPTCHA/Turnstile。
 - 未来业务后端服务地址 `BUSINESS_BACKEND_URL` 和语言无关的身份协议。
 
-未来可选能力包括 OAuth、2FA 和 Passkey。若未来启用 Set Password 或其他创建新密码
-入口，必须继续复用同一个 password policy。
+未来可选能力包括更多 OAuth Provider、2FA 和 Passkey。若未来启用 Set Password 或其他
+创建新密码入口，必须继续复用同一个 password policy。
