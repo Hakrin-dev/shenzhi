@@ -69,3 +69,27 @@ Reset、CAPTCHA、JWT、业务后端或新的认证 API。
 - Password Reset activation。
 - Email OTP activation。
 - 前端邮件认证 UI 接线。
+
+## Frontend Auth v1
+
+本阶段完成：
+
+- LoginModal 的 Email/Password 登录接入 Better Auth `signIn.email`。
+- 注册接入 Better Auth `signUp.email`，使用 email 作为唯一登录标识，`name` 作为展示名称。
+- 新增纯密码策略模块，覆盖 12–64 位以及大写、小写、数字组合规则。
+- 使用 Better Auth `1.6.28` 官方 `hooks.before` 只校验 `/sign-up/email`；Better Auth
+  继续负责 password hash、verify、credential storage 和 Session。
+- Sidebar 接入真实 `useSession`，显示 `user.name` 或 email，并使用 `signOut`。
+- 移除无有效引用的 Mock `stores/auth.ts`，不保留第二套登录状态。
+- 保留验证码登录 Tab 为明确 disabled 的 UI 占位，不实现假 OTP。
+- 忘记密码入口改为不跳转旧 reset 页面的占位按钮；旧 reset 页面本轮未修改。
+- 使用 Node `node:test` 配合现有 TypeScript 编译验证密码策略，不新增测试框架或依赖。
+
+本阶段尚未完成：
+
+- 实际 Email Provider、发件人和凭据配置。
+- Email Verification activation。
+- Email OTP server/client plugin 和真实发送流程。
+- Password Reset activation，以及 Reset/Change/Set Password 的新密码策略接入。
+- CAPTCHA、生产 DB、生产 server/domain、shared rate-limit storage。
+- 业务后端身份协议以及业务授权逻辑。

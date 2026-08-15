@@ -21,10 +21,13 @@
 - `emailAndPassword.minPasswordLength`：`12`。
 - `emailAndPassword.maxPasswordLength`：`64`。
 - password hash/verify：Better Auth 默认实现。
+- sign-up password composition：由 `lib/auth/policies/password.ts` 和 Better Auth
+  官方 `hooks.before` 在 `/sign-up/email` 入口执行；不替换 Better Auth hash/storage。
 - plugins：无。
 
-当前不增加 trusted origins、Email Provider、OTP、CAPTCHA 或其他认证功能
-配置，以保持已验收的运行行为不变。
+当前不增加 trusted origins、Email Provider、Email Verification、Email OTP、Password
+Reset、CAPTCHA 或其他认证功能配置。验证码登录只保留 disabled UI，以保持邮件服务
+尚未配置时的认证行为边界。
 
 ## Stage 3A 邮件 Provider
 

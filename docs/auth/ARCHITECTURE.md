@@ -8,7 +8,7 @@ User、Credential、Session、JWT、Cookie、password hash 或 OTP 认证实现�
 ## 当前请求链路
 
 ```text
-Frontend auth UI
+LoginModal / Sidebar
   ↓
 lib/auth/client.ts
   ↓
@@ -25,9 +25,10 @@ lib/infrastructure/postgres.ts
 PostgreSQL
 ```
 
-当前 Mock UI 尚未接入上述 Client。`stores/auth.ts`、LoginModal、Sidebar、
-reset-password 和 settings 中的旧认证状态属于待替换的 legacy/mock UI，
-不是认证内核。
+LoginModal 的密码登录和注册已经通过上述 Client 调用 Better Auth；Sidebar 的身份
+显示和退出也由上述 Client 的真实 Session 驱动。验证码登录 Tab 目前只是明确 disabled
+的 UI 占位，未调用 OTP endpoint。`app/reset-password/` 和 settings 中的旧认证表单
+仍属于待替换的 legacy/mock UI，不是认证内核。
 
 ## 认证模型
 
@@ -41,17 +42,29 @@ reset-password 和 settings 中的旧认证状态属于待替换的 legacy/mock 
 
 ### Frontend
 
-`components/auth/` 负责认证 UI。真实接线完成后，UI 只能调用
+`components/auth/` 负责认证 UI。当前 UI 只能调用
 `lib/auth/client.ts` 暴露的 Better Auth Client，不直接访问数据库或服务端
 Better Auth instance。
 
 ### Auth / Better Auth
 
 - `lib/auth/server.ts`：唯一 Better Auth server instance。
+- `lib/auth/server.ts` 的 `hooks.before` 只匹配 `/sign-up/email`，调用纯密码策略做
+  产品准入校验。
 - `lib/auth/client.ts`：浏览器端唯一 Better Auth Client。
 - `app/api/auth/[...all]/route.ts`：只负责 Next.js HTTP 到 Better Auth Handler 的挂载。
 - `lib/infrastructure/postgres.ts`：只创建和导出当前认证使用的 PostgreSQL Pool。
 - `lib/auth/providers/`：未来外部 Provider callback adapter。
+
+### Password policy
+
+`lib/auth/policies/password.ts` 是不依赖 Better Auth、数据库或 UI 文案的纯规则模块。
+其中的组合规则同时用于注册表单和服务端 `hooks.before`；12–64 位长度继续由 Better
+Auth 配置负责。Better Auth 还负责默认 password hash、verify、credential storage
+和 Session。
+
+当前 hook 只覆盖 `/sign-up/email`。未来 Reset Password、Change Password、Set Password
+等所有创建新密码的入口，都必须复用同一个 policy；本轮不创建额外 endpoint。
 
 ### Future Business Backend
 

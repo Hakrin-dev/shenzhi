@@ -30,11 +30,31 @@
 - `lib/auth/providers/` 外部 Provider adapter 边界。
 - 正式认证文档进入 `docs/auth/`。
 
+## Stage 3A 已完成
+
+- 建立 provider-neutral 的认证邮件 Provider 契约和消息边界。
+- 审计 Better Auth `1.6.28` 的 Email Verification、Password Reset 和 Email OTP API。
+- 没有绑定真实邮件供应商，也没有启用邮件认证插件或发送回调。
+
+## Frontend Auth v1 已完成
+
+- LoginModal 的 Email/Password 登录调用 Better Auth `signIn.email`。
+- 注册调用 Better Auth `signUp.email`，只提交 `name`、`email` 和 `password`。
+- `lib/auth/policies/password.ts` 提供前后端共用的密码组合规则；12–64 位长度继续由
+  Better Auth 配置负责。
+- `lib/auth/server.ts` 通过 Better Auth 官方 `hooks.before` 只拦截 `/sign-up/email`，
+  由 Better Auth 继续负责密码哈希、存储和 Session。
+- Sidebar 使用真实 Better Auth Session 显示 `user.name`，并使用 `signOut` 退出。
+- 移除没有有效引用的 Mock `stores/auth.ts`。
+- 保留验证码登录 Tab，但获取验证码和登录操作均为明确 disabled 占位。
+- 保留忘记密码入口为不跳转的占位按钮。
+
 ## 尚未完成
 
-- LoginModal、Sidebar、reset-password 的真实 Session 接线。
-- Email Provider、Email Verification、Email OTP、Password Reset。
-- password composition policy。
+- 实际 Email Provider、Email Verification、Email OTP、Password Reset。
+- Reset Password、Change Password、Set Password 的新密码策略接入；这些入口未来必须
+  复用同一个 password policy。
+- `app/reset-password/` 和 settings 中旧的认证 UI 重做。
 - trusted origins、shared rate-limit storage、CAPTCHA。
 - 未来业务后端身份协议。
 
@@ -42,4 +62,5 @@
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [CONFIGURATION.md](./CONFIGURATION.md)
+- [EMAIL.md](./EMAIL.md)
 - [WORKLOG.md](./WORKLOG.md)

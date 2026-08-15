@@ -144,3 +144,7 @@ AuthEmailProvider.send(message)
 
 当前 Provider、发件人、凭据、endpoint/region 均未确定。没有真实发送、日志
 输出 OTP/token，也没有把 callback 接入 `lib/auth/server.ts`。
+
+Frontend Auth v1 只增加了验证码登录 Tab 的 disabled UI 占位。它不会调用 Email OTP
+endpoint、生成验证码或输出验证码；启用前仍需完成真实 Email Provider、Better Auth
+Email OTP plugin 和对应的前端 Client plugin 配置。
