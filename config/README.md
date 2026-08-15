@@ -22,6 +22,8 @@ Configuration areas:
 - `database.ts`: PostgreSQL connection URL.
 - `email.ts`: Alibaba DirectMail provider selection and sender/deployment
   metadata; provider credentials remain deployment-only.
+- `turnstile.ts`: Cloudflare Turnstile human-verification toggle, secret key,
+  and optional token constraints.
 - `backend.ts`: the future server-side business backend URL.
 
 Do not import server configuration from Client Components. Only values with an

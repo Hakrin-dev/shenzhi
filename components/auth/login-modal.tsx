@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
+import { CloudflareTurnstile } from "@/components/auth/turnstile";
 import {
   getAuthErrorMessage,
   PASSWORD_POLICY_MESSAGE,
@@ -16,6 +17,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 interface LoginModalProps {
   open: boolean;
@@ -43,6 +46,9 @@ function normalizeEmail(email: string) {
 
 export function LoginModal({ open, onClose }: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
+  const turnstileVerifiedRef = React.useRef(false);
+  const pendingEmailRef = React.useRef<string | null>(null);
+  const [showTurnstile, setShowTurnstile] = React.useState(false);
   const [tab, setTab] = React.useState<LoginTab>("password");
   const [submission, setSubmission] = React.useState<Submission>(null);
 
@@ -69,6 +75,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const resetForm = React.useCallback(() => {
     setTab("password");
     setSubmission(null);
+    setShowTurnstile(false);
     setLoginEmail("");
     setLoginPassword("");
     setLoginError(null);
@@ -120,6 +127,55 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterNotice(null);
   };
 
+  const sendOtp = React.useCallback(
+    async (email: string, turnstileToken?: string) => {
+      setSubmission("otp-send");
+      try {
+        const { error } = await authClient.emailOtp.sendVerificationOtp(
+          { email, type: "sign-in" },
+          turnstileToken
+            ? { headers: { "x-captcha-response": turnstileToken } }
+            : {},
+        );
+
+        if (error) {
+          setCodeError(
+            getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+          );
+          return;
+        }
+
+        setCodeCooldown(60);
+        setCodeNotice("验证码已发送，请查收邮件");
+      } catch (error) {
+        setCodeError(
+          getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+        );
+      } finally {
+        setSubmission(null);
+      }
+    },
+    [],
+  );
+
+  const handleTurnstileToken = React.useCallback(
+    async (token: string) => {
+      turnstileVerifiedRef.current = true;
+      setShowTurnstile(false);
+      setCodeNotice(null);
+
+      const email = pendingEmailRef.current;
+      if (!email) return;
+      await sendOtp(email, token);
+    },
+    [sendOtp],
+  );
+
+  const handleTurnstileError = React.useCallback(() => {
+    setShowTurnstile(false);
+    setCodeError("人机验证失败，请重试");
+  }, []);
+
   const handleSendOtp = async () => {
     setCodeError(null);
     setCodeNotice(null);
@@ -131,29 +187,15 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     }
     if (codeCooldown > 0) return;
 
-    setSubmission("otp-send");
-    try {
-      const { error } = await authClient.emailOtp.sendVerificationOtp({
-        email,
-        type: "sign-in",
-      });
-
-      if (error) {
-        setCodeError(
-          getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
-        );
-        return;
-      }
-
-      setCodeCooldown(60);
-      setCodeNotice("验证码已发送，请查收邮件");
-    } catch (error) {
-      setCodeError(
-        getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
-      );
-    } finally {
-      setSubmission(null);
+    // 首次发送需要先完成人机验证;通过后本地与服务端都会记住。
+    if (TURNSTILE_SITE_KEY && !turnstileVerifiedRef.current) {
+      pendingEmailRef.current = email;
+      setShowTurnstile(true);
+      setCodeNotice("请先完成上方人机验证");
+      return;
     }
+
+    await sendOtp(email);
   };
 
   const handleOtpLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -402,6 +444,13 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 onChange={(event) => setCodeEmail(event.target.value)}
                 disabled={Boolean(submission)}
               />
+              {showTurnstile && TURNSTILE_SITE_KEY && (
+                <CloudflareTurnstile
+                  siteKey={TURNSTILE_SITE_KEY}
+                  onToken={handleTurnstileToken}
+                  onError={handleTurnstileError}
+                />
+              )}
               <div className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-ink-2">
                   验证码

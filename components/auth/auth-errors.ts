@@ -50,6 +50,15 @@ export function getAuthErrorMessage(
     return EMAIL_PROVIDER_MESSAGE;
   }
 
+  if (
+    code === "MISSING_RESPONSE" ||
+    code === "VERIFICATION_FAILED" ||
+    message === "Missing CAPTCHA response" ||
+    message === "Captcha verification failed"
+  ) {
+    return "人机验证未通过，请重试";
+  }
+
   if (code === "PASSWORD_POLICY_VIOLATION") return PASSWORD_POLICY_MESSAGE;
   if (code === "INVALID_EMAIL") return "请输入有效邮箱";
   if (code === "PASSWORD_TOO_SHORT" || code === "PASSWORD_TOO_LONG") {
