@@ -1,8 +1,13 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { X } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
+import {
+  getAuthErrorMessage,
+  PASSWORD_POLICY_MESSAGE,
+} from "@/components/auth/auth-errors";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -18,10 +23,7 @@ interface LoginModalProps {
 }
 
 type LoginTab = "password" | "code" | "register";
-type Submission = "login" | "register" | null;
-
-const PASSWORD_POLICY_MESSAGE =
-  "密码需为12–64位，且至少包含大写字母、小写字母和数字";
+type Submission = "login" | "otp-send" | "otp-login" | "register" | null;
 
 function Field({
   label,
@@ -39,54 +41,6 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function getAuthErrorDetails(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return { code: undefined, status: undefined };
-  }
-
-  const details = error as Record<string, unknown>;
-  return {
-    code: typeof details.code === "string" ? details.code : undefined,
-    status:
-      typeof details.status === "number"
-        ? details.status
-        : typeof details.statusCode === "number"
-          ? details.statusCode
-          : undefined,
-  };
-}
-
-function getAuthErrorMessage(
-  error: unknown,
-  fallback: string,
-  kind: "login" | "register",
-) {
-  const { code, status } = getAuthErrorDetails(error);
-
-  if (code === "PASSWORD_POLICY_VIOLATION") return PASSWORD_POLICY_MESSAGE;
-  if (code === "INVALID_EMAIL") return "请输入有效邮箱";
-  if (code === "PASSWORD_TOO_SHORT" || code === "PASSWORD_TOO_LONG") {
-    return PASSWORD_POLICY_MESSAGE;
-  }
-  if (
-    kind === "login" &&
-    (status === 401 ||
-      code === "INVALID_EMAIL_OR_PASSWORD" ||
-      code === "INVALID_PASSWORD")
-  ) {
-    return "邮箱或密码错误";
-  }
-  if (
-    kind === "register" &&
-    (code === "USER_ALREADY_EXISTS" ||
-      code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
-  ) {
-    return "该邮箱已注册，请直接登录";
-  }
-
-  return fallback;
-}
-
 export function LoginModal({ open, onClose }: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
   const [tab, setTab] = React.useState<LoginTab>("password");
@@ -98,6 +52,9 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
 
   const [codeEmail, setCodeEmail] = React.useState("");
   const [code, setCode] = React.useState("");
+  const [codeError, setCodeError] = React.useState<string | null>(null);
+  const [codeNotice, setCodeNotice] = React.useState<string | null>(null);
+  const [codeCooldown, setCodeCooldown] = React.useState(0);
 
   const [registerName, setRegisterName] = React.useState("");
   const [registerEmail, setRegisterEmail] = React.useState("");
@@ -105,6 +62,9 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [registerPasswordConfirm, setRegisterPasswordConfirm] =
     React.useState("");
   const [registerError, setRegisterError] = React.useState<string | null>(null);
+  const [registerNotice, setRegisterNotice] = React.useState<string | null>(
+    null,
+  );
 
   const resetForm = React.useCallback(() => {
     setTab("password");
@@ -114,11 +74,15 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setLoginError(null);
     setCodeEmail("");
     setCode("");
+    setCodeError(null);
+    setCodeNotice(null);
+    setCodeCooldown(0);
     setRegisterName("");
     setRegisterEmail("");
     setRegisterPassword("");
     setRegisterPasswordConfirm("");
     setRegisterError(null);
+    setRegisterNotice(null);
   }, []);
 
   const handleClose = React.useCallback(() => {
@@ -136,11 +100,98 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, handleClose, submission]);
 
+  React.useEffect(() => {
+    if (codeCooldown <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setCodeCooldown((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [codeCooldown]);
+
   const handleTabChange = (value: string) => {
     if (submission) return;
     setTab(value as LoginTab);
     setLoginError(null);
+    setCodeError(null);
+    setCodeNotice(null);
     setRegisterError(null);
+    setRegisterNotice(null);
+  };
+
+  const handleSendOtp = async () => {
+    setCodeError(null);
+    setCodeNotice(null);
+
+    const email = normalizeEmail(codeEmail);
+    if (!email) {
+      setCodeError("请输入邮箱");
+      return;
+    }
+    if (codeCooldown > 0) return;
+
+    setSubmission("otp-send");
+    try {
+      const { error } = await authClient.emailOtp.sendVerificationOtp({
+        email,
+        type: "sign-in",
+      });
+
+      if (error) {
+        setCodeError(
+          getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+        );
+        return;
+      }
+
+      setCodeCooldown(60);
+      setCodeNotice("验证码已发送，请查收邮件");
+    } catch (error) {
+      setCodeError(
+        getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+      );
+    } finally {
+      setSubmission(null);
+    }
+  };
+
+  const handleOtpLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCodeError(null);
+    setCodeNotice(null);
+
+    const email = normalizeEmail(codeEmail);
+    const otp = code.trim();
+    if (!email) {
+      setCodeError("请输入邮箱");
+      return;
+    }
+    if (!/^\d{6}$/.test(otp)) {
+      setCodeError("请输入6位数字验证码");
+      return;
+    }
+
+    setSubmission("otp-login");
+    try {
+      const { error } = await authClient.signIn.emailOtp({ email, otp });
+
+      if (error) {
+        setCodeError(
+          getAuthErrorMessage(error, "验证码登录失败，请稍后重试", "otp"),
+        );
+        return;
+      }
+
+      await refetchSession();
+      handleClose();
+    } catch (error) {
+      setCodeError(
+        getAuthErrorMessage(error, "验证码登录失败，请稍后重试", "otp"),
+      );
+    } finally {
+      setSubmission(null);
+    }
   };
 
   const handlePasswordLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -183,6 +234,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const handleRegistration = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRegisterError(null);
+    setRegisterNotice(null);
 
     const name = registerName.trim();
     const email = normalizeEmail(registerEmail);
@@ -209,7 +261,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
 
     setSubmission("register");
     try {
-      const { error } = await authClient.signUp.email({
+      const { data, error } = await authClient.signUp.email({
         name,
         email,
         password: registerPassword,
@@ -219,6 +271,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         setRegisterError(
           getAuthErrorMessage(error, "注册失败，请稍后重试", "register"),
         );
+        return;
+      }
+
+      if (data?.token === null) {
+        setRegisterNotice("验证邮件已发送，请前往邮箱完成验证");
         return;
       }
 
@@ -303,13 +360,16 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 onChange={(event) => setLoginPassword(event.target.value)}
               />
               <div className="-mt-1.5 flex justify-end">
-                <button
-                  type="button"
-                  disabled={Boolean(submission)}
-                  className="text-[13px] font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+                <Link
+                  href="/reset-password"
+                  aria-disabled={Boolean(submission)}
+                  onClick={(event) => {
+                    if (submission) event.preventDefault();
+                  }}
+                  className="text-[13px] font-medium text-primary hover:underline aria-disabled:pointer-events-none aria-disabled:opacity-50"
                 >
                   忘记密码?
-                </button>
+                </Link>
               </div>
               {loginError && (
                 <p className="-mt-2 text-[13px] text-danger" role="alert">
@@ -328,7 +388,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           </TabsContent>
 
           <TabsContent value="code">
-            <div className="mt-5 flex flex-col gap-4">
+            <form
+              className="mt-5 flex flex-col gap-4"
+              onSubmit={handleOtpLogin}
+              noValidate
+            >
               <Field
                 label="邮箱"
                 type="email"
@@ -336,6 +400,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 autoComplete="email"
                 value={codeEmail}
                 onChange={(event) => setCodeEmail(event.target.value)}
+                disabled={Boolean(submission)}
               />
               <div className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-ink-2">
@@ -343,28 +408,52 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 </span>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="请输入验证码"
+                    placeholder="请输入6位验证码"
                     className="flex-1"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
                     value={code}
-                    onChange={(event) => setCode(event.target.value)}
+                    onChange={(event) =>
+                      setCode(event.target.value.replace(/\D/g, ""))
+                    }
+                    disabled={Boolean(submission)}
                   />
                   <Button
                     variant="outline"
                     type="button"
                     className="shrink-0"
-                    disabled
+                    disabled={Boolean(submission) || codeCooldown > 0}
+                    onClick={handleSendOtp}
+                    aria-busy={submission === "otp-send"}
                   >
-                    获取验证码
+                    {submission === "otp-send"
+                      ? "发送中..."
+                      : codeCooldown > 0
+                        ? `${codeCooldown}s后重发`
+                        : "获取验证码"}
                   </Button>
                 </div>
               </div>
-              <p className="text-xs leading-5 text-muted" role="status">
-                验证码登录将在邮件服务配置后启用
-              </p>
-              <Button type="button" className="mt-1 w-full" disabled>
-                登录
+              {codeNotice && (
+                <p className="-mt-2 text-xs leading-5 text-muted" role="status">
+                  {codeNotice}
+                </p>
+              )}
+              {codeError && (
+                <p className="-mt-2 text-[13px] text-danger" role="alert">
+                  {codeError}
+                </p>
+              )}
+              <Button
+                type="submit"
+                className="mt-1 w-full"
+                disabled={Boolean(submission)}
+                aria-busy={submission === "otp-login"}
+              >
+                {submission === "otp-login" ? "登录中..." : "登录"}
               </Button>
-            </div>
+            </form>
           </TabsContent>
 
           <TabsContent value="register">
@@ -414,6 +503,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
               {registerError && (
                 <p className="-mt-2 text-[13px] text-danger" role="alert">
                   {registerError}
+                </p>
+              )}
+              {registerNotice && (
+                <p className="-mt-2 text-[13px] text-muted" role="status">
+                  {registerNotice}
                 </p>
               )}
               <Button

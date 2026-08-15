@@ -1,24 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Apple,
   Award,
   Bell,
   BarChart3,
   Bot,
   ChevronDown,
   ChevronRight,
-  Chrome,
-  Github,
-  GraduationCap,
   KeyRound,
   Medal,
   Monitor,
   Moon,
   Newspaper,
-  Smile,
   Sparkles,
   Sun,
   Trophy,
@@ -27,10 +28,20 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { authClient } from "@/components/auth/auth-client";
+import {
+  getAuthErrorMessage,
+  PASSWORD_POLICY_MESSAGE,
+} from "@/components/auth/auth-errors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  validatePasswordPolicy,
+} from "@/lib/auth/policies/password";
 import { useThemeStore, type ThemeMode } from "@/stores/theme";
 
 /**
@@ -73,14 +84,6 @@ const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 const LANGUAGES = ["中文", "English"] as const;
-
-const LINKED_ACCOUNTS = [
-  { label: "Google Scholar", icon: GraduationCap, linked: true },
-  { label: "Hugging Face", icon: Smile, linked: false },
-  { label: "GitHub", icon: Github, linked: true },
-  { label: "Google", icon: Chrome, linked: false },
-  { label: "Apple", icon: Apple, linked: false },
-];
 
 const ACHIEVEMENTS = [
   {
@@ -165,44 +168,346 @@ function ProfileCard() {
   );
 }
 
-/** 账户:基本信息 + 关联账号 */
-function AccountSection() {
+type ListedSession = NonNullable<
+  Awaited<ReturnType<typeof authClient.listSessions>>["data"]
+>[number];
+
+function formatSessionDate(value: Date | string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function SessionSection({ currentToken }: { currentToken?: string }) {
+  const [sessions, setSessions] = useState<ListedSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    if (!currentToken) {
+      setSessions([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await authClient.listSessions();
+      if (result.error) {
+        setError(
+          getAuthErrorMessage(result.error, "无法加载登录会话", "session"),
+        );
+        return;
+      }
+      setSessions(result.data ?? []);
+    } catch (sessionError) {
+      setError(
+        getAuthErrorMessage(sessionError, "无法加载登录会话", "session"),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [currentToken]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadSessions();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadSessions]);
+
+  const handleRevokeOtherSessions = async () => {
+    setRevoking(true);
+    setError(null);
+    try {
+      const result = await authClient.revokeOtherSessions();
+      if (result.error) {
+        setError(
+          getAuthErrorMessage(
+            result.error,
+            "无法退出其他会话",
+            "session",
+          ),
+        );
+        return;
+      }
+      await loadSessions();
+    } catch (sessionError) {
+      setError(
+        getAuthErrorMessage(sessionError, "无法退出其他会话", "session"),
+      );
+    } finally {
+      setRevoking(false);
+    }
+  };
+
   return (
-    <div className="mt-3 space-y-5 rounded-2xl bg-card p-7 shadow-card">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-medium text-ink-2">用户名</span>
-          <Input placeholder="未设置" />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-medium text-ink-2">账号</span>
-          <Input placeholder="邮箱或手机号" />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-medium text-ink-2">密码</span>
-          <Input type="password" placeholder="••••••••" />
-        </label>
+    <div className="border-t border-line pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[13px] font-medium text-ink-2">登录会话</p>
+          <p className="mt-1 text-xs text-muted">
+            仅展示 Better Auth 提供的会话时间信息。
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={
+            loading ||
+            revoking ||
+            sessions.filter((session) => session.token !== currentToken)
+              .length === 0
+          }
+          onClick={handleRevokeOtherSessions}
+        >
+          {revoking ? "退出中..." : "退出其他会话"}
+        </Button>
       </div>
 
-      <div className="border-t border-line pt-5">
-        <p className="text-[13px] font-medium text-ink-2">关联账号</p>
-        <ul className="mt-3 divide-y divide-line">
-          {LINKED_ACCOUNTS.map((acc) => (
-            <li key={acc.label} className="flex items-center gap-3 py-3">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-chip">
-                <acc.icon className="size-4.5 text-ink-2" strokeWidth={1.8} />
+      {error && (
+        <p className="mt-3 text-[13px] text-danger" role="alert">
+          {error}
+        </p>
+      )}
+
+      <ul className="mt-3 divide-y divide-line">
+        {sessions.map((session) => {
+          const isCurrent = session.token === currentToken;
+          return (
+            <li key={session.id} className="flex items-center gap-3 py-3">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-xs text-muted">
+                {isCurrent ? "当前" : "其他"}
               </span>
-              <span className="flex-1 text-sm text-ink">{acc.label}</span>
-              <span className="text-xs text-faint">
-                {acc.linked ? "已关联" : "未关联"}
+              <span className="min-w-0 flex-1 text-xs text-muted">
+                创建于 {formatSessionDate(session.createdAt)}
+                <br />
+                到期于 {formatSessionDate(session.expiresAt)}
               </span>
-              <Button variant={acc.linked ? "outline" : "soft"} size="sm">
-                {acc.linked ? "解除关联" : "关联"}
-              </Button>
             </li>
-          ))}
-        </ul>
+          );
+        })}
+      </ul>
+
+      {!loading && sessions.length === 0 && (
+        <p className="mt-3 text-xs text-muted">暂无可用登录会话。</p>
+      )}
+    </div>
+  );
+}
+
+/** 账户:真实 Better Auth 用户信息、密码与会话 */
+function AccountSection() {
+  const { data: currentSession, isPending, refetch } = authClient.useSession();
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+
+  const displayName = nameDraft ?? currentSession?.user.name ?? "";
+
+  const handleUpdateName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = displayName.trim();
+    if (!name) {
+      setProfileError("请输入昵称");
+      setProfileNotice(null);
+      return;
+    }
+
+    setProfileSubmitting(true);
+    setProfileError(null);
+    setProfileNotice(null);
+    try {
+      const result = await authClient.updateUser({ name });
+      if (result.error) {
+        setProfileError(
+          getAuthErrorMessage(result.error, "昵称更新失败", "profile"),
+        );
+        return;
+      }
+      setNameDraft(name);
+      await refetch();
+      setProfileNotice("昵称已更新");
+    } catch (profileUpdateError) {
+      setProfileError(
+        getAuthErrorMessage(profileUpdateError, "昵称更新失败", "profile"),
+      );
+    } finally {
+      setProfileSubmitting(false);
+    }
+  };
+
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!currentPassword) {
+      setPasswordError("请输入当前密码");
+      setPasswordNotice(null);
+      return;
+    }
+    if (!validatePasswordPolicy(newPassword).valid) {
+      setPasswordError(PASSWORD_POLICY_MESSAGE);
+      setPasswordNotice(null);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("两次输入的密码不一致");
+      setPasswordNotice(null);
+      return;
+    }
+
+    setPasswordSubmitting(true);
+    setPasswordError(null);
+    setPasswordNotice(null);
+    try {
+      const result = await authClient.changePassword({
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      });
+      if (result.error) {
+        setPasswordError(
+          getAuthErrorMessage(
+            result.error,
+            "密码修改失败，请检查当前密码",
+            "change-password",
+          ),
+        );
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordNotice("密码已修改，其他登录会话已退出");
+    } catch (passwordChangeError) {
+      setPasswordError(
+        getAuthErrorMessage(
+          passwordChangeError,
+          "密码修改失败，请检查当前密码",
+          "change-password",
+        ),
+      );
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
+
+  if (isPending) {
+    return (
+      <div className="mt-3 rounded-2xl bg-card p-7 text-sm text-muted shadow-card">
+        正在加载账户信息...
       </div>
+    );
+  }
+
+  if (!currentSession) {
+    return (
+      <div className="mt-3 rounded-2xl bg-card p-7 text-sm text-muted shadow-card">
+        请先登录后查看账户信息。
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-5 rounded-2xl bg-card p-7 shadow-card">
+      <form className="space-y-4" onSubmit={handleUpdateName}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">昵称</span>
+            <Input
+              value={displayName}
+              maxLength={255}
+              autoComplete="name"
+              onChange={(event) => setNameDraft(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">邮箱</span>
+            <Input value={currentSession.user.email} readOnly disabled />
+            <span className="text-xs text-muted">
+              {currentSession.user.emailVerified ? "邮箱已验证" : "邮箱未验证"}
+            </span>
+          </label>
+        </div>
+        {profileError && (
+          <p className="text-[13px] text-danger" role="alert">
+            {profileError}
+          </p>
+        )}
+        {profileNotice && (
+          <p className="text-[13px] text-muted" role="status">
+            {profileNotice}
+          </p>
+        )}
+        <Button type="submit" variant="outline" disabled={profileSubmitting}>
+          {profileSubmitting ? "保存中..." : "保存昵称"}
+        </Button>
+      </form>
+
+      <form className="space-y-4 border-t border-line pt-5" onSubmit={handleChangePassword}>
+        <div>
+          <p className="text-[13px] font-medium text-ink-2">修改密码</p>
+          <p className="mt-1 text-xs text-muted">{PASSWORD_POLICY_MESSAGE}</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">当前密码</span>
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">新密码</span>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN_LENGTH}
+              maxLength={PASSWORD_MAX_LENGTH}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">确认新密码</span>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN_LENGTH}
+              maxLength={PASSWORD_MAX_LENGTH}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </label>
+        </div>
+        {passwordError && (
+          <p className="text-[13px] text-danger" role="alert">
+            {passwordError}
+          </p>
+        )}
+        {passwordNotice && (
+          <p className="text-[13px] text-muted" role="status">
+            {passwordNotice}
+          </p>
+        )}
+        <Button type="submit" variant="outline" disabled={passwordSubmitting}>
+          {passwordSubmitting ? "修改中..." : "修改密码"}
+        </Button>
+      </form>
+
+      <SessionSection currentToken={currentSession.session.token} />
     </div>
   );
 }
@@ -238,8 +543,11 @@ function LanguageSection() {
 function AppearanceSection() {
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
 
   return (
     <div className="mt-3 rounded-2xl bg-card p-7 shadow-card">

@@ -35,8 +35,8 @@ https://example.com, https://admin.example.com
 ```
 
 会规范化为两个 origin。未配置时不显式传入 Better Auth，以保持当前默认
-行为。`NEXT_PUBLIC_API_URL` 没有运行时代码引用，已从当前配置模板收敛掉；
-浏览器不应默认直接知道未来 Python/Go/Java 服务地址。
+行为。`NEXT_PUBLIC_API_URL` 当前没有运行时代码引用，不作为未来业务后端的浏览器
+地址；浏览器也不应默认直接知道未来 Python/Go/Java 服务地址。
 
 ## Email Provider configuration boundary
 
@@ -47,14 +47,15 @@ https://example.com, https://admin.example.com
 - `AUTH_EMAIL_SENDER_NAME`：sender name。
 - `AUTH_EMAIL_REPLY_TO`：可选 reply-to。
 
-这些字段当前不会实例化 Provider，也不会启用 Email Verification、Password
-Reset 或 Email OTP。Provider 确定后，供应商特定 credential、endpoint/region
-等才可以由负责人补入同一个配置区域；变量命名必须随正式 Provider 决策确认，
-不能预先绑定 Resend、SMTP、SES、SendGrid、阿里云或腾讯云。
+这些字段当前不会实例化 Provider。`emailDeliveryConfigured` 当前为 `false`，因此
+不会在没有真实发送能力时强制 Email Verification，也不会伪造 OTP 或 reset 邮件
+发送成功。Provider 确定后，供应商特定 credential、endpoint/region 等才可以由负责
+人补入同一个配置区域；变量命名必须随正式 Provider 决策确认，不能预先绑定
+Resend、SMTP、SES、SendGrid、阿里云或腾讯云。
 
 ## Current Better Auth configuration
 
-`lib/auth/server.ts` 当前只配置：
+`lib/auth/server.ts` 当前配置：
 
 - `database`：来自 `lib/infrastructure/postgres.ts` 的 `pg.Pool`。
 - 条件化的 `secret`、`baseURL` 和可选 `trustedOrigins`。
@@ -62,12 +63,16 @@ Reset 或 Email OTP。Provider 确定后，供应商特定 credential、endpoint
 - `emailAndPassword.minPasswordLength`：`12`。
 - `emailAndPassword.maxPasswordLength`：`64`。
 - password hash/verify、Session、Cookie：Better Auth 默认实现。
-- sign-up password composition：由纯 policy 和 Better Auth 官方
-  `hooks.before` 在 `/sign-up/email` 入口执行。
-- plugins：无新增插件。
+- 注册、Reset Password、Change Password 的新密码组合规则：纯 policy 和 Better Auth
+  官方 `hooks.before`。
+- `emailVerification.sendVerificationEmail`、`emailAndPassword.sendResetPassword`、
+  `emailOTP()` 以及浏览器 `emailOTPClient()`：均使用 Better Auth 官方 API；邮件发送
+  由 Provider abstraction 承接。
+- Email OTP：6 位、300 秒有效、3 次尝试，发送 rate limit 为 60 秒窗口最多 3 次。
+- Reset Password：`revokeSessionsOnPasswordReset: true`。
 
-本阶段不增加 Email Provider、Email Verification、Email OTP、Password Reset、
-CAPTCHA、OAuth、2FA、Passkey、RBAC、Redis 或业务身份协议配置。
+本阶段不绑定真实 Email Provider，也不增加 CAPTCHA、OAuth、2FA、Passkey、RBAC、
+Redis 或业务身份协议配置。
 
 ## 官方 Migration
 
@@ -75,7 +80,8 @@ CAPTCHA、OAuth、2FA、Passkey、RBAC、Redis 或业务身份协议配置。
 - 数据库：PostgreSQL
 - 来源：Better Auth `1.6.28` 官方 CLI Migration
 - 核心表：`user`、`account`、`session`、`verification`
-- 本阶段没有修改 Schema，也没有手写新的 auth migration。
+- Email OTP 复用 `verification`，本阶段没有修改 Schema，也没有手写新的 auth
+  migration。
 
 ## 后续配置类别
 
@@ -83,9 +89,10 @@ CAPTCHA、OAuth、2FA、Passkey、RBAC、Redis 或业务身份协议配置。
 
 - 正式 Web URL/domain 与 `BETTER_AUTH_TRUSTED_ORIGINS`。
 - Email Provider、sender/from、reply-to、credential 和 provider endpoint/region。
+- 生产强制 Email Verification，并完成 OTP/Verification/Reset 邮件的真实投递验收。
 - shared rate-limit storage（如果部署为多实例）。
 - CAPTCHA/Turnstile。
-- 未来业务后端服务地址 `BUSINESS_BACKEND_URL`。
+- 未来业务后端服务地址 `BUSINESS_BACKEND_URL` 和语言无关的身份协议。
 
-未来可选能力包括 OAuth、2FA 和 Passkey。Reset Password、Change Password、Set
-Password 启用时，所有创建新密码的入口还必须复用同一个 password policy。
+未来可选能力包括 OAuth、2FA 和 Passkey。若未来启用 Set Password 或其他创建新密码
+入口，必须继续复用同一个 password policy。

@@ -1,7 +1,7 @@
-# Better Auth 1.6.28 Email Capability Audit
+# Better Auth 1.6.28 Email Capabilities
 
-本文件只记录当前项目实际安装的 Better Auth `1.6.28` API 和 ShenZhi 的
-责任边界，不复制上游完整文档。
+本文件只记录当前项目实际安装的 Better Auth `1.6.28` API 和 ShenZhi 的责任边界，
+不复制上游完整文档。
 
 ## Email Verification
 
@@ -17,25 +17,19 @@ emailVerification: {
 }
 ```
 
-当前 1.6.28 类型中的行为：
+当前 1.6.28 的实际责任划分：
 
-- `sendVerificationEmail` callback data 是 `{ user, url, token }`，第二个参数
-  是可选 `Request`。
-- `sendOnSignUp` 默认未显式设置；未设置时跟随
-  `emailAndPassword.requireEmailVerification`。
-- `sendOnSignIn` 默认关闭。
-- verification token 默认有效期为 3600 秒。
-- `emailAndPassword.requireEmailVerification` 控制未验证用户是否不能创建登录
-  Session。
-- `autoSignInAfterVerification` 只有显式启用时才由 Better Auth 自动建立/更新
-  Session。
+- callback data 是 `{ user, url, token }`，第二个参数是可选 `Request`。
+- Better Auth 创建 verification token 和 URL，并负责点击后的验证。
+- `sendOnSignUp` 与 `emailAndPassword.requireEmailVerification` 当前都由
+  `emailDeliveryConfigured` 控制，当前值为 `false`。
+- `autoSignInAfterVerification` 没有显式启用；验证后的 Session 行为继续遵循
+  Better Auth 默认行为。
+- 未配置 Provider 时，当前开发环境注册不会被强制邮箱验证阻断；Provider 确定并完成
+  投递验收后，才应在生产环境启用强制验证。
 
-Better Auth 创建 verification token 和 verification URL，并负责后续验证。URL
-和 token 传给 ShenZhi callback；ShenZhi 只构造邮件并交给 Provider，不生成或
-校验 token。
-
-本阶段没有设置 `emailVerification`，也没有启用
-`requireEmailVerification`，避免未配置真实 Provider 时改变当前 sign-up 行为。
+ShenZhi 只将 callback 提供的 URL 转换为邮件消息并交给 `AuthEmailProvider`，不生成、
+存储或校验 token。
 
 ## Password Reset
 
@@ -53,15 +47,20 @@ emailAndPassword: {
 当前 1.6.28 的责任划分：
 
 - `POST /request-password-reset` 接收 email 和可选 `redirectTo`。
-- Better Auth 生成 reset token，并将其放入 core `verification` 存储。
-- `sendResetPassword` 收到 `{ user, url, token }`，只负责把已准备的内容发送出去。
+- Better Auth 生成 reset token，并使用 core `verification` 存储。
+- `sendResetPassword` 收到 `{ user, url, token }`，只负责把已准备的内容交给邮件
+  Provider。
 - 默认 reset token 有效期为 3600 秒。
-- `revokeSessionsOnPasswordReset` 默认关闭；当前项目没有配置它。
-- `onPasswordReset` 是密码成功更新后的 Better Auth callback。
-- `GET /reset-password/:token` 负责处理链接，再由 `POST /reset-password` 完成
-  密码更新。
+- 当前项目配置 `revokeSessionsOnPasswordReset: true`，成功重置后由 Better Auth 撤销
+  该用户的现有 Session。
+- `GET /reset-password/:token` 处理邮件链接并重定向到 callback URL；随后
+  `POST /reset-password` 完成密码更新。
+- `app/reset-password/page.tsx` 只收集 email 或新密码，并调用 Better Auth 官方
+  request/reset API；不读取 verification 表、不校验 token、不更新 account 表。
+- 请求页面使用不暴露账户存在性的成功提示；Provider 未配置时显示明确配置错误。
 
-当前不接入 `app/reset-password/page.tsx`，不改变既有 UI 或 Session 行为。
+Reset Password 的新密码在 Better Auth 官方 `hooks.before` 中复用
+`lib/auth/policies/password.ts`。Better Auth 仍负责长度、hash、verify 和存储。
 
 ## Email OTP
 
@@ -86,47 +85,27 @@ sendVerificationOTP: async ({ email, otp, type }, context?) => {}
 sign-in | email-verification | forget-password | change-email
 ```
 
-### 当前默认值
-
-Better Auth 1.6.28 的 `EmailOTPOptions` 默认值为：
+### 当前配置
 
 - `otpLength`: 6。
 - `expiresIn`: 300 秒，即 5 分钟。
 - `allowedAttempts`: 3。
-- `sendVerificationOnSignUp`: false。
-- `disableSignUp`: false。
-- `overrideDefaultEmailVerification`: false。
-- OTP storage: `plain`，除非显式配置其他存储方式。
-- plugin endpoint rate limit: 60 秒窗口、最多 3 次。
+- Email OTP endpoint rate limit：60 秒窗口、最多 3 次。
+- Better Auth 生成、存储、过期、限制尝试次数并验证 OTP；LoginModal 的 60 秒倒计时
+  只是 UX。
+- LoginModal 调用 `emailOtp.sendVerificationOtp({ email, type: "sign-in" })`，登录
+  调用 `signIn.emailOtp({ email, otp })`。
+- Browser client 通过 `emailOTPClient()` 暴露这些官方 API。
 
-OTP 由 Better Auth 生成、存储、过期、尝试次数控制和验证。ShenZhi 的
-`buildEmailOtpMessage()` 只使用 callback 给出的 OTP 生成邮件内容。
-
-### 当前 endpoint
-
-与本项目当前 email-only 模型相关的 endpoint 包括：
-
-- `POST /email-otp/send-verification-otp`。
-- `POST /sign-in/email-otp`。
-- `POST /email-otp/verify-email`。
-- `POST /email-otp/request-password-reset`。
-- `POST /forget-password/email-otp`。
-- `POST /email-otp/reset-password`。
-- 以及检查 OTP、邮箱变更等辅助 endpoint。
-
-Email OTP client plugin 只有在未来浏览器真正使用 OTP client API 时才需要加入
-`createAuthClient({ plugins: [emailOTPClient()] })`。本阶段不启用 server 或
-client plugin。
+Provider 未配置时，发送请求会进入 `AuthEmailProvider` 的配置错误；不会假装发送成功，
+也不会在日志输出 OTP。
 
 ### Schema 结论
 
-当前 `emailOTP()` plugin 对象没有额外 `schema`，源码中的 OTP 记录通过
-Better Auth core verification adapter 保存。因此以当前 1.6.28 实现判断，启用
-Email OTP 不需要新增第二张 OTP 表或额外字段。
-
-启用前仍需对最终 plugin 配置运行 Better Auth 官方 CLI migration review；如果
-未来版本或其他 plugin 引入 schema，必须重新生成官方 migration，不能手写平行
-认证 Schema。
+当前 `emailOTP()` plugin 没有额外 `schema`；OTP 记录通过 Better Auth core
+`verification` adapter 保存。因此当前 1.6.28 配置不需要第二张 OTP 表或额外字段。
+启用新的 Better Auth plugin 或升级版本时，仍必须重新做官方 CLI migration review；若
+官方明确产生 Schema diff，才生成官方 migration，不能手写平行认证 Schema。
 
 ## ShenZhi Email Provider boundary
 
@@ -142,9 +121,7 @@ AuthEmailProvider.send(message)
 未确定的第三方邮件服务
 ```
 
-当前 Provider、发件人、凭据、endpoint/region 均未确定。没有真实发送、日志
-输出 OTP/token，也没有把 callback 接入 `lib/auth/server.ts`。
-
-Frontend Auth v1 只增加了验证码登录 Tab 的 disabled UI 占位。它不会调用 Email OTP
-endpoint、生成验证码或输出验证码；启用前仍需完成真实 Email Provider、Better Auth
-Email OTP plugin 和对应的前端 Client plugin 配置。
+Verification、OTP、Password Reset 共用一个 Provider abstraction。当前 Provider、发件人、
+凭据、endpoint/region 均未确定，没有真实发送，也没有 token/OTP/reset URL/
+verification URL 日志。Provider 确定后，只补充 adapter 与配置，不重新实现 Better Auth
+的 token、OTP、verification 或 Session 逻辑。

@@ -28,9 +28,11 @@ Better Auth
  │    ↓
  │  PostgreSQL
  │
- └─ lib/auth/providers/email/
+ └─ lib/auth/email/callbacks.ts
       ↓
-    future Email Provider
+   AuthEmailProvider
+      ↓
+   future real Email Provider
 ```
 
 External deployment values flow separately:
@@ -60,19 +62,26 @@ The server side does not import browser Client modules.
 - `components/auth/auth-client.ts` is the single `createAuthClient()` export.
   It is a Client Component module and talks to the Better Auth HTTP API.
 - Login and registration use Better Auth `signIn.email` and `signUp.email`.
-- OTP UI remains visibly disabled; it does not call an OTP endpoint.
-- The forgot-password control is a non-navigating placeholder. The legacy
-  `app/reset-password/` page is not part of the current flow.
+- The OTP UI uses the official `emailOTPClient()` methods for sending and
+  signing in. The client-side 60-second countdown is UX only; Better Auth
+  remains responsible for OTP generation, expiry, attempts, and rate limits.
+- The forgot-password control opens the real `/reset-password` flow, which
+  calls Better Auth request/reset endpoints without reading the verification
+  table in application code.
+- Settings uses the Better Auth session for profile display, `updateUser`,
+  `changePassword`, `listSessions`, and `revokeOtherSessions`.
 
 ## Better Auth backend boundary
 
 - `app/api/auth/[...all]/route.ts` only mounts
   `toNextJsHandler(auth)` and keeps the current GET/POST exports.
 - `lib/auth/server.ts` is the only Better Auth server instance. It owns
-  Email/Password, Session, Cookie, and Better Auth lifecycle behavior.
+  Email/Password, Email OTP, Email Verification and Password Reset callbacks,
+  Session, Cookie, and Better Auth lifecycle behavior.
 - `lib/auth/policies/password.ts` is a pure product rule. The official
-  `hooks.before` checks only `/sign-up/email`; Better Auth still owns password
-  length enforcement, hash, verify, credential storage, and Session.
+  `hooks.before` checks new passwords at `/sign-up/email`, `/reset-password`,
+  and `/change-password`; Better Auth still owns password length enforcement,
+  hash, verify, credential storage, and Session.
 - `lib/infrastructure/postgres.ts` only creates/exports the authentication
   `pg.Pool` using `config/database.ts`.
 - `lib/auth/providers/` contains server-side external Provider contracts. It
@@ -89,17 +98,17 @@ Authentication model:
 
 ## Password policy boundary
 
-The composition rule is shared by the registration UI and the server hook,
-but remains independent of Better Auth and the database. It checks for at
-least one uppercase letter, lowercase letter, and digit. Better Auth continues
-to enforce the 12–64 length range and all password cryptography/storage.
+The composition rule is shared by the registration, Reset Password, and Change
+Password UI and the server hook, but remains independent of Better Auth and the
+database. It checks for at least one uppercase letter, lowercase letter, and
+digit. Better Auth continues to enforce the 12–64 length range and all password
+cryptography/storage.
 
-Reset Password, Change Password, and Set Password are not connected yet. When
-any of those flows is enabled, every entry point that creates a new password
-must reuse this same policy. This stage does not add alternate endpoints or
-replace `databaseHooks` for the sign-up entry check.
+If Set Password or another future entry point creates a new password, it must
+reuse this same policy. No database hook or custom password implementation is
+used as a replacement for the official authentication entry-point hook.
 
-## Email Provider boundary
+## Email capability boundary
 
 ```text
 Better Auth callback data
@@ -115,8 +124,10 @@ future real Email Provider
 
 Better Auth creates and validates verification/reset tokens and OTP values.
 ShenZhi only maps callback data to a small email message and delegates sending
-to a provider. `lib/auth/server.ts` does not enable Email Verification, Email
-OTP, Password Reset, or an email provider in this stage.
+to a provider. The official Email OTP server/client plugins are enabled, but
+`emailDeliveryConfigured` remains false until a real provider adapter is
+selected. An unconfigured provider raises a clear configuration error and
+never logs a token, OTP, or complete authentication URL.
 
 ## Future business backend boundary
 
@@ -146,7 +157,6 @@ permission service.
 ## Schema and runtime boundary
 
 The current core schema remains the official Better Auth migration at
-`db/migrations/001_better_auth.sql`. Moving environment reads into `config/`
-does not alter the PostgreSQL adapter, schema, routes, or accepted
-Email/Password behavior. No Email Provider or pending email feature is
-activated by this architecture change.
+`db/migrations/001_better_auth.sql`. Email OTP reuses Better Auth's core
+`verification` storage and does not add a second OTP table. The current stage
+does not modify the migration or introduce a second authentication schema.

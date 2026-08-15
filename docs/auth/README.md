@@ -26,11 +26,10 @@
 
 - LoginModal 的 Email/Password 登录调用 Better Auth `signIn.email`。
 - 注册调用 Better Auth `signUp.email`，只提交 `name`、`email` 和 `password`。
-- `lib/auth/policies/password.ts` 提供前后端共用的密码组合规则；服务端只通过
-  Better Auth 官方 `hooks.before` 校验 `/sign-up/email`。
+- `lib/auth/policies/password.ts` 提供前后端共用的密码组合规则；服务端通过 Better
+  Auth 官方 `hooks.before` 校验注册、Reset Password 和 Change Password 的新密码。
 - Sidebar 使用真实 Better Auth Session 显示 `user.name` 或 email，并使用 `signOut`。
 - 已移除没有有效引用的 Mock `stores/auth.ts`。
-- 验证码登录 Tab 保留为明确 disabled 的 UI 占位，忘记密码保留为不跳转的占位按钮。
 
 ### Architecture Finalization
 
@@ -39,21 +38,26 @@
 - `lib/` 表示 Better Auth/server 侧集成、策略、Provider boundary 和基础设施。
 - `config/` 统一读取和规范化外部部署配置。
 - `services/backend/` 表示未来独立业务后端的责任边界。
-- 配置来源移动不改变当前 Better Auth 认证行为。
 
-### Stage 3A 邮件边界
+### Core User Authentication Flows
 
-- 已建立 provider-neutral 的认证邮件 Provider 契约和消息边界。
-- 已审计 Better Auth `1.6.28` 的 Email Verification、Password Reset 和 Email OTP
-  API。
-- 没有绑定真实邮件供应商，也没有启用邮件认证插件或发送回调。
+- 已启用 Better Auth `emailOTP()` server plugin 和 `emailOTPClient()` browser plugin。
+- LoginModal 的验证码发送和登录调用官方 Email OTP API；Better Auth 负责 OTP 生成、
+  存储、过期、尝试次数和服务端 rate limit，前端 60 秒倒计时仅是 UX。
+- 已配置 Email Verification callback 和 Password Reset callback；真实邮件发送仍统一
+  经过 provider-neutral `AuthEmailProvider`。
+- 已接入真实 `/reset-password` 请求/重置流程，以及 Settings 的真实昵称、email/验证
+  状态、Change Password 和基础会话管理。
+- Reset Password 和 Change Password 复用同一纯 password policy；Better Auth 继续负责
+  hash、verify 和 credential storage。
 
 ## 尚未完成
 
-- 实际 Email Provider、Email Verification、Email OTP、Password Reset。
-- Reset Password、Change Password、Set Password 的新密码策略接入；这些所有创建新密码
-  的入口未来必须复用同一个 password policy。
-- `app/reset-password/` 和 settings 中旧认证 UI 重做。
+- 实际 Email Provider、sender、credential、endpoint/region 和真实邮件投递。
+- 生产环境强制 Email Verification；当前 `emailDeliveryConfigured` 为 false，不改变
+  已验收的开发环境注册行为。
+- OTP、Verification、Reset 邮件的真实投递验收。
+- 如果未来启用 Set Password，该创建新密码入口必须复用同一个 password policy。
 - trusted origins 的正式部署值、shared rate-limit storage、CAPTCHA。
 - 未来业务后端的稳定身份协议以及 Authorization/RBAC 产品决策。
 - 生产 PostgreSQL、Web 域名和业务后端地址配置。

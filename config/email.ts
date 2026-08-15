@@ -13,3 +13,9 @@ export const emailConfig = {
   senderName: optionalEnv("AUTH_EMAIL_SENDER_NAME"),
   replyTo: optionalEnv("AUTH_EMAIL_REPLY_TO"),
 };
+
+/**
+ * A real provider adapter has not been selected or instantiated yet.
+ * Keep this false until the server can safely deliver mail.
+ */
+export const emailDeliveryConfigured = false;

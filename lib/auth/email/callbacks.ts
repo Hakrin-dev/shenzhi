@@ -1,6 +1,9 @@
 import type { User } from "better-auth";
 
-import type { AuthEmailProvider } from "@/lib/auth/providers/email";
+import {
+  requireAuthEmailProvider,
+  type AuthEmailProvider,
+} from "../providers/email";
 
 import {
   buildEmailOtpMessage,
@@ -22,7 +25,7 @@ export interface BetterAuthEmailOtpCallbackData {
 }
 
 export function createBetterAuthEmailCallbacks(
-  provider: AuthEmailProvider,
+  provider: AuthEmailProvider | undefined,
 ) {
   return {
     sendVerificationEmail: async (
@@ -30,7 +33,7 @@ export function createBetterAuthEmailCallbacks(
       _request?: Request,
     ) => {
       void _request;
-      await provider.send(
+      await requireAuthEmailProvider(provider).send(
         buildVerificationEmailMessage({ user: data.user, url: data.url }),
       );
     },
@@ -39,7 +42,7 @@ export function createBetterAuthEmailCallbacks(
       _request?: Request,
     ) => {
       void _request;
-      await provider.send(
+      await requireAuthEmailProvider(provider).send(
         buildPasswordResetEmailMessage({ user: data.user, url: data.url }),
       );
     },
@@ -48,7 +51,7 @@ export function createBetterAuthEmailCallbacks(
       _context?: unknown,
     ) => {
       void _context;
-      await provider.send(buildEmailOtpMessage(data));
+      await requireAuthEmailProvider(provider).send(buildEmailOtpMessage(data));
     },
   };
 }

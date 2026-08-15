@@ -1,6 +1,6 @@
 import type { User } from "better-auth";
 
-import type { AuthEmailMessage } from "@/lib/auth/providers/email";
+import type { AuthEmailMessage } from "../providers/email";
 
 export type AuthEmailUser = Pick<User, "email" | "name">;
 
