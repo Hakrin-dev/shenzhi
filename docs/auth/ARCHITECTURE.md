@@ -77,3 +77,42 @@ Header 注入、token exchange、proxy 或 API Gateway。
 Provider adapter 只负责将 Better Auth callback 转换为第三方服务调用，不能
 重新实现 Better Auth 的 verification、OTP、password reset token、Session、
 Cookie 或 rate-limit 逻辑。真实 Provider 尚未确定。
+
+## Stage 3A 邮件边界
+
+当前已建立 provider-neutral 的邮件准备层，但没有把它接入
+`lib/auth/server.ts`，因此不会改变 Stage 1 已验收的 sign-up/sign-in 行为。
+
+```text
+Better Auth callback data
+  ↓
+lib/auth/email/callbacks.ts
+  ↓
+lib/auth/email/messages.ts
+  ↓
+AuthEmailProvider.send(message)
+  ↓
+未来真实邮件服务
+```
+
+当前 callback 准备层覆盖三个用途：
+
+- Email Verification：Better Auth 提供 `user`、`url`、`token`。
+- Password Reset：Better Auth 提供 `user`、`url`、`token`。
+- Email OTP：Better Auth 提供 `email`、`otp`、`type`。
+
+Better Auth 负责 token/OTP 的生成、保存、过期和验证。消息 builder 只生成
+`to`、`subject`、`text` 和可选 `html`，不记录 token 或 OTP。
+
+当前尚未选择 Email Provider，因此没有真实发送实现，也没有 console、mock 或
+生产 fallback provider。
+
+## Route 与 Migration 边界
+
+本阶段不扩展 Route Handler method。Better Auth 1.6.28 的当前邮件相关 endpoint
+均使用 GET/POST，现有 `/api/auth/[...all]/route.ts` 导出保持不变。
+
+Email Verification、Password Reset 和 Email OTP 均使用 Better Auth core 的
+`verification` 存储。当前 1.6.28 的 `emailOTP()` plugin 没有额外 `schema`
+导出，且内部通过 core verification adapter 保存 OTP，因此本阶段不修改
+`db/migrations/001_better_auth.sql`。

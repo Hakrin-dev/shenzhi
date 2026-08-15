@@ -47,3 +47,25 @@ Reset、CAPTCHA、JWT、业务后端或新的认证 API。
 - LoginModal 和 Sidebar 的真实 Session 接线。
 - Mock store removal。
 - 跨语言 business identity protocol。
+
+## Stage 3A — Email Provider Boundary
+
+本阶段完成：
+
+- 审计本机 Better Auth `1.6.28` 的 Email Verification、Password Reset 和
+  Email OTP 实际 API。
+- 建立 `AuthEmailMessage` 与 `AuthEmailProvider` 契约。
+- 建立未配置 Provider 时的明确配置错误，不提供 console/mock/fallback provider。
+- 建立 Verification、Password Reset、Email OTP 的最小消息 builder。
+- 建立 Better Auth callback 到 Provider 的准备层，但没有接入 `server.ts`。
+- 确认 Email OTP 使用 core `verification` 存储，当前版本没有额外 Schema。
+- 没有绑定任何第三方邮件服务或新增环境变量。
+- 没有修改 Migration、UI 或认证行为。
+
+本阶段尚未完成：
+
+- 实际 Email Provider。
+- Email Verification activation。
+- Password Reset activation。
+- Email OTP activation。
+- 前端邮件认证 UI 接线。

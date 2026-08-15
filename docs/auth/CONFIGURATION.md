@@ -26,6 +26,23 @@
 当前不增加 trusted origins、Email Provider、OTP、CAPTCHA 或其他认证功能
 配置，以保持已验收的运行行为不变。
 
+## Stage 3A 邮件 Provider
+
+代码层只定义 provider-neutral 契约：
+
+- Provider type 或 implementation。
+- credential。
+- sender address。
+- sender name。
+- optional reply-to。
+- provider endpoint/region（如果服务需要）。
+
+真实 Provider 尚未确定，因此本轮不增加 `RESEND_*`、`SENDGRID_*`、
+`ALIYUN_*`、`SMTP_*` 或其他供应商特定环境变量，也不添加真实凭据。
+
+`lib/auth/email/callbacks.ts` 只准备 Better Auth callback 到邮件消息的映射，
+当前没有接入 `lib/auth/server.ts`。
+
 ## 官方 Migration
 
 - 文件：`db/migrations/001_better_auth.sql`
@@ -46,3 +63,11 @@
 
 未来可选能力包括 OAuth、2FA 和 Passkey。未来业务后端需要单独确定服务
 地址，例如最终约定的 `BUSINESS_BACKEND_URL`，但本轮不新增该环境变量。
+
+## Better Auth 1.6.28 邮件能力结论
+
+- Email Verification 和 Password Reset 使用 core 的 `verification` 存储。
+- Email OTP plugin 使用同一个 core `verification` 存储，当前版本没有额外
+  plugin schema。
+- 未来真正启用 plugin 前仍应使用 Better Auth 官方 CLI 对最终配置做一次
+  migration review；不得手写第二套认证 migration。
