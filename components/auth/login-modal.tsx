@@ -48,7 +48,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
   const turnstileVerifiedRef = React.useRef(false);
   const pendingEmailRef = React.useRef<string | null>(null);
+  const registerTurnstileVerifiedRef = React.useRef(false);
+  const registerPendingEmailRef = React.useRef<string | null>(null);
   const [showTurnstile, setShowTurnstile] = React.useState(false);
+  const [registerShowTurnstile, setRegisterShowTurnstile] =
+    React.useState(false);
   const [tab, setTab] = React.useState<LoginTab>("password");
   const [submission, setSubmission] = React.useState<Submission>(null);
 
@@ -71,6 +75,12 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [registerNotice, setRegisterNotice] = React.useState<string | null>(
     null,
   );
+  const [registerCode, setRegisterCode] = React.useState("");
+  const [registerCodeError, setRegisterCodeError] =
+    React.useState<string | null>(null);
+  const [registerCodeNotice, setRegisterCodeNotice] =
+    React.useState<string | null>(null);
+  const [registerCodeCooldown, setRegisterCodeCooldown] = React.useState(0);
 
   const resetForm = React.useCallback(() => {
     setTab("password");
@@ -90,6 +100,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterPasswordConfirm("");
     setRegisterError(null);
     setRegisterNotice(null);
+    setRegisterCode("");
+    setRegisterCodeError(null);
+    setRegisterCodeNotice(null);
+    setRegisterCodeCooldown(0);
+    setRegisterShowTurnstile(false);
   }, []);
 
   const handleClose = React.useCallback(() => {
@@ -117,6 +132,16 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     return () => window.clearInterval(timer);
   }, [codeCooldown]);
 
+  React.useEffect(() => {
+    if (registerCodeCooldown <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setRegisterCodeCooldown((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [registerCodeCooldown]);
+
   const handleTabChange = (value: string) => {
     if (submission) return;
     setTab(value as LoginTab);
@@ -125,6 +150,8 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setCodeNotice(null);
     setRegisterError(null);
     setRegisterNotice(null);
+    setRegisterCodeError(null);
+    setRegisterCodeNotice(null);
   };
 
   const sendOtp = React.useCallback(
@@ -196,6 +223,77 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     }
 
     await sendOtp(email);
+  };
+
+  const sendRegisterOtp = React.useCallback(
+    async (email: string, turnstileToken?: string) => {
+      setSubmission("otp-send");
+      try {
+        const { error } = await authClient.emailOtp.sendVerificationOtp(
+          { email, type: "email-verification" },
+          turnstileToken
+            ? { headers: { "x-captcha-response": turnstileToken } }
+            : {},
+        );
+
+        if (error) {
+          setRegisterCodeError(
+            getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+          );
+          return;
+        }
+
+        setRegisterCodeCooldown(60);
+        setRegisterCodeNotice("验证码已发送，请查收邮件");
+      } catch (error) {
+        setRegisterCodeError(
+          getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
+        );
+      } finally {
+        setSubmission(null);
+      }
+    },
+    [],
+  );
+
+  const handleRegisterTurnstileToken = React.useCallback(
+    async (token: string) => {
+      registerTurnstileVerifiedRef.current = true;
+      setRegisterShowTurnstile(false);
+      setRegisterCodeNotice(null);
+
+      const email = registerPendingEmailRef.current;
+      if (!email) return;
+      await sendRegisterOtp(email, token);
+    },
+    [sendRegisterOtp],
+  );
+
+  const handleRegisterTurnstileError = React.useCallback(() => {
+    setRegisterShowTurnstile(false);
+    setRegisterCodeError("人机验证失败，请重试");
+  }, []);
+
+  const handleSendRegisterOtp = async () => {
+    setRegisterCodeError(null);
+    setRegisterCodeNotice(null);
+
+    const email = normalizeEmail(registerEmail);
+    if (!email) {
+      setRegisterCodeError("请输入邮箱");
+      return;
+    }
+    if (registerCodeCooldown > 0) return;
+
+    // 首次发送需要先完成人机验证;通过后本地与服务端都会记住。
+    if (TURNSTILE_SITE_KEY && !registerTurnstileVerifiedRef.current) {
+      registerPendingEmailRef.current = email;
+      setRegisterShowTurnstile(true);
+      setRegisterCodeNotice("请先完成上方人机验证");
+      return;
+    }
+
+    await sendRegisterOtp(email);
   };
 
   const handleOtpLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -526,6 +624,56 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 value={registerEmail}
                 onChange={(event) => setRegisterEmail(event.target.value)}
               />
+              {registerShowTurnstile && TURNSTILE_SITE_KEY && (
+                <CloudflareTurnstile
+                  siteKey={TURNSTILE_SITE_KEY}
+                  onToken={handleRegisterTurnstileToken}
+                  onError={handleRegisterTurnstileError}
+                />
+              )}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-ink-2">
+                  验证码
+                </span>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="请输入6位验证码"
+                    className="flex-1"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={registerCode}
+                    onChange={(event) =>
+                      setRegisterCode(event.target.value.replace(/\D/g, ""))
+                    }
+                    disabled={Boolean(submission)}
+                  />
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="shrink-0"
+                    disabled={Boolean(submission) || registerCodeCooldown > 0}
+                    onClick={handleSendRegisterOtp}
+                    aria-busy={submission === "otp-send"}
+                  >
+                    {submission === "otp-send"
+                      ? "发送中..."
+                      : registerCodeCooldown > 0
+                        ? `${registerCodeCooldown}s后重发`
+                        : "获取验证码"}
+                  </Button>
+                </div>
+              </div>
+              {registerCodeNotice && (
+                <p className="-mt-2 text-xs leading-5 text-muted" role="status">
+                  {registerCodeNotice}
+                </p>
+              )}
+              {registerCodeError && (
+                <p className="-mt-2 text-[13px] text-danger" role="alert">
+                  {registerCodeError}
+                </p>
+              )}
               <Field
                 label="密码"
                 type="password"
