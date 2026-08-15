@@ -98,7 +98,7 @@ frontend_v1/
 ├── docker-compose.yml        # ECS 部署用(CI 每次自动同步到 /opt/shenzhi)
 ├── .github/workflows/        # deploy.yml:push → 构建 → 推 GHCR → Trivy 扫描 → SSH 部署
 ├── deploy/README.md          # 部署运维文档
-├── .env.example              # 环境变量占位(接后端时填 NEXT_PUBLIC_API_URL 等)
+├── .env.example              # Better Auth、数据库与未来业务后端配置占位
 ├── demo.html                 # 单文件原型复现(双击即开,引用 ./brand/ 图)
 ├── shot_pages.py             # 全页面截图验证(Edge headless)
 ├── shot_themes.py            # 日/夜模式对比截图

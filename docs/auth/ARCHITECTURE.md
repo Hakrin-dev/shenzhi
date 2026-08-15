@@ -1,100 +1,105 @@
 # Authentication Architecture
 
-## 唯一认证内核
+## Ownership boundary
 
-Better Auth `1.6.28` 是 ShenZhi 唯一的认证内核。产品代码不维护自建
-User、Credential、Session、JWT、Cookie、password hash 或 OTP 认证实现。
-
-## 当前请求链路
+ShenZhi keeps Better Auth `1.6.28` as its only authentication kernel. The
+repository separates the browser UI, the Next.js/Better Auth server boundary,
+the future business backend, and deployment configuration:
 
 ```text
-LoginModal / Sidebar
-  ↓
-lib/auth/client.ts
-  ↓
+User
+ ↓
+components/
+  Frontend UI
+ ↓
+components/auth/auth-client.ts
+  Browser Better Auth Client
+ ↓
 /api/auth/*
-  ↓
+ ↓
 app/api/auth/[...all]/route.ts
-  ↓
+  HTTP boundary only
+ ↓
 lib/auth/server.ts
-  ↓
+  Better Auth server instance
+ ↓
 Better Auth
-  ↓
-lib/infrastructure/postgres.ts
-  ↓
-PostgreSQL
+ ├─ lib/infrastructure/postgres.ts
+ │    ↓
+ │  PostgreSQL
+ │
+ └─ lib/auth/providers/email/
+      ↓
+    future Email Provider
 ```
 
-LoginModal 的密码登录和注册已经通过上述 Client 调用 Better Auth；Sidebar 的身份
-显示和退出也由上述 Client 的真实 Session 驱动。验证码登录 Tab 目前只是明确 disabled
-的 UI 占位，未调用 OTP endpoint。`app/reset-password/` 和 settings 中的旧认证表单
-仍属于待替换的 legacy/mock UI，不是认证内核。
-
-## 认证模型
-
-- `user.email` 是唯一登录标识。
-- `user.name` 是展示名称。
-- 没有 username plugin，也没有 username credential。
-- 没有手机号、短信或其他登录标识。
-- `user`、`account`、`session`、`verification` 表由 Better Auth 官方 schema 管理。
-
-## 模块职责
-
-### Frontend
-
-`components/auth/` 负责认证 UI。当前 UI 只能调用
-`lib/auth/client.ts` 暴露的 Better Auth Client，不直接访问数据库或服务端
-Better Auth instance。
-
-### Auth / Better Auth
-
-- `lib/auth/server.ts`：唯一 Better Auth server instance。
-- `lib/auth/server.ts` 的 `hooks.before` 只匹配 `/sign-up/email`，调用纯密码策略做
-  产品准入校验。
-- `lib/auth/client.ts`：浏览器端唯一 Better Auth Client。
-- `app/api/auth/[...all]/route.ts`：只负责 Next.js HTTP 到 Better Auth Handler 的挂载。
-- `lib/infrastructure/postgres.ts`：只创建和导出当前认证使用的 PostgreSQL Pool。
-- `lib/auth/providers/`：未来外部 Provider callback adapter。
-
-### Password policy
-
-`lib/auth/policies/password.ts` 是不依赖 Better Auth、数据库或 UI 文案的纯规则模块。
-其中的组合规则同时用于注册表单和服务端 `hooks.before`；12–64 位长度继续由 Better
-Auth 配置负责。Better Auth 还负责默认 password hash、verify、credential storage
-和 Session。
-
-当前 hook 只覆盖 `/sign-up/email`。未来 Reset Password、Change Password、Set Password
-等所有创建新密码的入口，都必须复用同一个 policy；本轮不创建额外 endpoint。
-
-### Future Business Backend
+External deployment values flow separately:
 
 ```text
-Authenticated identity
-  ↓
-language-neutral HTTP / JSON / signed identity contract
-  ↓
-services/backend/
-  ↓
-future business service
+.env / deployment secrets
+        ↓
+      config/
+       ├─ auth.ts
+       ├─ database.ts
+       ├─ email.ts
+       └─ backend.ts
+        ↓
+    lib / services
 ```
 
-未来业务后端可以使用 Python、Go、Java、TypeScript 或其他技术栈。
-业务后端不能直接读取 Better Auth 的 `user`、`account`、`session`、
-`verification` 表，也不能依赖 `pg.Pool` 或 `lib/auth/server.ts`。
+`components/` never imports `lib/auth/server.ts`, PostgreSQL infrastructure,
+or server-side configuration. The only shared exception is the pure password
+policy module, which has no secrets, database, Better Auth, or UI dependencies.
+The server side does not import browser Client modules.
 
-最终身份协议由业务后端负责人和认证负责人共同确认；本阶段不实现 JWT、
-Header 注入、token exchange、proxy 或 API Gateway。
+## Frontend boundary
 
-## Provider 边界
+- `components/auth/login-modal.tsx` owns the current LoginModal UI.
+- `components/layout/app-sidebar.tsx` owns Session-driven identity display and
+  logout UI.
+- `components/auth/auth-client.ts` is the single `createAuthClient()` export.
+  It is a Client Component module and talks to the Better Auth HTTP API.
+- Login and registration use Better Auth `signIn.email` and `signUp.email`.
+- OTP UI remains visibly disabled; it does not call an OTP endpoint.
+- The forgot-password control is a non-navigating placeholder. The legacy
+  `app/reset-password/` page is not part of the current flow.
 
-Provider adapter 只负责将 Better Auth callback 转换为第三方服务调用，不能
-重新实现 Better Auth 的 verification、OTP、password reset token、Session、
-Cookie 或 rate-limit 逻辑。真实 Provider 尚未确定。
+## Better Auth backend boundary
 
-## Stage 3A 邮件边界
+- `app/api/auth/[...all]/route.ts` only mounts
+  `toNextJsHandler(auth)` and keeps the current GET/POST exports.
+- `lib/auth/server.ts` is the only Better Auth server instance. It owns
+  Email/Password, Session, Cookie, and Better Auth lifecycle behavior.
+- `lib/auth/policies/password.ts` is a pure product rule. The official
+  `hooks.before` checks only `/sign-up/email`; Better Auth still owns password
+  length enforcement, hash, verify, credential storage, and Session.
+- `lib/infrastructure/postgres.ts` only creates/exports the authentication
+  `pg.Pool` using `config/database.ts`.
+- `lib/auth/providers/` contains server-side external Provider contracts. It
+  does not contain token, OTP, reset, verification, or Session logic.
 
-当前已建立 provider-neutral 的邮件准备层，但没有把它接入
-`lib/auth/server.ts`，因此不会改变 Stage 1 已验收的 sign-up/sign-in 行为。
+Authentication model:
+
+- `user.email` is the only login identifier.
+- `user.name` is a display name.
+- There is no username plugin, username credential, phone login, or SMS flow.
+- Better Auth owns the `user`, `account`, `session`, and `verification` tables.
+- No second auth API, repository, hash implementation, Session store, or
+  migration exists.
+
+## Password policy boundary
+
+The composition rule is shared by the registration UI and the server hook,
+but remains independent of Better Auth and the database. It checks for at
+least one uppercase letter, lowercase letter, and digit. Better Auth continues
+to enforce the 12–64 length range and all password cryptography/storage.
+
+Reset Password, Change Password, and Set Password are not connected yet. When
+any of those flows is enabled, every entry point that creates a new password
+must reuse this same policy. This stage does not add alternate endpoints or
+replace `databaseHooks` for the sign-up entry check.
+
+## Email Provider boundary
 
 ```text
 Better Auth callback data
@@ -105,27 +110,43 @@ lib/auth/email/messages.ts
   ↓
 AuthEmailProvider.send(message)
   ↓
-未来真实邮件服务
+future real Email Provider
 ```
 
-当前 callback 准备层覆盖三个用途：
+Better Auth creates and validates verification/reset tokens and OTP values.
+ShenZhi only maps callback data to a small email message and delegates sending
+to a provider. `lib/auth/server.ts` does not enable Email Verification, Email
+OTP, Password Reset, or an email provider in this stage.
 
-- Email Verification：Better Auth 提供 `user`、`url`、`token`。
-- Password Reset：Better Auth 提供 `user`、`url`、`token`。
-- Email OTP：Better Auth 提供 `email`、`otp`、`type`。
+## Future business backend boundary
 
-Better Auth 负责 token/OTP 的生成、保存、过期和验证。消息 builder 只生成
-`to`、`subject`、`text` 和可选 `html`，不记录 token 或 OTP。
+```text
+Authenticated identity
+  ↓
+stable language-neutral identity contract
+  ↓
+services/backend/ adapter boundary
+  ↓
+BUSINESS_BACKEND_URL
+  ↓
+Python / Go / Java / TypeScript business service
+```
 
-当前尚未选择 Email Provider，因此没有真实发送实现，也没有 console、mock 或
-生产 fallback provider。
+`services/backend/` currently contains responsibility documentation only; it
+does not implement a proxy, API, JWT, token exchange, or identity protocol.
+The future business service must not read Better Auth `user`, `account`,
+`session`, or `verification` tables, and must not depend on `pg.Pool` or
+`lib/auth/server.ts`. The final protocol is a joint decision of the
+authentication and business-backend owners.
 
-## Route 与 Migration 边界
+Authentication and Authorization/RBAC remain separate concerns. RBAC is a
+future product decision; this stage adds no role table, admin plugin, or
+permission service.
 
-本阶段不扩展 Route Handler method。Better Auth 1.6.28 的当前邮件相关 endpoint
-均使用 GET/POST，现有 `/api/auth/[...all]/route.ts` 导出保持不变。
+## Schema and runtime boundary
 
-Email Verification、Password Reset 和 Email OTP 均使用 Better Auth core 的
-`verification` 存储。当前 1.6.28 的 `emailOTP()` plugin 没有额外 `schema`
-导出，且内部通过 core verification adapter 保存 OTP，因此本阶段不修改
-`db/migrations/001_better_auth.sql`。
+The current core schema remains the official Better Auth migration at
+`db/migrations/001_better_auth.sql`. Moving environment reads into `config/`
+does not alter the PostgreSQL adapter, schema, routes, or accepted
+Email/Password behavior. No Email Provider or pending email feature is
+activated by this architecture change.

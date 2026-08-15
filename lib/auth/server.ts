@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
+import { authConfig } from "@/config/auth";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -9,6 +10,7 @@ import {
 import { postgresPool } from "@/lib/infrastructure/postgres";
 
 export const auth = betterAuth({
+  ...authConfig,
   database: postgresPool,
   hooks: {
     before: createAuthMiddleware(async (ctx) => {

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { X } from "lucide-react";
-import { authClient } from "@/lib/auth/client";
+import { authClient } from "@/components/auth/auth-client";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
