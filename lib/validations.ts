@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** 搜索表单校验 —— React Hook Form 配合 zodResolver 使用 */
+/** 搜索表单校验 schema,待搜索表单组件接入时复用 */
 export const searchSchema = z.object({
   query: z
     .string()

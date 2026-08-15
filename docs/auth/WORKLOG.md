@@ -71,9 +71,8 @@ password hash、JWT、Session、username login 或 phone/SMS。
   plugin；LoginModal 的验证码发送和登录调用官方 API。
 - 继续复用 provider-neutral Email Provider callback；Provider 未配置时只返回明确配置
   错误，不输出 OTP、token、reset URL 或 verification URL。
-- 配置 Email Verification callback；由于 `emailDeliveryConfigured` 为 false，当前不强制
-  注册邮箱验证，保持已验收的开发环境注册行为；现在该行为由
-  `AUTH_REQUIRE_EMAIL_VERIFICATION=false` 显式控制。
+- 配置 Email Verification callback；本地未配置邮件 Provider 时保持不强制注册邮箱验证，
+  现在该行为由 `AUTH_REQUIRE_EMAIL_VERIFICATION=false` 显式控制，生产环境可通过配置开启。
 - 配置 Password Reset callback、`revokeSessionsOnPasswordReset`，并将真实
   `/reset-password` 页面接入 Better Auth request/reset API。
 - 将同一纯 password policy 复用到注册、Reset Password 和 Change Password 的新密码入口；

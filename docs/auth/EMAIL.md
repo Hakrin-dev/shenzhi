@@ -96,6 +96,8 @@ sign-in | email-verification | forget-password | change-email
 - `expiresIn`: 300 秒，即 5 分钟。
 - `allowedAttempts`: 3。
 - Email OTP endpoint rate limit：60 秒窗口、最多 3 次。
+- `storeOTP`: `hashed`；Better Auth 的核心 `verification` 表只保存 OTP hash 和尝试次数，
+  不保存活动 OTP 明文。
 - Better Auth 生成、存储、过期、限制尝试次数并验证 OTP；LoginModal 的 60 秒倒计时
   只是 UX。
 - LoginModal 调用 `emailOtp.sendVerificationOtp({ email, type: "sign-in" })`，登录

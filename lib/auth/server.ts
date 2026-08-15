@@ -8,6 +8,7 @@ import {
 } from "@/config/auth";
 import { emailDeliveryConfigured } from "@/config/email";
 import { createBetterAuthEmailCallbacks } from "@/lib/auth/email/callbacks";
+import { EMAIL_OTP_OPTIONS } from "@/lib/auth/email/options";
 import { requiresEmailDelivery } from "@/lib/auth/email/requirements";
 import {
   PASSWORD_MAX_LENGTH,
@@ -79,13 +80,7 @@ export const auth = betterAuth({
   },
   plugins: [
     emailOTP({
-      otpLength: 6,
-      expiresIn: 300,
-      allowedAttempts: 3,
-      rateLimit: {
-        window: 60,
-        max: 3,
-      },
+      ...EMAIL_OTP_OPTIONS,
       sendVerificationOTP: emailCallbacks.sendVerificationOTP,
     }),
   ],

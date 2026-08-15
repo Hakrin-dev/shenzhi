@@ -92,7 +92,8 @@ Auth 写入用户前返回 `EMAIL_PROVIDER_NOT_CONFIGURED`。Provider 不会输�
   `emailAndPassword.requireEmailVerification`、`emailAndPassword.sendResetPassword`、
   `emailOTP()` 以及浏览器 `emailOTPClient()`：均使用 Better Auth 官方 API；邮件发送
   由 Provider abstraction 承接。
-- Email OTP：6 位、300 秒有效、3 次尝试，发送 rate limit 为 60 秒窗口最多 3 次。
+- Email OTP：6 位、300 秒有效、3 次尝试，发送 rate limit 为 60 秒窗口最多 3 次；OTP
+  在 Better Auth 的 `verification` 表中以 hash 保存。
 - Reset Password：`revokeSessionsOnPasswordReset: true`。
 
 Email Verification 强制注册默认关闭，由 `AUTH_REQUIRE_EMAIL_VERIFICATION` 控制。

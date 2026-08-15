@@ -70,11 +70,11 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 | 组件 | 手写 shadcn 风格 UI 原语(cva 变体) | ✅ |
 | 服务端数据 | TanStack Query v5(含 placeholderData) | ✅(mock 数据) |
 | 客户端状态 | Zustand v5 + persist(点赞/收藏/关注) | ✅ |
-| 表单 | React Hook Form + Zod(搜索校验) | ✅ |
+| 表单 | Zod(搜索校验 schema,当前尚未接入表单组件) | 🟡 |
 | 动效 | Framer Motion(入场动画) | ✅ |
 | 图标 | Lucide React | ✅ |
 | 包管理 | pnpm 11 | ✅ |
-| 编辑器 / 可视化 / 认证 / ORM / 测试 | TipTap、D3.js、NextAuth、Prisma/Drizzle、Vitest + Playwright | 📋 规划选型,待接入真实数据层时引入 |
+| 编辑器 / 可视化 / 认证 / ORM / 测试 | TipTap、D3.js、Better Auth 1.6.28 + PostgreSQL(pg)、Node.js `node:test`(认证/配置) | 🟡 认证已接入;业务数据层与浏览器测试仍待接入 |
 
 ## 目录结构(实际)
 
