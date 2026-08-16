@@ -305,3 +305,13 @@ export interface DRHistoryItem {
   sources: number;
   time: string;
 }
+
+/** 首页统一搜索框入口：普通搜索 / 问 AI */
+export type ComposerEntryMode = "search" | "ai";
+
+export type {
+  ChatAttachment,
+  ChatModelId,
+  ChatReplyMode,
+  ComposerSubmitPayload,
+} from "./ai-search";

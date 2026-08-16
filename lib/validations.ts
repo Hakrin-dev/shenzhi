@@ -6,7 +6,13 @@ export const searchSchema = z.object({
     .string()
     .trim()
     .min(1, "请输入搜索内容")
-    .max(200, "搜索内容过长"),
+    .max(2000, "请输入 2000 字以内的问题"),
 });
+
+export const questionSchema = z
+  .string()
+  .trim()
+  .min(1, "请输入 2000 字以内的问题")
+  .max(2000, "请输入 2000 字以内的问题");
 
 export type SearchFormValues = z.infer<typeof searchSchema>;
