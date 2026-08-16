@@ -11,7 +11,15 @@ import type { FeedPaper } from "@/types";
 const VENUE_VARIANT = { violet: "violet", amber: "amber", green: "green" } as const;
 
 /** 论文卡片 —— 对应主发现页 SVG 的 Feed 卡片 */
-export function PaperCard({ paper, index }: { paper: FeedPaper; index: number }) {
+export function PaperCard({
+  paper,
+  index,
+  layout = "feed",
+}: {
+  paper: FeedPaper;
+  index: number;
+  layout?: "feed" | "explore";
+}) {
   const { likedPapers, bookmarkedPapers, toggleLike, toggleBookmark } =
     useUserPreferences();
   const liked = !!likedPapers[paper.id];
@@ -88,26 +96,29 @@ export function PaperCard({ paper, index }: { paper: FeedPaper; index: number })
                 <Bookmark className="size-4" fill={bookmarked ? "currentColor" : "none"} />
                 收藏
               </Button>
-              <Link href={`/papers/${paper.id}`}>
-                <Button size="sm" className="h-9 rounded-lg px-4 text-[13px]">
-                  立即阅读
-                  <ArrowRight className="size-3.5" />
-                </Button>
-              </Link>
+              {layout === "feed" && (
+                <Link href={`/papers/${paper.id}`}>
+                  <Button size="sm" className="h-9 rounded-lg px-4 text-[13px]">
+                    立即阅读
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 右侧缩略图 */}
-        <div className="relative hidden w-[200px] shrink-0 md:block">
-          <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-full bg-card px-2.5 py-1 text-xs text-muted shadow-card">
-            <TrendingUp className="size-3 text-primary" />
-            引用 {paper.citations}
+        {layout === "feed" && (
+          <div className="relative hidden w-[200px] shrink-0 md:block">
+            <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-full bg-card px-2.5 py-1 text-xs text-muted shadow-card">
+              <TrendingUp className="size-3 text-primary" />
+              引用 {paper.citations}
+            </div>
+            <div className="flex h-full min-h-[128px] items-center justify-center rounded-xl bg-chip text-sm text-faint">
+              {paper.thumb}
+            </div>
           </div>
-          <div className="flex h-full min-h-[128px] items-center justify-center rounded-xl bg-chip text-sm text-faint">
-            {paper.thumb}
-          </div>
-        </div>
+        )}
       </div>
     </motion.article>
   );
