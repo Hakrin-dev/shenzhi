@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { QueryProvider } from "@/providers/query-provider";
-import "./globals.css";
+import "@/styles/globals.css";
 
 export const metadata: Metadata = {
   title: "深知 ShenZhi · Research OS",

@@ -4,10 +4,10 @@ import subprocess, os, sys, io, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 edge = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 node = r'C:\Program Files\nodejs\node.exe'
-cdp_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'shot-cdp.mjs')
+cdp_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'shot-cdp.mjs')
 tmp = os.environ['TEMP']
 base = 'http://localhost:3100'
-# 元组:(路径, 输出[, 等待文本]);带等待文本的走 CDP(scripts/shot-cdp.mjs),其余 Edge --screenshot
+# 元组:(路径, 输出[, 等待文本]);带等待文本的走 CDP(shot-cdp.mjs),其余 Edge --screenshot
 shots = [
     ('/?theme=light', 'theme-home-day.png'),
     ('/?theme=dark', 'theme-home-night.png'),

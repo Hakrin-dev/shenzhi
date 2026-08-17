@@ -30,6 +30,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./infra/docker/web.Dockerfile
           push: true
           tags: |
             ghcr.io/hakrin-dev/shenzhi-frontend:latest

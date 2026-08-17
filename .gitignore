@@ -1,14 +1,19 @@
 # dependencies
 /node_modules
+/apps/web/node_modules
+/.pnpm-store/
 /.pnp
 .pnp.*
 
 # next.js
 /.next/
+/apps/web/.next/
 /out/
+/apps/web/out/
 
 # production
 /build
+/apps/web/build
 
 # misc
 .DS_Store

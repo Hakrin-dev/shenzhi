@@ -3,11 +3,11 @@ import subprocess, os, sys, io, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 edge = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 node = r'C:\Program Files\nodejs\node.exe'
-cdp_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'shot-cdp.mjs')
+cdp_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'shot-cdp.mjs')
 tmp = os.environ['TEMP']
 base = 'http://localhost:3100'
 # 元组:(路径, 输出, 宽, 高[, virtual-time 预算[, 等待文本]])
-# 带「等待文本」的页面走 scripts/shot-cdp.mjs(CDP 真实时间等待,适合 effect 驱动的视图);
+# 带「等待文本」的页面走 shot-cdp.mjs(CDP 真实时间等待,适合 effect 驱动的视图);
 # 其余走 Edge --screenshot + virtual-time-budget(适合 SSR 直出页)。
 pages = [
     ('/', 'f_home.png', 1440, 1500),
@@ -38,4 +38,3 @@ for p in pages:
     lines = ((r.stdout or '') + (r.stderr or '')).strip().splitlines()
     print(out, lines[-1] if lines else 'ok')
     time.sleep(1)
-
