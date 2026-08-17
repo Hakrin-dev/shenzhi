@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useThemeStore, type ThemeMode } from "@/stores/theme";
 import { cn } from "@/lib/utils";
-import { McpIcon } from "@/app/settings/settings-tabs";
+import { McpIcon } from "@/features/settings/components/settings-tabs";
 import { useSidebarStore } from "@/stores/sidebar";
 
 /** 设置选项,自上而下与设置页 Tab 顺序一致,点击跳转对应 Tab */

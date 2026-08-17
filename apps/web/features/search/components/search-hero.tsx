@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ComposerShell } from "@/components/features/agent/composer";
+import { ComposerShell } from "@/features/agents/components/composer";
 import { getSearchConfig } from "@/lib/api/search";
 import { askQueryString, saveAskDraft } from "@/lib/ask/draft";
 import type { ComposerEntryMode } from "@/types";

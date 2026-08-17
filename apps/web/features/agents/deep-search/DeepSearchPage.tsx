@@ -1,18 +1,18 @@
 import { Share, Star } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
-import { ResearchNav } from "@/components/features/agent/research-nav";
-import { AnswerCard } from "@/components/features/agent/answer-card";
-import { ReferenceGrid } from "@/components/features/agent/reference-grid";
-import { FollowUps } from "@/components/features/agent/follow-ups";
-import { ChatInput } from "@/components/features/agent/chat-input";
+import { ChatInput } from "@/features/agents/components/chat-input";
+import { ResearchNav } from "@/features/agents/deep-search/components/research-nav";
+import { AnswerCard } from "@/features/agents/deep-search/components/answer-card";
+import { ReferenceGrid } from "@/features/agents/deep-search/components/reference-grid";
+import { FollowUps } from "@/features/agents/deep-search/components/follow-ups";
 import { agentSession } from "@/lib/data/agent";
 
 /**
  * 深度搜索结果页 `/agents/deep-search` —— 对应「深知-AI研究助手.svg」,
  * 发现页「深度搜索」按钮的跳转目标(由 /agents/deep-research 迁移而来)
  */
-export default function DeepSearchPage() {
+export function DeepSearchPage() {
   return (
     <AppShell>
       <div className="mx-auto flex max-w-[1180px] items-start gap-8 px-8 py-6">

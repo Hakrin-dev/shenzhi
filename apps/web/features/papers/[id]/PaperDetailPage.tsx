@@ -1,21 +1,16 @@
-import { PaperTopbar } from "@/components/features/paper/paper-topbar";
-import { PaperLeftSidebar } from "@/components/features/paper/paper-left-sidebar";
-import { PaperRightPanel } from "@/components/features/paper/right-panel";
-import { PaperZoom } from "@/components/features/paper/paper-zoom";
+import { PaperTopbar } from "@/features/papers/[id]/components/paper-topbar";
+import { PaperLeftSidebar } from "@/features/papers/[id]/components/paper-left-sidebar";
+import { PaperRightPanel } from "@/features/papers/[id]/components/right-panel";
+import { PaperZoom } from "@/features/papers/[id]/components/paper-zoom";
 import { paperDetail } from "@/lib/data/paper-detail";
 
 /**
  * 论文详情页 `/papers/[id]` —— 对应「深知-论文详情页.svg」
  * 沉浸式阅读器布局(不使用全局侧边栏)
  */
-export default async function PaperDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+export function PaperDetailPage({ paperId }: { paperId: string }) {
   // 原型阶段:任意 id 均展示 RDT-1B 详情(与 prototype_v1.html 行为一致)
-  const paper = { ...paperDetail, id: id || paperDetail.id };
+  const paper = { ...paperDetail, id: paperId || paperDetail.id };
 
   return (
     <div className="flex h-screen flex-col bg-background">

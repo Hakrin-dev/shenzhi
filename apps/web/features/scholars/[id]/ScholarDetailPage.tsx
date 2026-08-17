@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
-import { FollowButton } from "@/components/features/scholar/follow-button";
-import { CitationChart } from "@/components/features/scholar/citation-chart";
-import { PublicationList } from "@/components/features/scholar/publication-list";
+import { FollowButton } from "@/features/scholars/components/follow-button";
+import { CitationChart } from "@/features/scholars/[id]/components/citation-chart";
+import { PublicationList } from "@/features/scholars/[id]/components/publication-list";
 import { scholarDetail, scholars } from "@/lib/data/scholars";
 import { cn } from "@/lib/utils";
 
@@ -21,13 +21,8 @@ const LINK_ICONS = [Globe, Globe, Github, Mail];
  * 学者详情页 `/scholars/[id]` —— 对应「深知-学者详情页.svg」
  * (原型阶段均以何恺明主页为示例数据)
  */
-export default async function ScholarDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const scholar = scholars.find((s) => s.id === id) ?? scholars[0];
+export function ScholarDetailPage({ scholarId }: { scholarId: string }) {
+  const scholar = scholars.find((s) => s.id === scholarId) ?? scholars[0];
   const detail = scholarDetail;
 
   return (

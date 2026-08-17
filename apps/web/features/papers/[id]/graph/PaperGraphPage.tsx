@@ -1,21 +1,15 @@
-import { GraphPageLayout } from "@/components/features/graph/graph-page-layout";
+import { GraphPageLayout } from "@/components/graph/graph-page-layout";
 import { publicGraph } from "@/lib/data/knowledge-graph";
 import { cn } from "@/lib/utils";
 
 /** 公域知识图谱 `/papers/[id]/graph` —— 沉浸式(不使用全局侧边栏) */
-export default async function PaperGraphPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-
+export function PaperGraphPage({ paperId }: { paperId: string }) {
   return (
     <div className="flex h-screen flex-col bg-background">
       <GraphPageLayout
         graph={publicGraph}
         mode="concentric"
-        backHref={`/papers/${id}`}
+        backHref={`/papers/${paperId}`}
         backLabel="返回阅读器"
         title={publicGraph.origin.title}
         headerExtra={

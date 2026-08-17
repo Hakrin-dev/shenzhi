@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { PaperToc } from "@/components/features/paper/paper-toc";
-import { PageThumbnails } from "@/components/features/paper/page-thumbnails";
+import { PaperToc } from "./paper-toc";
+import { PageThumbnails } from "./page-thumbnails";
 import { cn } from "@/lib/utils";
 import type { PaperDetail } from "@/types";
 

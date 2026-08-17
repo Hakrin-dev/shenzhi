@@ -31,13 +31,8 @@ function MilestoneIcon({ status }: { status: MilestoneStatus }) {
  * 科研项目详情页 `/projects/[id]` —— 演示态项目管理页
  * 项目由用户建立;样例「深知」数据取自仓库 README(lib/data/projects.ts)
  */
-export default async function ProjectPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const project = getProject(id);
+export function ProjectDetailPage({ projectId }: { projectId: string }) {
+  const project = getProject(projectId);
   const doneCount = project.milestones.filter((m) => m.status === "done").length;
 
   return (

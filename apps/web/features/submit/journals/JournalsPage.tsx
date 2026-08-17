@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { SubmitBrowser } from "@/components/features/submit/submit-browser";
+import { SubmitBrowser } from "@/features/submit/components/submit-browser";
 
 /** 投稿 · 期刊 `/submit/journals` */
-export default function SubmitJournalsPage() {
+export function JournalsPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-[1180px] px-8 py-6">

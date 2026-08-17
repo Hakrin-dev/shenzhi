@@ -10,7 +10,7 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
 } from "lucide-react";
-import { ComposerShell } from "./composer";
+import { ComposerShell } from "@/features/agents/components/composer";
 import { getSearchConfig } from "@/lib/api/search";
 import { readAskDraft } from "@/lib/ask/draft";
 import { useAskSession } from "@/lib/ask/use-ask-session";

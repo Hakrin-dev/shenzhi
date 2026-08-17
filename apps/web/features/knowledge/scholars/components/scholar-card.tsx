@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { FollowButton } from "./follow-button";
+import { FollowButton } from "@/features/scholars/components/follow-button";
 import type { Scholar } from "@/types";
 
 /** 学者卡片 —— 对应学者画像页 SVG 的双列卡片 */
