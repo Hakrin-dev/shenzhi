@@ -65,23 +65,28 @@ export function AskStage({
     const mdl = initialModel ?? draft.model;
     const web = initialWebSearch ?? draft.web_search;
     const files = draft.attachments;
-    setReplyMode(mode);
-    setModel(mdl);
-    setWebSearch(web);
-    setAttachments(files);
-
     const ac = new AbortController();
-    void send(
-      {
-        question: q,
-        mode,
-        model: mdl,
-        web_search: web,
-        attachments: files,
-      },
-      ac.signal,
-    );
-    return () => ac.abort();
+    const timer = window.setTimeout(() => {
+      setReplyMode(mode);
+      setModel(mdl);
+      setWebSearch(web);
+      setAttachments(files);
+      void send(
+        {
+          question: q,
+          mode,
+          model: mdl,
+          web_search: web,
+          attachments: files,
+        },
+        ac.signal,
+      );
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
     // 首问只在进入页面时发一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

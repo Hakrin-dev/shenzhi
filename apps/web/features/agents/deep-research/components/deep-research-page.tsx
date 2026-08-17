@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { drReport } from "@/lib/data/deep-research";
 import { DeepResearchHome } from "./deep-research-home";
 import { ResearchWorkbench } from "./research-workbench";
@@ -12,41 +12,57 @@ import { ResearchWorkbench } from "./research-workbench";
  *   ?autostart=1   进入 session 从头播放(演示)
  *   ?q=xxx         预填问题并进入 session 播放;空串则停留 home
  */
+type PageState = {
+  view: "home" | "session";
+  question: string;
+  instant: boolean;
+};
+
+const DEFAULT_PAGE_STATE: PageState = {
+  view: "home",
+  question: drReport.question,
+  instant: false,
+};
+
+function getPageState(search: string): PageState {
+  const params = new URLSearchParams(search);
+  if (params.get("mode") === "instant") {
+    return { ...DEFAULT_PAGE_STATE, view: "session", instant: true };
+  }
+  if (params.get("autostart") === "1") {
+    return { ...DEFAULT_PAGE_STATE, view: "session" };
+  }
+  const q = params.get("q");
+  if (q?.trim()) {
+    return { view: "session", question: q, instant: false };
+  }
+  return DEFAULT_PAGE_STATE;
+}
+
 export function DeepResearchPageClient() {
-  const [view, setView] = useState<"home" | "session">("home");
-  const [question, setQuestion] = useState(drReport.question);
-  const [instant, setInstant] = useState(false);
+  const search = useSyncExternalStore(
+    () => () => undefined,
+    () => window.location.search,
+    () => "",
+  );
+  const urlState = getPageState(search);
+  const [stateOverride, setStateOverride] = useState<PageState | null>(null);
+  const { view, question, instant } = stateOverride ?? urlState;
   /** 每次进入 session 自增:重挂载工作台,运行从头播放 */
   const [sessionKey, setSessionKey] = useState(0);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("mode") === "instant") {
-      setInstant(true);
-      setView("session");
-    } else if (params.get("autostart") === "1") {
-      setView("session");
-    } else {
-      const q = params.get("q");
-      if (q?.trim()) {
-        setQuestion(q);
-        setView("session");
-      }
-    }
-  }, []);
-
   const startResearch = (q: string) => {
-    setQuestion(q);
-    setInstant(false);
+    setStateOverride({ view: "session", question: q, instant: false });
     setSessionKey((k) => k + 1);
-    setView("session");
   };
 
   const openHistory = () => {
-    setQuestion(drReport.question);
-    setInstant(true);
+    setStateOverride({
+      view: "session",
+      question: drReport.question,
+      instant: true,
+    });
     setSessionKey((k) => k + 1);
-    setView("session");
   };
 
   if (view === "home") {
@@ -60,8 +76,7 @@ export function DeepResearchPageClient() {
       question={question}
       instant={instant}
       onBack={() => {
-        setInstant(false);
-        setView("home");
+        setStateOverride({ view: "home", question, instant: false });
       }}
     />
   );

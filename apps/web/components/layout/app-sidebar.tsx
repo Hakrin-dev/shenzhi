@@ -22,8 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 import { SITE } from "@/lib/constants";
 import { projects } from "@/lib/data/projects";
+import { authClient } from "@/components/auth/auth-client";
 import { useSidebarStore } from "@/stores/sidebar";
-import { useAuthStore } from "@/stores/auth";
 import { Logo } from "./logo";
 import { SettingsMenu } from "./settings-menu";
 import { LoginModal } from "@/components/auth/login-modal";
@@ -306,7 +306,9 @@ function ExpandableNav({
 
 /** 登录后「···」向上弹出的标签栏:登出 */
 function LogoutPopup({ onClose }: { onClose: () => void }) {
-  const logout = useAuthStore((s) => s.logout);
+  const { refetch: refetchSession } = authClient.useSession();
+  const [loggingOut, setLoggingOut] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -324,21 +326,45 @@ function LogoutPopup({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
+  const handleLogout = async () => {
+    if (loggingOut) return;
+
+    setError(null);
+    setLoggingOut(true);
+    try {
+      const { error: signOutError } = await authClient.signOut();
+      if (signOutError) {
+        setError("退出失败，请稍后重试");
+        return;
+      }
+
+      await refetchSession();
+      onClose();
+    } catch {
+      setError("退出失败，请稍后重试");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   return (
     <div
       ref={ref}
       className="absolute bottom-full right-0 z-50 mb-2 w-28 rounded-xl border border-line bg-card p-1.5 shadow-pop"
     >
+      {error && (
+        <p className="px-2.5 py-1 text-[11px] leading-4 text-danger" role="alert">
+          {error}
+        </p>
+      )}
       <button
         type="button"
-        onClick={() => {
-          logout();
-          onClose();
-        }}
+        onClick={handleLogout}
+        disabled={loggingOut}
         className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
       >
         <LogOut className="size-4 text-muted" strokeWidth={1.8} />
-        登出
+        {loggingOut ? "退出中..." : "登出"}
       </button>
     </div>
   );
@@ -348,7 +374,10 @@ function LogoutPopup({ onClose }: { onClose: () => void }) {
 export function AppSidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
-  const userName = useAuthStore((s) => s.userName);
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const userName = sessionPending
+    ? null
+    : session?.user.name?.trim() || session?.user.email || null;
   const [loginOpen, setLoginOpen] = React.useState(false);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
 

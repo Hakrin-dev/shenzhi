@@ -120,7 +120,8 @@ docker compose up -d --no-deps web ghcr.io/hakrin-dev/shenzhi-frontend:<旧sha>
 ### 6.2 接入真实后端 + 数据库
 在 `infra/compose/docker-compose.yml` 追加 service(api / postgres / redis 等);
 不需要自动更新的服务**不要**加 watchtower 标签(已用 `--label-enable` 白名单机制)。
-前端通过 `NEXT_PUBLIC_API_URL` 指向 api 服务。
+未来业务后端地址由服务端配置 `BUSINESS_BACKEND_URL` 统一管理；当前尚未实现
+业务后端 adapter，浏览器不直接依赖 Python/Go/Java 服务地址。
 
 ### 6.3 HTTPS + 域名
 - 加 nginx/caddy service 到 compose,443 已在安全组放行
