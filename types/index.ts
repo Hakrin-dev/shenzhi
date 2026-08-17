@@ -305,3 +305,182 @@ export interface DRHistoryItem {
   sources: number;
   time: string;
 }
+
+/* =========================================================
+ *  B 模块 —— 三人联调统一契约
+ * =========================================================
+ * 重要：2026-08-17 起，A 模块的「ai-search.ts」成为契约源。
+ * 本文件 types/index.ts 中保留 ChatStyle/ChatAttachment/ChatSource/ChatRequest
+ * 等旧命名做向后兼容（C 模块、composer 等大量代码依赖旧名），
+ * 但所有发送给后端 / 跨模块传递时，统一通过 lib/api/search.ts 做适配转换。
+ * 新代码请优先从 types/ai-search.ts 导入新命名。
+ * ========================================================= */
+
+/** A 模块契约类型的 re-export，ChatStyle 不在这里导出（下方有旧 B 独立定义） */
+export type {
+  ChatReplyMode,
+  ChatAttachment as AIChatAttachment,
+  ChatReference,
+  ChatSessionType,
+  ChatSourceType,
+  EntryMode,
+  ChatModelId,
+  ComposerSubmitPayload,
+  CreateChatSessionRequest,
+  CreateChatSessionResponse,
+  SendChatMessageRequest,
+  ChatSession,
+  ChatMessageStatus,
+  SearchConfig,
+  SearchModelOption,
+  ApiEnvelope,
+  SearchAPIError,
+  AIEventMeta,
+  AIEventDelta,
+  AIEventRefs,
+  AIEventFollowups,
+  AIEventDone,
+  AIEventError,
+  AISSEEventName,
+  StreamMetaEvent,
+  StreamDeltaEvent,
+  StreamRefsEvent,
+  StreamFollowupsEvent,
+  StreamDoneEvent,
+  StreamErrorEvent,
+} from "./ai-search";
+
+/** 搜索 / 问 AI 双模式（旧名 ChatMode，保持向后兼容） */
+export type ChatMode = "search" | "ai";
+
+/**
+ * 4 种 AI 回复风格（旧 B 模块命名）—— 值与新 ChatReplyMode 差异：
+ *   OLD   NEW
+ *   inspire → idea
+ *   question → doubt
+ * 所以旧 ChatStyle 不能直接 = ChatReplyMode，必须是独立联合类型。
+ * Store 中存旧 ChatStyle 即可，发送前通过 mapToAMode 转换。
+ */
+export type ChatStyle = "fast" | "deep" | "inspire" | "question";
+
+/** 对话消息角色（B 旧命名，与 messages 数组保持一致） */
+export type ChatMessageRole = "system" | "user" | "assistant";
+
+/** 单条对话消息 */
+export interface ChatMessage {
+  role: ChatMessageRole;
+  content: string;
+}
+
+/**
+ * 附件解析结果（C 模块维护的 B 旧命名）。
+ * 与 A 模块标准 ChatAttachment（kind/file_id/ref_id/title）字段完全不同，
+ * 发送时通过 lib/ask/draft.ts 的 toAAttachment() 自动转换。
+ */
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: "pdf" | "txt" | "md" | "other";
+  size?: number;
+  /** 解析出的纯文本内容，作为上下文注入 prompt */
+  text?: string;
+  /** 上传失败时的错误信息 */
+  error?: string;
+  /**
+   * 兼容通道：如果 C 模块或草稿恢复逻辑已按 A 格式写入 kind/ref_id，
+   * 这里保留额外字段承载，避免 TS 报错。发送时 toAAttachment() 会优先使用。
+   */
+  kind?: "file" | "paper" | "patent" | "funding" | "scholar" | "institution" | "session" | "project";
+  ref_id?: string;
+}
+
+/** AI 回复来源引用（B 透传给 C 渲染 ReferenceGrid，旧命名保留） */
+export interface ChatSource {
+  id: number;
+  short?: string;
+  title: string;
+  venue?: string;
+  author?: string;
+  citations?: string;
+  url?: string;
+  tone?: "violet" | "green" | "amber" | "gray";
+  recommended?: boolean;
+  /** 来源类型：对齐 A 的 ChatSourceType 字符串枚举值 */
+  type?: "paper" | "patent" | "funding" | "scholar" | "institution" | "web";
+  /** 联网搜索片段 / PDF 摘要段落，供 AI 引用卡片展示 */
+  snippet?: string;
+}
+
+/**
+ * 统一 ChatRequest 请求体 —— POST /api/ai/chat
+ * 【这是 B 原型后端的请求格式，向后兼容；A 后端走 CreateChatSessionRequest】
+ * lib/api/search.ts 会根据 AI_BACKEND_MODE 选择用哪套格式。
+ */
+export interface ChatRequest {
+  /** A 模块维护：search（普通搜索）/ ai（问 AI） */
+  mode: ChatMode;
+  /** 当前用户单条输入（也包含在 messages 最后一条，便于快速读取） */
+  message: string;
+  /** Composer 选中的模型 ID */
+  model: string;
+  /** Composer 选中的回复风格（旧命名 ChatStyle） */
+  style: ChatStyle;
+  /** C 模块维护：是否开启联网搜索 */
+  webSearch: boolean;
+  /** C 模块维护：已解析附件列表（B 旧格式，发送前转换） */
+  attachments: ChatAttachment[];
+  /** 完整多轮上下文，B 模块负责追加与持久化 */
+  messages: ChatMessage[];
+}
+
+/** SSE 流式事件 —— B 模块前后端协议（旧命名，/api/ai/chat 仍使用） */
+export type ChatStreamEventType =
+  | "token"        // 增量 token
+  | "sources"      // 来源引用（一次性下发）
+  | "done"         // 流结束
+  | "error";       // 中途出错
+
+export interface ChatStreamEvent {
+  type: ChatStreamEventType;
+  /** token: 增量文本 */
+  token?: string;
+  /** sources: 引用来源数组 */
+  sources?: ChatSource[];
+  /** done: 最终完整文本（供本地持久化） */
+  content?: string;
+  /** error: 错误码与用户可读消息 */
+  code?: string;
+  message?: string;
+}
+
+/** AI 对话状态（B 模块内部 UI 用） */
+export type ChatSessionStatus =
+  | "idle"
+  | "sending"
+  | "streaming"
+  | "stopped"
+  | "error";
+
+/** 单条 UI 消息（含 sources / refs / followups / 思考 meta / 状态） */
+export interface ChatUIMessage extends ChatMessage {
+  id: string;
+  /** assistant 消息: 引用来源（A 协议 ChatReference[] → 旧 ChatSource[]，渲染用） */
+  sources?: ChatSource[];
+  /** assistant 消息: 追问建议（followups 事件），可点击发送 */
+  followupItems?: string[];
+  /** assistant 消息: 当前加载状态 */
+  status?: ChatSessionStatus;
+  /** 思考阶段元信息（meta 事件累计） */
+  meta?: {
+    read_count?: number;
+    phase?: "检索中" | "正在生成";
+    context_truncated?: boolean;
+    duration_ms?: number;
+  };
+  /** 该助手消息对应的 message_id（停止/继续生成接口需要） */
+  backendMsgId?: string;
+  /** 错误消息（UI 层展示） */
+  error?: string;
+  /** 错误码（ngrok / rate-limit / timeout / 20001~20010） */
+  errorCode?: string;
+}
