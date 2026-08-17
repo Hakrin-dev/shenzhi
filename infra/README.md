@@ -70,7 +70,7 @@ CI 现在只需要 GitHub 自动注入的 `GITHUB_TOKEN`,**无需任何仓库 Se
 
 ## 四、ECS 上的部署目录
 
-`/opt/shenzhi/docker-compose.yml` 与仓库根目录 `docker-compose.yml` 一致(仓库为唯一事实来源,
+`/opt/shenzhi/docker-compose.yml` 与仓库 `infra/compose/docker-compose.yml` 一致(仓库为唯一事实来源,
 改动后需手动同步到 ECS 并 `docker compose up -d`)。内容见仓库根目录文件,要点:
 
 - `web`:带 `com.centurylinklabs.watchtower.enable=true` 标签,纳入 Watchtower 监控;
@@ -118,7 +118,7 @@ docker compose up -d --no-deps web ghcr.io/hakrin-dev/shenzhi-frontend:<旧sha>
 3. 之后 ECS 拉取无需登录,GHCR_PAT 过期也不受影响
 
 ### 6.2 接入真实后端 + 数据库
-在 `docker-compose.yml` 追加 service(api / postgres / redis 等);
+在 `infra/compose/docker-compose.yml` 追加 service(api / postgres / redis 等);
 不需要自动更新的服务**不要**加 watchtower 标签(已用 `--label-enable` 白名单机制)。
 前端通过 `NEXT_PUBLIC_API_URL` 指向 api 服务。
 
@@ -135,5 +135,5 @@ docker compose up -d --no-deps web ghcr.io/hakrin-dev/shenzhi-frontend:<旧sha>
 | Actions 绿但线上没更新 | `docker logs shenzhi-watchtower-1` 看轮询是否报错(GHCR 凭证过期 → 重新 docker login);或镜像 digest 未变(确认 revision label 存在) |
 | Watchtower 报 `client version too old` | 镜像要用 `ghcr.io/nicholas-fedor/watchtower`,containrrr 官方版已归档不兼容 Docker 29 |
 | ECS `docker compose pull` 报 denied/not found | root 的 ghcr.io 登录失效 → 重新 `docker login`;或将 Package 设为 Public(6.1) |
-| 构建失败 Module not found brand/... | 确认 `.dockerignore` **没有排除** `brand/logo-day.png` 与 `brand/logo-night.png` |
+| 构建失败且 Logo 缺失 | 确认 `apps/web/public/brand/logo-day.png` 与 `logo-night.png` 已进入构建上下文 |
 | 访问 http://IP 打不开 | 安全组 80 是否放行;`docker compose ps` 是否 healthy;`curl -I http://127.0.0.1/` 是否 200 |
