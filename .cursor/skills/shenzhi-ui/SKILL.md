@@ -16,7 +16,7 @@ Home composer `variant="home"`: 搜索 / 问 AI. Search hides model, plus, attac
 - Enter = current mode. Alt+Enter = search. Shift+Enter = newline. IME Enter does not submit.
 - 搜索 → `/search?q=`
 - 问 AI → `/agents/ask?q=&mode=&model=&web_search=` then `POST /api/v1/search/sessions` `{type:"chat", question, mode, model, web_search, attachments}` and SSE `GET /api/v1/search/messages/{id}/stream`. Do not send to `/agents`.
-- Set `API_URL` (or `NEXT_PUBLIC_API_URL`) to the backend origin; Next proxies `/api/v1`. Mock search still in `lib/data/*.ts`.
+- Set `BUSINESS_BACKEND_URL` (server-only, e.g. `http://127.0.0.1:8000`) so Next can proxy `/api/v1` to FastAPI. Never `NEXT_PUBLIC_`. Mock search still in `lib/data/*.ts`.
 
 ## Tokens
 

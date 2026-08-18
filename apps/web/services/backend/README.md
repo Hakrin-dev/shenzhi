@@ -1,35 +1,17 @@
-# Future business backend boundary
+# Business backend boundary
 
-This directory represents the ShenZhi business service boundary after login.
-It currently contains responsibility documentation only; no business API or
-adapter is implemented here.
-
-The business backend is not implemented yet. It may use Python, Go, Java,
-TypeScript, or another technology stack in the future.
-
-The intended future boundary is:
+ShenZhi 业务后端已锁定为 **Python + FastAPI**（`apps/backend`）。
 
 ```text
-Frontend
-  ↓
-Next.js application/API boundary
-  ↓
-apps/web/services/backend/ adapter
-  ↓
+Frontend (React)
+  ↓ 同源 /api/v1
+Next.js BFF  apps/web/app/api/v1/[...path]
+  ↓  apps/web/services/backend/forward.ts
 BUSINESS_BACKEND_URL
   ↓
-Python / Go / Java / TypeScript business service
+FastAPI  apps/backend
 ```
 
-The browser must not directly depend on an internal business-service URL.
-When an adapter is implemented, it belongs at this boundary and should use a
-stable, language-neutral contract.
+浏览器不得直连 FastAPI。转发时附带 `X-ShenZhi-User-Id` / `X-ShenZhi-User-Email`，不转发 Better Auth Cookie。
 
-Future business services must not read Better Auth's internal `user`,
-`account`, `session`, or `verification` tables. They must not depend on
-Better Auth internals, `pg.Pool`, or `apps/web/lib/auth/server.ts`.
-
-Authenticated identity will be passed through a stable, language-neutral
-HTTP, JSON, or signed identity contract. The final identity protocol must be
-agreed by the business-backend and authentication owners before
-implementation.
+FastAPI 不得读取 Better Auth 的 `user`、`account`、`session`、`verification` 表，也不得依赖 `pg.Pool` 或 `apps/web/lib/auth/server.ts`。

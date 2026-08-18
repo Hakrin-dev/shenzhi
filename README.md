@@ -19,6 +19,16 @@ pnpm build          # 生产构建
 pnpm start          # 启动生产服务
 ```
 
+AI 生成（可选，问 AI 需要）:
+
+```bash
+cd apps/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Web 环境变量 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`（仅服务端）。通信架构见 [docs/dev/前后端通信架构.md](docs/dev/前后端通信架构.md)。
+
 打开 http://localhost:3000 。URL 加 `?theme=dark` / `?theme=light` 可强制日/夜模式(用于调试与分享)。
 
 > **Turbopack 恢复说明**:本副本运行于 WSL2,dev/build 均使用 `--turbopack`(见 package.json)。Windows 侧曾因智能应用控制拦截 Turbopack 原生二进制而临时改用 `--webpack`,该问题仅存在于 Windows 环境,当前副本不受影响。
@@ -86,7 +96,7 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 shenzhi/
 ├── apps/
 │   ├── web/                  # Next.js Web；app 为薄路由，features 为页面实现
-│   └── backend/              # FastAPI backend 占位
+│   └── backend/              # FastAPI：AI 会话 / 检索 / 生成（骨架）
 ├── infra/                    # Dockerfile、Compose 与部署文档
 ├── tests/visual/             # 页面、主题与图谱截图验证脚本
 ├── tools/brand/              # 品牌资源处理工具

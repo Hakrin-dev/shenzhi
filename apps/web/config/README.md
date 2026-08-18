@@ -26,7 +26,7 @@ Configuration areas:
   tolerated at startup and only surfaces when GitHub sign-in is attempted.
 - `turnstile.ts`: Cloudflare Turnstile human-verification toggle, secret key,
   and optional token constraints.
-- `backend.ts`: the future server-side business backend URL.
+- `backend.ts`: FastAPI 根地址 `BUSINESS_BACKEND_URL`（仅服务端）。
 
 Do not import server configuration from Client Components. Only values with an
 intentional `NEXT_PUBLIC_` contract may be exposed to browser code.
