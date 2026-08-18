@@ -169,21 +169,16 @@ its independent callback.
 ```text
 Authenticated identity
   ↓
-stable language-neutral identity contract
+Next.js /api/v1 BFF  (apps/web/services/backend/forward.ts)
   ↓
-apps/web/services/backend/ adapter boundary
+X-ShenZhi-User-Id / X-ShenZhi-User-Email
   ↓
 BUSINESS_BACKEND_URL
   ↓
-Python / Go / Java / TypeScript business service
+Python FastAPI  (apps/backend)
 ```
 
-`apps/web/services/backend/` currently contains responsibility documentation only; it
-does not implement a proxy, API, JWT, token exchange, or identity protocol.
-The future business service must not read Better Auth `user`, `account`,
-`session`, or `verification` tables, and must not depend on `pg.Pool` or
-`apps/web/lib/auth/server.ts`. The final protocol is a joint decision of the
-authentication and business-backend owners.
+The browser must not call FastAPI directly. FastAPI must not read Better Auth `user`, `account`, `session`, or `verification` tables, and must not depend on `pg.Pool` or `apps/web/lib/auth/server.ts`. See `docs/dev/前后端通信架构.md`.
 
 Authentication and Authorization/RBAC remain separate concerns. RBAC is a
 future product decision; this stage adds no role table, admin plugin, or
