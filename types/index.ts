@@ -350,6 +350,14 @@ export type {
   StreamErrorEvent,
 } from "./ai-search";
 
+/**
+ * UPDATE: 2026-08-18 A+B 单前端整合 —— A 模块 search-hero 导入名为 `ComposerEntryMode`，
+ * 而 B 契约源文件 types/ai-search.ts 中命名为 `EntryMode`，值完全相同，
+ * 在此直接展开为联合类型字面量做别名，避免依赖循环或跨文件 import 链断裂。
+ * 修改日志：任务日志/对于A的修改/2026.8.18-A+B整合单前端化修改.md
+ */
+export type ComposerEntryMode = "search" | "ai";
+
 /** 搜索 / 问 AI 双模式（旧名 ChatMode，保持向后兼容） */
 export type ChatMode = "search" | "ai";
 

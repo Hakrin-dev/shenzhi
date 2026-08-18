@@ -2,6 +2,12 @@
 
 /**
  * B 模块 —— AI 助手对话页 agent-chat.tsx（2026-08-17 全面对齐 A 模块契约）
+ * UPDATE: 2026-08-18 A+B 单前端整合
+ *   —— 底部 <ComposerShell/> 现已接入 useComposerStore，props 签名升级为完整 13+ 项
+ *     （busy / model / attachments / entryMode / onAttachmentsChange 等），
+ *     与 A 模块 search-hero.tsx 的调用契约保持一致，避免 TS 报错
+ *     "Property 'isStreaming' does not exist" 等兼容问题已通过 busy prop 统一
+ * 修改日志：任务日志/对于A的修改/2026.8.18-A+B整合单前端化修改.md
  *
  * 完整能力清单（对应 A 模块 ask-stage.tsx 全功能）：
  *  P0（必达）
@@ -40,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { ComposerShell } from "./composer";
 import { useAskSession, type AskStreamCallbacks } from "@/lib/chat-stream";
 import { useComposerStore } from "@/stores/composer";
+import { mapToAMode, mapToBStyle } from "@/lib/api/search";
 import {
   asMode,
   asModel,
@@ -750,9 +757,37 @@ export function AgentChat() {
   /* ---------- 13. Composer 实例 ---------- */
   const composer = (
     <ComposerShell
-      isStreaming={isStreaming}
+      value={composerMessage}
+      onChange={setComposerMessage}
+      placeholder="继续提问,或上传 PDF / arXiv 链接以扩展上下文…"
+      replyMode={mapToAMode(storeStyle)}
+      onReplyModeChange={(m) => setComposerStyle(mapToBStyle(m))}
+      model={storeModel as any}
+      onModelChange={(m) => setComposerModel(m)}
+      webSearch={storeWebSearch}
+      onWebSearchChange={setComposerWebSearch}
+      attachments={storeAttachments as any}
+      onAttachmentsChange={(items) => {
+        // ComposerShell 内用 A 格式 ChatAttachment（types/ai-search），
+        // store 接受 B 旧格式，先 toBAttachment 再批量写入
+        useComposerStore.getState().clearAttachments();
+        const bAtts = toBAttachment(items as any);
+        for (const a of bAtts) useComposerStore.getState().addAttachment(a);
+      }}
+      busy={isStreaming}
       onStop={stopStreaming}
-      onSend={() => sendInternal(composerMessage)}
+      onSend={(payload) => {
+        // 先把用户从 ComposerShell 里改过的 style/model 回写到 store（sendInternal 从 store 读）
+        if (payload.mode) setComposerStyle(mapToBStyle(payload.mode));
+        if (payload.model) setComposerModel(payload.model);
+        if (typeof payload.web_search === "boolean") setComposerWebSearch(payload.web_search);
+        if (payload.attachments && payload.attachments.length > 0) {
+          useComposerStore.getState().clearAttachments();
+          const bAtts = toBAttachment(payload.attachments as any);
+          for (const a of bAtts) useComposerStore.getState().addAttachment(a);
+        }
+        sendInternal(payload.question);
+      }}
       menuPlacement="up"
     />
   );

@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * UPDATE: 2026-08-18 A+B 单前端整合
+ *   —— 从 A 模块 (shenzhi-feat-ai_agent_front) 直接替换 B 旧版 attachment-menu
+ *   —— 新接口签名：{ onAdd, accept, maxFiles, maxSizeMb } 替代之前 (files)=>void 简写
+ *   —— 新增能力：引用知识库实体（论文/专利/基金/学者/机构）快速选择、历史附件恢复、
+ *     上传文件走 /api/uploads（上传列表 / 签名 URL / 本地文件三步 API）
+ * 修改日志：任务日志/对于A的修改/2026.8.18-A+B整合单前端化修改.md
+ */
+
 import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
@@ -19,77 +28,111 @@ import { fundings } from "@/lib/data/funding";
 import { scholars } from "@/lib/data/scholars";
 import { institutions } from "@/lib/data/institutions";
 import { projects } from "@/lib/data/projects";
+import { uploadFile } from "@/lib/api/uploads";
+import type { ChatAttachment, ChatAttachmentKind } from "@/types/ai-search";
 
-/** 引用面板的通用分组:副标题 + 点击向下展开的条目列表(演示) */
+interface RefItem {
+  kind: ChatAttachmentKind;
+  ref_id: string;
+  title: string;
+}
+
 interface RefGroup {
   label: string;
-  items: string[];
+  items: RefItem[];
 }
 
 const KNOWLEDGE_GROUPS: RefGroup[] = [
-  { label: "论文库", items: feedPapers.slice(0, 3).map((p) => p.title) },
-  { label: "专利库", items: patents.slice(0, 3).map((p) => p.title) },
-  { label: "项目基金库", items: fundings.slice(0, 3).map((f) => f.title) },
+  {
+    label: "论文库",
+    items: feedPapers.slice(0, 3).map((p) => ({
+      kind: "paper" as const,
+      ref_id: p.id,
+      title: p.title,
+    })),
+  },
+  {
+    label: "专利库",
+    items: patents.slice(0, 3).map((p) => ({
+      kind: "patent" as const,
+      ref_id: p.id,
+      title: p.title,
+    })),
+  },
+  {
+    label: "项目基金库",
+    items: fundings.slice(0, 3).map((f) => ({
+      kind: "funding" as const,
+      ref_id: f.id,
+      title: f.title,
+    })),
+  },
   {
     label: "学者关系",
-    items: scholars.slice(0, 3).map((s) => `${s.nameCn} · ${s.affiliation}`),
+    items: scholars.slice(0, 3).map((s) => ({
+      kind: "scholar" as const,
+      ref_id: s.id,
+      title: `${s.nameCn} · ${s.affiliation}`,
+    })),
   },
   {
     label: "研究机构",
-    items: institutions.slice(0, 3).map((i) => `${i.nameCn} · ${i.type}`),
+    items: institutions.slice(0, 3).map((i) => ({
+      kind: "institution" as const,
+      ref_id: i.id,
+      title: `${i.nameCn} · ${i.type}`,
+    })),
   },
 ];
 
 const HISTORY_GROUPS: RefGroup[] = [
   {
-    label: "长上下文 Transformer 调研",
-    items: ["UltraLong-1M 的核心创新是什么?", "和 StreamingLLM 对比如何?"],
-  },
-  {
-    label: "NeurIPS 2026 投稿筛选",
-    items: ["帮我按方向筛一遍接收列表", "这几篇的引用脉络"],
-  },
-  {
-    label: "扩散模型效率优化",
-    items: ["视频帧插值的专利空白点", "整理成周报"],
+    label: "历史对话",
+    items: [
+      { kind: "session", ref_id: "demo-ultralong", title: "长上下文 Transformer 调研" },
+      { kind: "session", ref_id: "demo-neurips", title: "NeurIPS 2026 投稿筛选" },
+      { kind: "session", ref_id: "demo-diffusion", title: "扩散模型效率优化" },
+    ],
   },
 ];
 
-const PROJECT_GROUPS: RefGroup[] = projects.map((p) => ({
-  label: p.name,
-  items: [
-    `简介:${p.tagline}`,
-    ...p.milestones.slice(0, 2).map((m) => `里程碑:${m.title}`),
-  ],
-}));
+const PROJECT_GROUPS: RefGroup[] = [
+  {
+    label: "科研项目",
+    items: projects.map((p) => ({
+      kind: "project" as const,
+      ref_id: p.id,
+      title: p.name,
+    })),
+  },
+];
 
-/**
- * 二级面板:悬停展开。
- * expandable(知识库):点击副标题向下展开/收起组内容;
- * 否则(历史对话/科研项目)组内容直接平铺展示,不再折叠。
- */
 function RefPanel({
   groups,
   expandable = false,
+  onPick,
 }: {
   groups: RefGroup[];
   expandable?: boolean;
+  onPick: (item: RefItem) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (!expandable) {
-    // 历史对话/科研项目:只罗列对话名/项目名,不展开具体内容
     return (
       <div className="w-64 rounded-xl border border-line bg-card p-1.5 shadow-pop">
-        {groups.map((group) => (
-          <button
-            key={group.label}
-            type="button"
-            className="flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-chip"
-          >
-            <span className="truncate">{group.label}</span>
-          </button>
-        ))}
+        {groups.flatMap((group) =>
+          group.items.map((item) => (
+            <button
+              key={item.ref_id}
+              type="button"
+              onClick={() => onPick(item)}
+              className="flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-chip"
+            >
+              <span className="truncate">{item.title}</span>
+            </button>
+          )),
+        )}
       </div>
     );
   }
@@ -116,14 +159,15 @@ function RefPanel({
             {open && (
               <ul className="mb-1 ml-3 border-l border-line pl-2">
                 {group.items.map((item) => (
-                  <li key={item}>
+                  <li key={item.ref_id}>
                     <button
                       type="button"
-                      title={item}
+                      title={item.title}
+                      onClick={() => onPick(item)}
                       className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-chip hover:text-ink-2"
                     >
                       <BookOpen className="size-3 shrink-0 text-faint" />
-                      <span className="truncate">{item}</span>
+                      <span className="truncate">{item.title}</span>
                     </button>
                   </li>
                 ))}
@@ -136,19 +180,28 @@ function RefPanel({
   );
 }
 
-/**
- * 「别针」附件/引用菜单(演示):
- * 上传本地文件 / 上传本地文件夹 / 引用知识库 / 引用历史对话 / 引用科研项目;
- * 后三者悬停向右展开二级面板(知识库可再点击展开组内容,其余平铺)。
- */
 export function AttachmentMenu({
   placement = "down",
+  onAdd,
+  accept = ".pdf,.docx,.md,.txt",
+  maxFiles = 5,
+  maxSizeMb = 20,
 }: {
-  /** down:菜单出现在别针下方(居中输入框);up:上方(吸底输入框) */
   placement?: "up" | "down";
+  onAdd?: (item: ChatAttachment) => void;
+  accept?: string;
+  maxFiles?: number;
+  maxSizeMb?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    folderRef.current?.setAttribute("webkitdirectory", "");
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -166,6 +219,29 @@ export function AttachmentMenu({
     };
   }, [open]);
 
+  const pickFiles = async (files: FileList | null) => {
+    if (!files || !onAdd) return;
+    const list = Array.from(files).slice(0, maxFiles);
+    setUploading(true);
+    try {
+      for (const file of list) {
+        if (file.size > maxSizeMb * 1024 * 1024) continue;
+        const { file_id } = await uploadFile(file);
+        onAdd({ kind: "file", file_id, title: file.name });
+      }
+    } catch {
+      /* 上传接口未接入时不塞假 file_id */
+    } finally {
+      setUploading(false);
+      setOpen(false);
+    }
+  };
+
+  const addRef = (item: RefItem) => {
+    onAdd?.({ kind: item.kind, ref_id: item.ref_id, title: item.title });
+    setOpen(false);
+  };
+
   const REF_ITEMS = [
     { label: "引用知识库", icon: Library, groups: KNOWLEDGE_GROUPS, expandable: true },
     { label: "引用历史对话", icon: History, groups: HISTORY_GROUPS },
@@ -174,6 +250,27 @@ export function AttachmentMenu({
 
   return (
     <div ref={rootRef} className="relative">
+      <input
+        ref={fileRef}
+        type="file"
+        accept={accept}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void pickFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={folderRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void pickFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <button
         type="button"
         aria-label="上传附件或引用"
@@ -194,20 +291,22 @@ export function AttachmentMenu({
             placement === "down" ? "top-full mt-2" : "bottom-full mb-2",
           )}
         >
-          {[
-            { label: "上传本地文件", icon: FileUp },
-            { label: "上传本地文件夹", icon: FolderUp },
-          ].map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => setOpen(false)}
-              className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
-            >
-              <item.icon className="size-4 text-muted" strokeWidth={1.8} />
-              {item.label}
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
+          >
+            <FileUp className="size-4 text-muted" strokeWidth={1.8} />
+            {uploading ? "上传中…" : "上传本地文件"}
+          </button>
+          <button
+            type="button"
+            onClick={() => folderRef.current?.click()}
+            className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
+          >
+            <FolderUp className="size-4 text-muted" strokeWidth={1.8} />
+            上传本地文件夹
+          </button>
 
           {REF_ITEMS.map((item) => (
             <div key={item.label} className="group/ref relative">
@@ -219,9 +318,12 @@ export function AttachmentMenu({
                 <span className="flex-1 text-left">{item.label}</span>
                 <ChevronRight className="size-3.5 text-faint" />
               </button>
-              {/* 悬停向右展开的二级面板 */}
               <div className="invisible absolute bottom-0 left-full z-50 pl-1.5 opacity-0 transition-opacity duration-100 group-hover/ref:visible group-hover/ref:opacity-100">
-                <RefPanel groups={item.groups} expandable={item.expandable} />
+                <RefPanel
+                  groups={item.groups}
+                  expandable={item.expandable}
+                  onPick={addRef}
+                />
               </div>
             </div>
           ))}
