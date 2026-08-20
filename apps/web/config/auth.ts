@@ -28,7 +28,13 @@ export function getAuthEmailVerificationSettings(
   required = authConfig.requireEmailVerification,
 ) {
   return {
+    // The Email OTP plugin overrides Better Auth's default link email, so the
+    // core sign-up flow emits an OTP only after a real user is created. Its
+    // synthetic duplicate response remains indistinguishable and sends none.
     sendOnSignUp: required,
+    sendVerificationOnSignUp: false,
+    overrideDefaultEmailVerification: true,
+    autoSignInAfterVerification: required,
     requireEmailVerification: required,
   };
 }

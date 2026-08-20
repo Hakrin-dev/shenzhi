@@ -26,7 +26,15 @@ interface LoginModalProps {
 }
 
 type LoginTab = "password" | "code" | "register";
-type Submission = "login" | "otp-send" | "otp-login" | "register" | null;
+type RegisterStage = "details" | "verify-email";
+type Submission =
+  | "login"
+  | "otp-send"
+  | "otp-login"
+  | "register"
+  | "register-resend"
+  | "register-verify"
+  | null;
 
 function Field({
   label,
@@ -71,10 +79,10 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [registerPassword, setRegisterPassword] = React.useState("");
   const [registerPasswordConfirm, setRegisterPasswordConfirm] =
     React.useState("");
+  const [registerStage, setRegisterStage] =
+    React.useState<RegisterStage>("details");
+  const [registeredEmail, setRegisteredEmail] = React.useState("");
   const [registerError, setRegisterError] = React.useState<string | null>(null);
-  const [registerNotice, setRegisterNotice] = React.useState<string | null>(
-    null,
-  );
   const [registerCode, setRegisterCode] = React.useState("");
   const [registerCodeError, setRegisterCodeError] =
     React.useState<string | null>(null);
@@ -100,8 +108,9 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterEmail("");
     setRegisterPassword("");
     setRegisterPasswordConfirm("");
+    setRegisterStage("details");
+    setRegisteredEmail("");
     setRegisterError(null);
-    setRegisterNotice(null);
     setRegisterCode("");
     setRegisterCodeError(null);
     setRegisterCodeNotice(null);
@@ -153,7 +162,6 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setCodeError(null);
     setCodeNotice(null);
     setRegisterError(null);
-    setRegisterNotice(null);
     setRegisterCodeError(null);
     setRegisterCodeNotice(null);
     setSocialError(null);
@@ -232,7 +240,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
 
   const sendRegisterOtp = React.useCallback(
     async (email: string, turnstileToken?: string) => {
-      setSubmission("otp-send");
+      setSubmission("register-resend");
       try {
         const { error } = await authClient.emailOtp.sendVerificationOtp(
           { email, type: "email-verification" },
@@ -249,7 +257,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         }
 
         setRegisterCodeCooldown(60);
-        setRegisterCodeNotice("验证码已发送，请查收邮件");
+        setRegisterCodeNotice("验证码发送请求已提交，请查收邮件");
       } catch (error) {
         setRegisterCodeError(
           getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
@@ -283,7 +291,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     setRegisterCodeError(null);
     setRegisterCodeNotice(null);
 
-    const email = normalizeEmail(registerEmail);
+    const email = registeredEmail;
     if (!email) {
       setRegisterCodeError("请输入邮箱");
       return;
@@ -379,7 +387,6 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const handleRegistration = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRegisterError(null);
-    setRegisterNotice(null);
 
     const name = registerName.trim();
     const email = normalizeEmail(registerEmail);
@@ -420,7 +427,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       }
 
       if (data?.token === null) {
-        setRegisterNotice("验证邮件已发送，请前往邮箱完成验证");
+        setRegisteredEmail(email);
+        setRegisterStage("verify-email");
+        setRegisterCode("");
+        setRegisterCodeCooldown(60);
+        setRegisterCodeNotice(null);
         return;
       }
 
@@ -429,6 +440,45 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     } catch (error) {
       setRegisterError(
         getAuthErrorMessage(error, "注册失败，请稍后重试", "register"),
+      );
+    } finally {
+      setSubmission(null);
+    }
+  };
+
+  const handleRegisterEmailVerification = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setRegisterCodeError(null);
+    setRegisterCodeNotice(null);
+
+    const otp = registerCode.trim();
+    if (!/^\d{6}$/.test(otp)) {
+      setRegisterCodeError("请输入6位数字验证码");
+      return;
+    }
+
+    setSubmission("register-verify");
+    try {
+      const { error } = await authClient.emailOtp.verifyEmail({
+        email: registeredEmail,
+        otp,
+      });
+
+      if (error) {
+        setRegisterCodeError(
+          getAuthErrorMessage(error, "邮箱验证失败，请稍后重试", "otp"),
+        );
+        return;
+      }
+
+      setRegisterCodeNotice("邮箱验证成功");
+      await refetchSession();
+      handleClose();
+    } catch (error) {
+      setRegisterCodeError(
+        getAuthErrorMessage(error, "邮箱验证失败，请稍后重试", "otp"),
       );
     } finally {
       setSubmission(null);
@@ -634,118 +684,131 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           </TabsContent>
 
           <TabsContent value="register">
-            <form
-              className="mt-5 flex flex-col gap-4"
-              onSubmit={handleRegistration}
-              noValidate
-            >
-              <Field
-                label="昵称"
-                placeholder="请输入昵称"
-                autoComplete="name"
-                value={registerName}
-                onChange={(event) => setRegisterName(event.target.value)}
-              />
-              <Field
-                label="邮箱"
-                type="email"
-                placeholder="请输入邮箱"
-                autoComplete="email"
-                value={registerEmail}
-                onChange={(event) => setRegisterEmail(event.target.value)}
-              />
-              {registerShowTurnstile && TURNSTILE_SITE_KEY && (
-                <CloudflareTurnstile
-                  siteKey={TURNSTILE_SITE_KEY}
-                  onToken={handleRegisterTurnstileToken}
-                  onError={handleRegisterTurnstileError}
-                />
-              )}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-medium text-ink-2">
-                  验证码
-                </span>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="请输入6位验证码"
-                    className="flex-1"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    value={registerCode}
-                    onChange={(event) =>
-                      setRegisterCode(event.target.value.replace(/\D/g, ""))
-                    }
-                    disabled={Boolean(submission)}
-                  />
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className="shrink-0"
-                    disabled={Boolean(submission) || registerCodeCooldown > 0}
-                    onClick={handleSendRegisterOtp}
-                    aria-busy={submission === "otp-send"}
-                  >
-                    {submission === "otp-send"
-                      ? "发送中..."
-                      : registerCodeCooldown > 0
-                        ? `${registerCodeCooldown}s后重发`
-                        : "获取验证码"}
-                  </Button>
-                </div>
-              </div>
-              {registerCodeNotice && (
-                <p className="-mt-2 text-xs leading-5 text-muted" role="status">
-                  {registerCodeNotice}
-                </p>
-              )}
-              {registerCodeError && (
-                <p className="-mt-2 text-[13px] text-danger" role="alert">
-                  {registerCodeError}
-                </p>
-              )}
-              <Field
-                label="密码"
-                type="password"
-                placeholder="请输入密码"
-                autoComplete="new-password"
-                minLength={PASSWORD_MIN_LENGTH}
-                maxLength={PASSWORD_MAX_LENGTH}
-                value={registerPassword}
-                onChange={(event) => setRegisterPassword(event.target.value)}
-              />
-              <p className="-mt-2 text-xs leading-5 text-muted">
-                12–64 位，且至少包含大写字母、小写字母和数字
-              </p>
-              <Field
-                label="确认密码"
-                type="password"
-                placeholder="请再次输入密码"
-                autoComplete="new-password"
-                value={registerPasswordConfirm}
-                onChange={(event) =>
-                  setRegisterPasswordConfirm(event.target.value)
-                }
-              />
-              {registerError && (
-                <p className="-mt-2 text-[13px] text-danger" role="alert">
-                  {registerError}
-                </p>
-              )}
-              {registerNotice && (
-                <p className="-mt-2 text-[13px] text-muted" role="status">
-                  {registerNotice}
-                </p>
-              )}
-              <Button
-                type="submit"
-                className="mt-1 w-full"
-                disabled={Boolean(submission)}
-                aria-busy={submission === "register"}
+            {registerStage === "details" ? (
+              <form
+                className="mt-5 flex flex-col gap-4"
+                onSubmit={handleRegistration}
+                noValidate
               >
-                {submission === "register" ? "注册中..." : "注册"}
-              </Button>
-            </form>
+                <Field
+                  label="昵称"
+                  placeholder="请输入昵称"
+                  autoComplete="name"
+                  value={registerName}
+                  onChange={(event) => setRegisterName(event.target.value)}
+                />
+                <Field
+                  label="邮箱"
+                  type="email"
+                  placeholder="请输入邮箱"
+                  autoComplete="email"
+                  value={registerEmail}
+                  onChange={(event) => setRegisterEmail(event.target.value)}
+                />
+                <Field
+                  label="密码"
+                  type="password"
+                  placeholder="请输入密码"
+                  autoComplete="new-password"
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                  value={registerPassword}
+                  onChange={(event) => setRegisterPassword(event.target.value)}
+                />
+                <p className="-mt-2 text-xs leading-5 text-muted">
+                  12–64 位，且至少包含大写字母、小写字母和数字
+                </p>
+                <Field
+                  label="确认密码"
+                  type="password"
+                  placeholder="请再次输入密码"
+                  autoComplete="new-password"
+                  value={registerPasswordConfirm}
+                  onChange={(event) =>
+                    setRegisterPasswordConfirm(event.target.value)
+                  }
+                />
+                {registerError && (
+                  <p className="-mt-2 text-[13px] text-danger" role="alert">
+                    {registerError}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  className="mt-1 w-full"
+                  disabled={Boolean(submission)}
+                  aria-busy={submission === "register"}
+                >
+                  {submission === "register" ? "注册中..." : "注册"}
+                </Button>
+              </form>
+            ) : (
+              <form
+                className="mt-5 flex flex-col gap-4"
+                onSubmit={handleRegisterEmailVerification}
+                noValidate
+              >
+                <p className="text-[13px] leading-5 text-muted" role="status">
+                  如果该邮箱可用于注册，验证码将发送至 {registeredEmail}
+                </p>
+                {registerShowTurnstile && TURNSTILE_SITE_KEY && (
+                  <CloudflareTurnstile
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onToken={handleRegisterTurnstileToken}
+                    onError={handleRegisterTurnstileError}
+                  />
+                )}
+                <Field
+                  label="验证码"
+                  placeholder="请输入6位验证码"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={registerCode}
+                  onChange={(event) =>
+                    setRegisterCode(event.target.value.replace(/\D/g, ""))
+                  }
+                  disabled={Boolean(submission)}
+                />
+                {registerCodeNotice && (
+                  <p
+                    className="-mt-2 text-xs leading-5 text-muted"
+                    role="status"
+                  >
+                    {registerCodeNotice}
+                  </p>
+                )}
+                {registerCodeError && (
+                  <p className="-mt-2 text-[13px] text-danger" role="alert">
+                    {registerCodeError}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  className="mt-1 w-full"
+                  disabled={Boolean(submission)}
+                  aria-busy={submission === "register-verify"}
+                >
+                  {submission === "register-verify"
+                    ? "验证中..."
+                    : "验证邮箱"}
+                </Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="w-full"
+                  disabled={Boolean(submission) || registerCodeCooldown > 0}
+                  onClick={handleSendRegisterOtp}
+                  aria-busy={submission === "register-resend"}
+                >
+                  {submission === "register-resend"
+                    ? "发送中..."
+                    : registerCodeCooldown > 0
+                      ? `${registerCodeCooldown}s后重发`
+                      : "重新发送验证码"}
+                </Button>
+              </form>
+            )}
           </TabsContent>
         </Tabs>
 

@@ -88,14 +88,6 @@ export function getAuthErrorMessage(
     return "验证码错误，请检查后重试";
   }
 
-  if (
-    kind === "register" &&
-    (code === "USER_ALREADY_EXISTS" ||
-      code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
-  ) {
-    return "该邮箱已注册，请直接登录";
-  }
-
   if (kind === "reset" && (code === "INVALID_TOKEN" || status === 401)) {
     return "重置链接已失效，请重新申请";
   }

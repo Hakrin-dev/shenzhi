@@ -8,6 +8,16 @@ test("stores Email OTP values as Better Auth hashes", () => {
   assert.equal(EMAIL_OTP_OPTIONS.storeOTP, "hashed");
 });
 
+test("prevents Email OTP sign-in from creating accounts", () => {
+  assert.equal(EMAIL_OTP_OPTIONS.disableSignUp, true);
+});
+
+test("keeps the existing OTP length, expiry, and attempt limit", () => {
+  assert.equal(EMAIL_OTP_OPTIONS.otpLength, 6);
+  assert.equal(EMAIL_OTP_OPTIONS.expiresIn, 300);
+  assert.equal(EMAIL_OTP_OPTIONS.allowedAttempts, 3);
+});
+
 test("forced verification requires a provider before email/password sign-up", () => {
   assert.equal(requiresEmailDelivery("/sign-up/email", true), true);
 });

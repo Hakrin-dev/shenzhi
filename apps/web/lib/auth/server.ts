@@ -46,9 +46,10 @@ const socialProviders = githubOAuthConfig
       },
     }
   : undefined;
-const requireEmailVerification =
-  getAuthEmailVerificationSettings(configuredRequireEmailVerification)
-    .requireEmailVerification;
+const emailVerificationSettings = getAuthEmailVerificationSettings(
+  configuredRequireEmailVerification,
+);
+const { requireEmailVerification } = emailVerificationSettings;
 const emailCallbacks = createBetterAuthEmailCallbacks(
   createAuthEmailProvider(),
 );
@@ -59,7 +60,9 @@ export const auth = betterAuth({
   ...(socialProviders ? { socialProviders } : {}),
   emailVerification: {
     sendVerificationEmail: emailCallbacks.sendVerificationEmail,
-    sendOnSignUp: requireEmailVerification,
+    sendOnSignUp: emailVerificationSettings.sendOnSignUp,
+    autoSignInAfterVerification:
+      emailVerificationSettings.autoSignInAfterVerification,
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
@@ -174,6 +177,10 @@ export const auth = betterAuth({
   plugins: [
     emailOTP({
       ...EMAIL_OTP_OPTIONS,
+      sendVerificationOnSignUp:
+        emailVerificationSettings.sendVerificationOnSignUp,
+      overrideDefaultEmailVerification:
+        emailVerificationSettings.overrideDefaultEmailVerification,
       sendVerificationOTP: emailCallbacks.sendVerificationOTP,
     }),
   ],
