@@ -32,11 +32,9 @@ import {
   generateRandomOAuthPassword,
   OAUTH_CREDENTIAL_PROVIDER_ID,
 } from "@/lib/auth/providers/oauth/credential";
+import { registrationEmailVerification } from "@/lib/auth/plugins/registration-email-verification";
 
-const {
-  requireEmailVerification: configuredRequireEmailVerification,
-  ...betterAuthConfig
-} = authConfig;
+const betterAuthConfig = authConfig;
 
 const socialProviders = githubOAuthConfig
   ? {
@@ -46,9 +44,7 @@ const socialProviders = githubOAuthConfig
       },
     }
   : undefined;
-const emailVerificationSettings = getAuthEmailVerificationSettings(
-  configuredRequireEmailVerification,
-);
+const emailVerificationSettings = getAuthEmailVerificationSettings();
 const { requireEmailVerification } = emailVerificationSettings;
 const emailCallbacks = createBetterAuthEmailCallbacks(
   createAuthEmailProvider(),
@@ -117,7 +113,7 @@ export const auth = betterAuth({
 
       if (
         !emailDeliveryConfigured &&
-        requiresEmailDelivery(ctx.path, requireEmailVerification)
+        requiresEmailDelivery(ctx.path)
       ) {
         return ctx.error("BAD_REQUEST", {
           code: EMAIL_PROVIDER_NOT_CONFIGURED_CODE,
@@ -181,6 +177,9 @@ export const auth = betterAuth({
         emailVerificationSettings.sendVerificationOnSignUp,
       overrideDefaultEmailVerification:
         emailVerificationSettings.overrideDefaultEmailVerification,
+      sendVerificationOTP: emailCallbacks.sendVerificationOTP,
+    }),
+    registrationEmailVerification({
       sendVerificationOTP: emailCallbacks.sendVerificationOTP,
     }),
   ],

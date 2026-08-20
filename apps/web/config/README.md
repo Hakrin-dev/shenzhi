@@ -18,7 +18,7 @@ implement business services.
 Configuration areas:
 
 - `auth.ts`: Better Auth secret, base URL, optional trusted origins, and the
-  deployment-controlled email-verification requirement.
+  fixed safeguards used by the staged email-first registration flow.
 - `database.ts`: PostgreSQL connection URL.
 - `email.ts`: Alibaba DirectMail provider selection and sender/deployment
   metadata; provider credentials remain deployment-only.

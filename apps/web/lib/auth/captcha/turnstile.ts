@@ -1,4 +1,5 @@
 import { isTurnstileEnabled } from "@/config/turnstile";
+import { REGISTRATION_EMAIL_SEND_OTP_PATH } from "../registration/constants";
 
 /** 需要人机验证的 Better Auth 端点(发送验证码)。 */
 export const TURNSTILE_SEND_OTP_PATH = "/email-otp/send-verification-otp";
@@ -80,5 +81,9 @@ export function getClientIP(request?: Request): string | undefined {
 
 /** 是否需要在当前端点强制人机验证。 */
 export function shouldEnforceTurnstile(path: string): boolean {
-  return isTurnstileEnabled() && path === TURNSTILE_SEND_OTP_PATH;
+  return (
+    isTurnstileEnabled() &&
+    (path === TURNSTILE_SEND_OTP_PATH ||
+      path === REGISTRATION_EMAIL_SEND_OTP_PATH)
+  );
 }
