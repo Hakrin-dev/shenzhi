@@ -11,7 +11,9 @@ import { githubOAuthConfig } from "@/config/oauth";
 import { turnstileConfig } from "@/config/turnstile";
 import {
   getClientIP,
+  persistTurnstileVerificationCookie,
   shouldEnforceTurnstile,
+  TURNSTILE_VERIFIED_CONTEXT_KEY,
   TURNSTILE_VERIFIED_COOKIE,
   verifyCloudflareTurnstileToken,
 } from "@/lib/auth/captcha/turnstile";
@@ -62,8 +64,10 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      let shouldRememberTurnstile = false;
+
       // 人机验证:发送验证码前需先通过 Turnstile,通过一次后以签名 Cookie 记住。
-      if (shouldEnforceTurnstile(ctx.path)) {
+      if (shouldEnforceTurnstile(ctx.path, turnstileConfig.enabled)) {
         const turnstileSecretKey = turnstileConfig.secretKey;
         if (turnstileSecretKey) {
           const verified = await ctx.getSignedCookie(
@@ -95,18 +99,7 @@ export const auth = betterAuth({
               });
             }
 
-            await ctx.setSignedCookie(
-              TURNSTILE_VERIFIED_COOKIE,
-              "1",
-              ctx.context.secret,
-              {
-                httpOnly: true,
-                sameSite: "Lax",
-                secure: process.env.NODE_ENV === "production",
-                maxAge: 60 * 60 * 24,
-                path: "/",
-              },
-            );
+            shouldRememberTurnstile = true;
           }
         }
       }
@@ -125,7 +118,15 @@ export const auth = betterAuth({
       const isNewPasswordOperation =
         ctx.path === "/reset-password" || ctx.path === "/change-password";
 
-      if (!isSignUp && !isNewPasswordOperation) return;
+      if (!isSignUp && !isNewPasswordOperation) {
+        return shouldRememberTurnstile
+          ? {
+              context: {
+                [TURNSTILE_VERIFIED_CONTEXT_KEY]: true,
+              },
+            }
+          : undefined;
+      }
 
       const password = isSignUp
         ? ctx.body?.password
@@ -139,6 +140,7 @@ export const auth = betterAuth({
         });
       }
     }),
+    after: persistTurnstileVerificationCookie,
   },
   emailAndPassword: {
     enabled: true,

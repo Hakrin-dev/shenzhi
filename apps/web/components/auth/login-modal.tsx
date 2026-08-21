@@ -299,15 +299,18 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error) {
+          turnstileVerifiedRef.current = false;
           setCodeError(
             getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
           );
           return;
         }
 
+        if (turnstileToken) turnstileVerifiedRef.current = true;
         setCodeCooldown(60);
         setCodeNotice("验证码已发送，请查收邮件");
       } catch (error) {
+        turnstileVerifiedRef.current = false;
         setCodeError(
           getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
         );
@@ -320,7 +323,6 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
 
   const handleTurnstileToken = React.useCallback(
     async (token: string) => {
-      turnstileVerifiedRef.current = true;
       setShowTurnstile(false);
       setCodeNotice(null);
 
@@ -381,6 +383,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error || !data?.challengeId) {
+          registerTurnstileVerifiedRef.current = false;
           const message = getAuthErrorMessage(
             error,
             "验证码发送失败，请稍后重试",
@@ -391,6 +394,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
           return;
         }
 
+        if (turnstileToken) registerTurnstileVerifiedRef.current = true;
         setRegisterEmail(email);
         setRegisterChallengeId(data.challengeId);
         setRegisterCode("");
@@ -399,6 +403,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         setRegisterEmailNotice(null);
         setRegisterCodeNotice("验证码已发送，请查收邮件");
       } catch (error) {
+        registerTurnstileVerifiedRef.current = false;
         const message = getAuthErrorMessage(
           error,
           "验证码发送失败，请稍后重试",
@@ -415,7 +420,6 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
 
   const handleRegisterTurnstileToken = React.useCallback(
     async (token: string) => {
-      registerTurnstileVerifiedRef.current = true;
       setRegisterShowTurnstile(false);
 
       const email = registerPendingEmailRef.current;
