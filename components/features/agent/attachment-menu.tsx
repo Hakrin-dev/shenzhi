@@ -1,12 +1,21 @@
 "use client";
 
 /**
- * UPDATE: 2026-08-18 A+B 单前端整合
- *   —— 从 A 模块 (shenzhi-feat-ai_agent_front) 直接替换 B 旧版 attachment-menu
- *   —— 新接口签名：{ onAdd, accept, maxFiles, maxSizeMb } 替代之前 (files)=>void 简写
- *   —— 新增能力：引用知识库实体（论文/专利/基金/学者/机构）快速选择、历史附件恢复、
- *     上传文件走 /api/uploads（上传列表 / 签名 URL / 本地文件三步 API）
- * 修改日志：任务日志/对于A的修改/2026.8.18-A+B整合单前端化修改.md
+ * UPDATE: 2026-08-20 C1 附件上传+解析贯通
+ *   - 原 pickFiles() 行为：uploadFile(file) 仅返回 { file_id }，
+ *     生成 A 格式 ChatAttachment({ kind: "file", file_id, title }) 给 onAdd()，
+ *     —— 问题：ChatAttachment(B 结构).text 没填，AI 读不到附件正文。
+ *   - 新 pickFiles() 行为：
+ *     1) uploads.ts 扩展 uploadFile 返回 UploadsDataFull：{file_id, filename, parse_status, text, truncated, warning}
+ *     2) 直接调用 useComposerStore（A 模块 composer-store / B 模块 zustand 导出同名方法），
+ *        把 {id, name, type, size, text/error, kind="file", ref_id=undefined} 的
+ *        B 格式 ChatAttachment 写入 store。这样 agent-chat 发送时 buildCreateSessionRequest →
+ *        buildModelMessages(attachments) → buildAttachmentContext 才能把 text 注入 DeepSeek prompt。
+ *     3) 仍然调用 onAdd(A 格式) —— 保持与 composer-shell 的 onAttachmentsChange 回调兼容，
+ *        ComposerShell 附件 chips 仍然能渲染（toBAttachment 在草稿通道把 A 转回 B，两种路径最终都在 store 对齐）。
+ *   - 引用知识库（RefItem）：保持 A 格式不变，C 解析能力不涉及这部分；
+ *     但也写入 store.addAttachment(B 格式) 一份 —— 用 kind/ref_id/name 填充。
+ *   修改日志：任务日志/对于C的修改/2026.8.20-C模块-附件上传解析.md
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +39,8 @@ import { institutions } from "@/lib/data/institutions";
 import { projects } from "@/lib/data/projects";
 import { uploadFile } from "@/lib/api/uploads";
 import type { ChatAttachment, ChatAttachmentKind } from "@/types/ai-search";
+import { useComposerStore } from "@/stores/composer";
+import type { ChatAttachment as BChatAttachment } from "@/types";
 
 interface RefItem {
   kind: ChatAttachmentKind;
@@ -106,6 +117,14 @@ const PROJECT_GROUPS: RefGroup[] = [
     })),
   },
 ];
+
+function extToBType(name: string): BChatAttachment["type"] {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".txt")) return "txt";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "md";
+  return "other";
+}
 
 function RefPanel({
   groups,
@@ -198,6 +217,7 @@ export function AttachmentMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  const addB = useComposerStore((s) => s.addAttachment);
 
   useEffect(() => {
     folderRef.current?.setAttribute("webkitdirectory", "");
@@ -220,17 +240,74 @@ export function AttachmentMenu({
   }, [open]);
 
   const pickFiles = async (files: FileList | null) => {
-    if (!files || !onAdd) return;
+    if (!files) return;
     const list = Array.from(files).slice(0, maxFiles);
+    if (list.length === 0) return;
     setUploading(true);
     try {
       for (const file of list) {
-        if (file.size > maxSizeMb * 1024 * 1024) continue;
-        const { file_id } = await uploadFile(file);
-        onAdd({ kind: "file", file_id, title: file.name });
+        // 大小拦截（与服务端 route.ts 的 MAX_BYTES_PER_FILE 一致）
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          // 失败也塞一个 B 附件（带 error），让 UI chips 提示用户（而不是静默丢掉）
+          addB({
+            id: `att_err_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: extToBType(file.name),
+            size: file.size,
+            kind: "file",
+            error: `文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB，上限 ${maxSizeMb}MB）`,
+          });
+          continue;
+        }
+
+        // 上传 + 解析（B 模式走本地 C route；A 模式走 /api/v1/uploads 代理）
+        let upload: Awaited<ReturnType<typeof uploadFile>>;
+        try {
+          upload = await uploadFile(file);
+        } catch (e) {
+          addB({
+            id: `att_err_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: extToBType(file.name),
+            size: file.size,
+            kind: "file",
+            error: (e as Error).message || "上传失败",
+          });
+          continue;
+        }
+
+        const bAtt: BChatAttachment = {
+          id: upload.file_id,
+          name: upload.filename,
+          type: extToBType(upload.filename),
+          size: file.size,
+          kind: "file",
+          text: upload.parse_status === "ok" ? upload.text : undefined,
+          error:
+            upload.parse_status === "failed"
+              ? upload.warning || "解析失败（仅支持文字版 PDF / TXT / MD）"
+              : undefined,
+        };
+        addB(bAtt);
+
+        // 兼容：仍然回调 onAdd（A 格式），ComposerShell 内部的 innerFiles/onAttachmentsChange 能渲染 chips。
+        //     （agent-chat.tsx 下的 composer shell 是受控的，props.attachments 来自 zustand store，
+        //      因此会优先用 store 的 B 格式；这里调 onAdd 是为了首页 search-hero 非受控场景也能显示 chips）
+        onAdd?.({
+          kind: "file",
+          file_id: upload.file_id,
+          title: upload.filename,
+        });
+
+        // 如果有「截断警告」，把 warning 拼到 error（但不标 parse_status=failed）——
+        // 这样 buildAttachmentContext 里的 `a.error` 过滤会跳过，text 仍会注入 prompt；
+        // UI 层面 composer chips 没显展示 warning（下一阶段如需展示可在 chips 上挂 tooltip）。
+        if (upload.warning && upload.parse_status === "ok") {
+          // 留 console 做联调期观测
+          // eslint-disable-next-line no-console
+          console.info("[C1 upload]", upload.filename, upload.warning);
+        }
       }
-    } catch {
-      /* 上传接口未接入时不塞假 file_id */
     } finally {
       setUploading(false);
       setOpen(false);
@@ -238,6 +315,15 @@ export function AttachmentMenu({
   };
 
   const addRef = (item: RefItem) => {
+    const bAtt: BChatAttachment = {
+      id: item.ref_id,
+      name: item.title,
+      // 引用类型都塞 md type，避免 type 枚举超范围
+      type: "md",
+      kind: item.kind,
+      ref_id: item.ref_id,
+    };
+    addB(bAtt);
     onAdd?.({ kind: item.kind, ref_id: item.ref_id, title: item.title });
     setOpen(false);
   };

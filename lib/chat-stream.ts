@@ -243,6 +243,13 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
       // 否则后续 onMeta/onDelta 触发时 msgIdIdxRef 里还没有 backendMsgId → aiIdx 映射
       cbs().onMessageReady?.(backendMsgId);
 
+      // C2 前置联网：搜索结果立即回传 UI（来源卡片先于 AI 正文渲染，msg.sources 非空）
+      // 模式 B（本地 DeepSeek）后端不会发 refs 事件，此调用不会被覆盖；若未来后端也发 refs，
+      // 以 onRefs handler 的后续覆盖为准（联网结果仍拼在 system prompt，不影响 AI 回答）。
+      if (webSearchSources.length > 0) {
+        cbs().onRefs(backendMsgId, webSearchSources);
+      }
+
       // 5. streamChatMessage 拉 SSE
       //    ⚠️ 修复：超时定时器必须在调用流式之前设置（原顺序反了，导致流式中 onDelta 清不到 timer，60s 超时也不生效）
       let tokenTimer: ReturnType<typeof setTimeout> | null = null;

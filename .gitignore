@@ -37,6 +37,9 @@ browser-logs/
 shot_*.png
 shot_*.jpg
 shot_*.jpeg
+# —— C 模块新增(2026-08-20)：上传附件的本地临时缓存目录，解析后立即删除
+# 严禁进入 Git 仓库（可能包含用户涉密 PDF/MD/TXT）
+tmp_uploads/
 
 # typescript
 *.tsbuildinfo

@@ -34,7 +34,6 @@ import {
   BookOpenCheck,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   MessageSquarePlus,
   Play,
   RefreshCw,
@@ -44,6 +43,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ComposerShell } from "./composer";
+import { CWebSearchProvider } from "./c-web-search-provider";
+import { ReferenceGrid } from "./reference-grid";
 import { useAskSession, type AskStreamCallbacks } from "@/lib/chat-stream";
 import { useComposerStore } from "@/stores/composer";
 import { mapToAMode, mapToBStyle } from "@/lib/api/search";
@@ -58,12 +59,9 @@ import {
 import { normalizeAIError } from "@/lib/ask/errors";
 import type {
   ChatMessage,
-  ChatSource,
   ChatStyle,
   ChatUIMessage,
 } from "@/types";
-import { sourceTypeTone } from "@/lib/api/search";
-import type { ChatSourceType } from "@/types/ai-search";
 
 /* =========================================================
  *  常量
@@ -85,35 +83,6 @@ const HISTORY = [
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
-
-/* =========================================================
- *  工具：source_type → 跳转到的平台内路径
- * ======================================================= */
-
-function sourceHref(
-  type: ChatSourceType | undefined,
-  sourceId: string,
-  url: string | undefined,
-): { href: string; external: boolean } {
-  // 有外跳 URL 优先生效（web 类型或平台实体配了外链）
-  if (url) return { href: url, external: true };
-  switch (type) {
-    case "paper":
-      return { href: `/papers/${encodeURIComponent(sourceId)}`, external: false };
-    case "scholar":
-      return { href: `/scholars/${encodeURIComponent(sourceId)}`, external: false };
-    case "patent":
-    case "funding":
-    case "institution":
-      return {
-        href: `/knowledge/${type}/${encodeURIComponent(sourceId)}`,
-        external: false,
-      };
-    case "web":
-    default:
-      return { href: url ?? "#", external: !!url };
-  }
 }
 
 /* =========================================================
@@ -214,97 +183,6 @@ function ThinkingPanel({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* =========================================================
- *  子组件：引用来源网格（对齐 A 的 ReferenceGrid）
- *  - 编号底色按 source_type → tone
- *  - 推荐：琥珀色边框 + 浅黄底
- * ======================================================= */
-function SourcesSection({ sources }: { sources: ChatSource[] }) {
-  if (sources.length === 0) return null;
-  return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-faint">
-        来源引用 ({sources.length})
-      </p>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        {sources.map((s, idx) => {
-          const tone = s.tone ?? (s.type ? sourceTypeTone(s.type) : "violet");
-          const badgeTone: Record<string, string> = {
-            violet:
-              "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
-            green:
-              "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
-            amber:
-              "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-            gray:
-              "bg-slate-100 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300",
-          };
-          const type = s.type;
-          const { href, external } = sourceHref(
-            type as ChatSourceType | undefined,
-            `${s.id}`,
-            s.url,
-          );
-          const Tag = external ? "a" : ("button" as any);
-          return (
-            <Tag
-              key={`${s.id}-${idx}`}
-              href={external ? href : undefined}
-              onClick={
-                external
-                  ? undefined
-                  : () => {
-                      if (!external) window.location.href = href;
-                    }
-              }
-              target={external ? "_blank" : undefined}
-              rel={external ? "noopener noreferrer" : undefined}
-              className={cn(
-                "group rounded-xl border bg-background p-3 text-left transition-colors",
-                s.recommended
-                  ? "border-amber-300/80 bg-amber-50/40 dark:border-amber-400/40 dark:bg-amber-500/10"
-                  : "border-line hover:border-primary/40 hover:bg-card",
-              )}
-            >
-              <div className="mb-1 flex items-start justify-between gap-2">
-                <span
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
-                    badgeTone[tone],
-                  )}
-                >
-                  [{idx + 1}] {type ?? "source"}
-                </span>
-                {s.recommended && (
-                  <span className="rounded-md bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                    推荐
-                  </span>
-                )}
-                {external && s.url && (
-                  <ExternalLink className="size-3 shrink-0 text-faint group-hover:text-primary" />
-                )}
-              </div>
-              <p className="line-clamp-2 text-[12px] font-medium text-ink">
-                {s.title}
-              </p>
-              <p className="mt-1 line-clamp-1 text-[11px] text-muted">
-                {(s.author || s.venue || s.citations) && (
-                  <>
-                    {s.author}
-                    {s.author && s.venue && " · "}
-                    {s.venue}
-                    {s.citations && ` · ${s.citations}`}
-                  </>
-                )}
-              </p>
-            </Tag>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -663,23 +541,22 @@ export function AgentChat() {
   ]);
 
   /* ---------- 8. 自动首问（A→B 跳转路径） ---------- */
-  const autoLaunchedRef = useRef(false);
+  // ⚠️ 修复（2026.8.21 验收发现）：不能把 sendInternal 直接放进 effect 依赖 ——
+  //   sendInternal 是 useCallback（依赖 isStreaming 等），流式开始后引用变化 → effect 重跑
+  //   → cleanup 把 autoLaunchedRef 复位 → 再次自动发送，产生 N 组重复对话。
+  //   方案：用 ref 持有最新 sendInternal（effect 只依赖 urlQ），cleanup 只清定时器、不复位标记。
+  const sendInternalRef = useRef(sendInternal);
+  sendInternalRef.current = sendInternal;
+  const autoLaunchedQRef = useRef<string | null>(null);
   useEffect(() => {
-    if (autoLaunchedRef.current || !urlQ) return;
-    autoLaunchedRef.current = true;
+    if (!urlQ || autoLaunchedQRef.current === urlQ) return;
+    autoLaunchedQRef.current = urlQ;
     setComposerMessage(urlQ);
     const t = window.setTimeout(() => {
-      sendInternal(urlQ);
+      sendInternalRef.current(urlQ);
     }, 50);
-    let cleaned = false;
-    return () => {
-      if (cleaned) return;
-      cleaned = true;
-      window.clearTimeout(t);
-      // StrictMode dev 下二次 mount 能再次触发
-      autoLaunchedRef.current = false;
-    };
-  }, [urlQ, sendInternal, setComposerMessage]);
+    return () => window.clearTimeout(t);
+  }, [urlQ, setComposerMessage]);
 
   /* ---------- 9. 停止：中断流式 + 标记 status=stopped ---------- */
   const stopStreaming = useCallback(async () => {
@@ -859,8 +736,9 @@ export function AgentChat() {
 
   /* ---------- 16. 对话流 ---------- */
   return (
-    <div className="flex">
-      {historyPanel}
+    <CWebSearchProvider>
+      <div className="flex">
+        {historyPanel}
       <div className="flex h-screen min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
@@ -935,9 +813,9 @@ export function AgentChat() {
                       </div>
                     )}
 
-                    {/* 引用卡片 */}
+                    {/* 引用卡片（C3：用 ReferenceGrid 替换内联 SourcesSection） */}
                     {msg.sources && msg.sources.length > 0 && (
-                      <SourcesSection sources={msg.sources} />
+                      <ReferenceGrid sources={msg.sources} limit={4} />
                     )}
 
                     {/* 追问建议 */}
@@ -962,6 +840,7 @@ export function AgentChat() {
         </div>
       </div>
     </div>
+    </CWebSearchProvider>
   );
 }
 

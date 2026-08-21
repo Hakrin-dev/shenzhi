@@ -137,16 +137,48 @@ export function toAAttachment(
   });
 }
 
-/** 反向：A ChatAttachment → B ChatAttachment（composer 显示附件 chips 时使用） */
+/**
+ * 反向：A ChatAttachment → B ChatAttachment（composer 显示附件 chips 时使用）。
+ * UPDATE: 2026-08-20 C1 附件解析贯通 —— 草稿里的 A 格式附件如果携带了扩展字段
+ *   {text, error, size, type}（例如 C 模块上传后再次 saveAskDraft 会把 B 扩展字段带回来），
+ *   则在此透传到 B 格式；避免 A→B 页面跳转后附件 text/error 丢失，
+ *   导致 buildAttachmentContext 过滤为空、AI 读不到附件正文。
+ *   type 映射优先级：A 自带扩展 type > 从 kind 推断 > 默认 md
+ */
 export function toBAttachment(
   atts: ChatAttachment[],
 ): BChatAttachment[] {
-  return atts.map((a, idx) => ({
-    id: a.file_id ?? a.ref_id ?? `att_draft_${idx}`,
-    name: a.title ?? `附件 ${idx + 1}`,
-    type: a.kind === "file" ? "other" : "md", // 非 file 类型也给一个合法 type 避免 UI 报错
-    // 草稿恢复时没有真实解析文本也没有 size
-  }));
+  return atts.map((a, idx) => {
+    const ext = a as unknown as {
+      text?: string;
+      error?: string;
+      size?: number;
+      type?: "pdf" | "txt" | "md" | "other";
+    };
+    const inferredType: BChatAttachment["type"] =
+      ext.type ??
+      (a.kind === "file"
+        ? /\.(pdf)$/i.test(a.title ?? "")
+          ? "pdf"
+          : /\.(txt)$/i.test(a.title ?? "")
+            ? "txt"
+            : /\.(md|markdown)$/i.test(a.title ?? "")
+              ? "md"
+              : "other"
+        : "md");
+    return {
+      id: a.file_id ?? a.ref_id ?? `att_draft_${idx}`,
+      name: a.title ?? `附件 ${idx + 1}`,
+      type: inferredType,
+      // 草稿恢复时透传：size / text / error
+      size: ext.size,
+      text: ext.text,
+      error: ext.error,
+      // 同步把 A 原生 kind/ref_id 带过去（保证 toAAttachment 再转换时不丢信息）
+      kind: a.kind,
+      ref_id: a.ref_id,
+    };
+  });
 }
 
 /* ---------- EntryMode / Mode 等类型兜底导出（A 模块消费用） ---------- */
