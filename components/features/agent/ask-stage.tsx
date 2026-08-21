@@ -117,7 +117,7 @@ export function AskStage({
             reset();
             window.location.assign("/agents/ask");
           }}
-          className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-full bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+          className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-full bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-deep"
         >
           <MessageSquarePlus className="size-4" strokeWidth={1.8} />
           新对话

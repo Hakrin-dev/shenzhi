@@ -215,7 +215,7 @@ function ModeSelect({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary/90"
+        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary-deep"
       >
         <current.icon className="size-4" strokeWidth={1.8} />
         {current.label}
@@ -274,7 +274,7 @@ function EntryModeSelect({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary/90"
+        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary-deep"
       >
         <current.icon className="size-4" strokeWidth={1.8} />
         {current.label}
@@ -495,7 +495,7 @@ export function ComposerShell({
               className={cn(
                 "flex size-9 cursor-pointer items-center justify-center rounded-xl transition-colors",
                 value.trim()
-                  ? "bg-primary text-white hover:bg-primary/90"
+                  ? "bg-primary text-white hover:bg-primary-deep"
                   : "bg-chip text-faint",
               )}
             >

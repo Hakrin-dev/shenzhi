@@ -2,27 +2,29 @@
 @import "tw-animate-css";
 
 /*
- * 设计令牌 —— 精确提取自 prototype_v1 SVG 设计稿
- * 主色深识蓝 #002FA7 / 页面背景 #F7F8FC / 侧边栏 #EEF1F8 / 主文字 #0F1419
- * 日间模式为原界面;夜间模式通过 html.dark 重定义令牌,主蓝调浅为 #5B84F1
+ * 设计令牌 —— 深知品牌色板 V2
+ * 主色 #174A7E / 深色状态 #123A63(悬停·深色导航·页脚)/ 浅色背景 #E8F1F8(卡片·证据·选中)
+ * 智能强调 #0F766E(智能体·数据连接·成功)/ 正文深灰 #17212B / 页面背景 #F6F9FC
+ * 日间模式为原界面;夜间模式通过 html.dark 重定义令牌,主蓝调浅保证暗底对比度
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-background: #f7f8fc;
+  --color-background: #f6f9fc;
   --color-sidebar: #eef1f8;
   --color-card: #ffffff;
 
-  --color-primary: #002fa7;
+  --color-primary: #174A7E;
+  --color-primary-deep: #123a63;
   --color-primary-foreground: #ffffff;
-  --color-primary-soft: #e9eefb;
+  --color-primary-soft: #e8f1f8;
 
-  /* 品牌辅助色:灵犀紫(智能)/ 探索青(科研)/ 桂冠金(学术) */
+  /* 品牌辅助色:灵犀紫(学术标记)/ 智能青(智能体·数据连接)/ 桂冠金(学术) */
   --color-brand-violet: #5b21b6;
-  --color-brand-cyan: #155e75;
+  --color-brand-cyan: #0f766e;
   --color-brand-gold: #f3d029;
 
-  --color-ink: #0f1419;
+  --color-ink: #17212b;
   --color-ink-2: #374151;
   --color-muted: #6b7280;
   --color-faint: #9ca3af;
@@ -33,8 +35,8 @@
 
   --color-danger: #ef4444;
   --color-danger-soft: #fee2e2;
-  --color-success: #10b981;
-  --color-success-soft: #d1fae5;
+  --color-success: #0f766e;
+  --color-success-soft: #dff0ee;
 
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -44,7 +46,7 @@
 }
 
 /*
- * 夜间模式令牌 —— 深墨蓝底,主蓝调浅(#5B84F1)保证暗底对比度;
+ * 夜间模式令牌 —— 深墨蓝底,主蓝调浅(#5A94C8)保证暗底对比度,深色状态相应提亮;
  * 组件零改动,全部经 CSS 变量级联生效
  */
 .dark {
@@ -52,12 +54,13 @@
   --color-sidebar: #101731;
   --color-card: #161d36;
 
-  --color-primary: #5b84f1;
+  --color-primary: #5a94c8;
+  --color-primary-deep: #4a80b3;
   --color-primary-foreground: #ffffff;
-  --color-primary-soft: #1e2a52;
+  --color-primary-soft: #1a2c47;
 
   --color-brand-violet: #9f7aea;
-  --color-brand-cyan: #4fbdd9;
+  --color-brand-cyan: #3aa79d;
   --color-brand-gold: #f3d029;
 
   --color-ink: #e9edf7;
@@ -71,8 +74,8 @@
 
   --color-danger: #f87171;
   --color-danger-soft: #3d2129;
-  --color-success: #34d399;
-  --color-success-soft: #12332b;
+  --color-success: #3aa79d;
+  --color-success-soft: #12332e;
 
   --shadow-card: 0 2px 6px 0 rgb(0 0 0 / 0.3);
   --shadow-pop: 0 8px 24px 0 rgb(0 0 0 / 0.4);
@@ -96,11 +99,11 @@
   }
 
   ::selection {
-    background: rgb(0 47 167 / 0.18);
+    background: rgb(23 74 126 / 0.18);
   }
 
   .dark ::selection {
-    background: rgb(91 132 241 / 0.35);
+    background: rgb(90 148 200 / 0.35);
   }
 }
 
