@@ -11,7 +11,7 @@ Baseline is production [http://47.238.241.77/](http://47.238.241.77/) (`bb4ec5d`
 
 ## A overlay
 
-Home composer `variant="home"`: 搜索 / 问 AI. Search hides model, plus, attachments, reply style.
+Home composer toolbar: circular + , upload (paperclip), model pill, circular arrow send — like alphaXiv. Entry mode (搜索/问 AI), reply style, web search live in + menu. Model list always visible.
 
 - Enter = current mode. Alt+Enter = search. Shift+Enter = newline. IME Enter does not submit.
 - 搜索 → `/search?q=`
@@ -20,4 +20,13 @@ Home composer `variant="home"`: 搜索 / 问 AI. Search hides model, plus, attac
 
 ## Tokens
 
-Primary `#002FA7` / dark `#5B84F1`. Page `#F7F8FC`. Font PingFang SC / Microsoft YaHei. Cards `rounded-2xl bg-card shadow-card`. Composer `rounded-2xl bg-card p-3 shadow-pop`.
+Primary `#174A7E` / dark `#123A63`. Page `#F6F9FC`. Font PingFang SC / Microsoft YaHei. Cards `rounded-2xl bg-card shadow-card`. Composer `rounded-2xl bg-card p-3 shadow-pop`.
+
+Brand tokens in `apps/web/styles/globals.css`:
+
+- 深知蓝 primary `#174A7E` — logo, main buttons, nav highlights
+- 深色 primary dark `#123A63` — button hover, dark sidebar (night)
+- 浅底 primary soft `#E8F1F8` — cards, citations, selected states, sidebar (day)
+- 页面 background `#F6F9FC`
+- 正文 ink `#17212B`
+- 智能体强调 agent `#0F766E` — 问 AI mode toggle, send button on home (~10% accent)

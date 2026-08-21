@@ -22,7 +22,7 @@ class CreateSessionBody(BaseModel):
     type: str = "chat"
     question: str = Field(min_length=1, max_length=2000)
     mode: str = "fast"
-    model: str = "default"
+    model: str = "deepseek-chat"
     web_search: bool = False
     attachments: list[ChatAttachment] = Field(default_factory=list)
 
@@ -71,18 +71,59 @@ def search_config() -> JSONResponse:
     return ok(
         {
             "models": [
-                {"value": "default", "label": "默认", "enabled": True},
                 {
-                    "value": "subscription",
-                    "label": "订阅",
-                    "enabled": False,
-                    "reason": "not_subscribed",
+                    "value": "deepseek-chat",
+                    "label": "DeepSeek V3",
+                    "provider": "deepseek",
+                    "enabled": True,
+                    "description": "平台默认，平衡速度与回答质量",
                 },
                 {
-                    "value": "byok",
-                    "label": "API接入",
+                    "value": "deepseek-reasoner",
+                    "label": "DeepSeek R1",
+                    "provider": "deepseek",
+                    "enabled": True,
+                    "description": "推理模型，适合复杂分析与证明",
+                },
+                {
+                    "value": "gpt-4o",
+                    "label": "GPT-4o",
+                    "provider": "openai",
                     "enabled": False,
-                    "reason": "no_api_key",
+                    "reason": "not_subscribed",
+                    "description": "OpenAI 旗舰多模态模型",
+                },
+                {
+                    "value": "gpt-4o-mini",
+                    "label": "GPT-4o mini",
+                    "provider": "openai",
+                    "enabled": False,
+                    "reason": "not_subscribed",
+                    "description": "OpenAI 轻量快速模型",
+                },
+                {
+                    "value": "claude-3-5-sonnet",
+                    "label": "Claude 3.5 Sonnet",
+                    "provider": "anthropic",
+                    "enabled": False,
+                    "reason": "not_subscribed",
+                    "description": "Anthropic 长上下文推理",
+                },
+                {
+                    "value": "gemini-2-flash",
+                    "label": "Gemini 2.0 Flash",
+                    "provider": "google",
+                    "enabled": False,
+                    "reason": "not_subscribed",
+                    "description": "Google 低延迟模型",
+                },
+                {
+                    "value": "glm-4-plus",
+                    "label": "GLM-4 Plus",
+                    "provider": "zhipu",
+                    "enabled": False,
+                    "reason": "not_subscribed",
+                    "description": "智谱 GLM，中文与代码表现好",
                 },
             ],
             "modes": ["fast", "deep", "idea", "doubt"],

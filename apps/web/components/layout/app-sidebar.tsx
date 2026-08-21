@@ -374,7 +374,7 @@ function LogoutPopup({
   );
 }
 
-/** 全局侧边栏 —— 对应 SVG 原型 240px 左侧栏(背景 #EEF1F8),可折叠为 64px 图标栏 */
+/** 全局侧边栏 —— 240px 左侧栏(背景 primary soft)，可折叠为 64px 图标栏 */
 export function AppSidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);

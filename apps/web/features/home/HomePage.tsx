@@ -7,7 +7,7 @@ import { FeedList } from "@/features/search/components/feed-list";
 export function HomePage() {
   return (
     <AppShell>
-      <div className="mx-auto max-w-[1080px] space-y-5 px-8 py-6">
+      <div className="mx-auto max-w-[1080px] space-y-5 overflow-visible px-8 py-6">
         <SearchHero />
         <FeedTabs />
         <FeedList />

@@ -16,7 +16,7 @@ const PLACEHOLDER: Record<ComposerEntryMode, string> = {
 /** 首页入口 —— 「搜索 / 问 AI」分流；问 AI 携带正式请求字段到 /agents/ask */
 export function SearchHero({
   initialQuery = "",
-  initialMode = "search",
+  initialMode = "ai",
 }: {
   initialQuery?: string;
   initialMode?: ComposerEntryMode;
@@ -41,7 +41,7 @@ export function SearchHero({
   };
 
   return (
-    <div>
+    <div className="overflow-visible">
       <ComposerShell
         variant="home"
         value={value}
@@ -50,11 +50,10 @@ export function SearchHero({
         onEntryModeChange={setEntryMode}
         onSend={send}
         placeholder={PLACEHOLDER[entryMode]}
-        menuPlacement="down"
         config={config}
       />
-      <p className="mt-2 px-1 text-[11px] text-faint">
-        Enter 按当前模式提交 · Alt+Enter 搜索论文 · Shift+Enter 换行
+      <p className="mt-2 px-1 text-[11px] text-faint sm:hidden">
+        Enter 按当前模式提交 · Alt+Enter 搜索论文
       </p>
     </div>
   );

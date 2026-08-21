@@ -12,18 +12,10 @@ import type {
   StreamMetaEvent,
   StreamRefsEvent,
 } from "@/types/ai-search";
+import { CHAT_MODEL_CATALOG } from "@/lib/data/chat-models";
 
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
-  models: [
-    { value: "default", label: "默认", enabled: true },
-    {
-      value: "subscription",
-      label: "订阅",
-      enabled: false,
-      reason: "not_subscribed",
-    },
-    { value: "byok", label: "API接入", enabled: false, reason: "no_api_key" },
-  ],
+  models: CHAT_MODEL_CATALOG,
   modes: ["fast", "deep", "idea", "doubt"],
   quota: { used: 0, limit: 20, deep_used: 0, deep_limit: 5 },
   upload: {

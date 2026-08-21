@@ -4,6 +4,7 @@ import type {
   ChatReplyMode,
   ComposerSubmitPayload,
 } from "@/types/ai-search";
+import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 
 const KEY = "shenzhi.chat.draft";
 
@@ -17,7 +18,7 @@ export interface AskDraft {
 
 const DEFAULTS: Omit<AskDraft, "question"> = {
   mode: "fast",
-  model: "default",
+  model: DEFAULT_CHAT_MODEL,
   web_search: false,
   attachments: [],
 };

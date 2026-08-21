@@ -7,7 +7,7 @@ export const scholars: Scholar[] = [
     nameCn: "何恺明",
     nameEn: "Kaiming He",
     initials: "KH",
-    avatarColor: "#002FA7",
+    avatarColor: "#174A7E",
     role: "副教授",
     affiliation: "MIT EECS · Google DeepMind Distinguished Scientist",
     bio: "ResNet 作者之一,提出了残差连接使训练百层深度网络成为可能;Masked Autoencoders (MAE) 通过像素重建推动视觉自监督学习。",

@@ -1,15 +1,11 @@
 import { AskPage } from "@/features/agents/ask/AskPage";
-import type { ChatModelId, ChatReplyMode } from "@/types/ai-search";
+import { normalizeChatModelId } from "@/lib/data/chat-models";
+import type { ChatReplyMode } from "@/types/ai-search";
 
 const MODES: ChatReplyMode[] = ["fast", "deep", "idea", "doubt"];
-const MODELS: ChatModelId[] = ["default", "subscription", "byok"];
 
 function asMode(value?: string) {
   return MODES.find((mode) => mode === value);
-}
-
-function asModel(value?: string) {
-  return MODELS.find((model) => model === value);
 }
 
 export default async function Page({
@@ -28,7 +24,7 @@ export default async function Page({
     <AskPage
       question={q}
       initialMode={asMode(mode)}
-      initialModel={asModel(model)}
+      initialModel={normalizeChatModelId(model)}
       initialWebSearch={web_search === "1"}
     />
   );

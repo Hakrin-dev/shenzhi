@@ -1,10 +1,19 @@
-/** 与 docs/dev/AI搜索-开发文档.md 对齐的会话 / 流式契约 */
+/** 与 docs/dev/项目介绍.md 及 PRD 对齐的会话 / 流式契约 */
 
 export type ChatSessionType = "research" | "chat";
 
 export type ChatReplyMode = "fast" | "deep" | "idea" | "doubt";
 
-export type ChatModelId = "default" | "subscription" | "byok";
+/** 具体大模型 ID，如 deepseek-chat、gpt-4o */
+export type ChatModelId = string;
+
+export type ModelProvider =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "deepseek"
+  | "zhipu"
+  | "platform";
 
 export type ChatAttachmentKind =
   | "file"
@@ -100,9 +109,12 @@ export interface StreamErrorEvent {
 
 export interface SearchModelOption {
   value: ChatModelId;
+  /** 列表与 pill 上显示的模型名 */
   label: string;
+  provider: ModelProvider;
   enabled: boolean;
   reason?: string;
+  description?: string;
 }
 
 export interface SearchConfig {

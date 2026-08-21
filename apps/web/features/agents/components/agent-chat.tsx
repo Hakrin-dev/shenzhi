@@ -68,7 +68,6 @@ export function AgentChat() {
       onChange={setValue}
       onSend={() => send()}
       placeholder="使用'@'引用或使用'/'唤起插件或技能…"
-      menuPlacement="down"
     />
   );
 
@@ -82,7 +81,7 @@ export function AgentChat() {
           setActiveConv(null);
           setValue("");
         }}
-        className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+        className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
       >
         <MessageSquarePlus className="size-4" strokeWidth={1.8} />
         新对话

@@ -21,6 +21,7 @@ import type {
   ComposerSubmitPayload,
   SearchConfig,
 } from "@/types/ai-search";
+import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 
 function titleOf(question: string) {
   const q = question.trim() || "问 AI";
@@ -44,7 +45,9 @@ export function AskStage({
   const [replyMode, setReplyMode] = useState<ChatReplyMode>(
     initialMode ?? "fast",
   );
-  const [model, setModel] = useState<ChatModelId>(initialModel ?? "default");
+  const [model, setModel] = useState<ChatModelId>(
+    initialModel ?? DEFAULT_CHAT_MODEL,
+  );
   const [webSearch, setWebSearch] = useState(Boolean(initialWebSearch));
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [config, setConfig] = useState<SearchConfig | undefined>();
@@ -122,7 +125,7 @@ export function AskStage({
             reset();
             window.location.assign("/agents/ask");
           }}
-          className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-full bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+          className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-full bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
         >
           <MessageSquarePlus className="size-4" strokeWidth={1.8} />
           新对话
@@ -278,7 +281,7 @@ export function AskStage({
           </div>
         </div>
 
-        <div className="relative px-6 pb-5 pt-2">
+        <div className="relative overflow-visible px-6 pb-5 pt-2">
           {showJump && (
             <button
               type="button"
@@ -295,7 +298,6 @@ export function AskStage({
               onChange={setValue}
               onSend={onSend}
               placeholder="Ask anything about research… 使用 '@' 引用论文"
-              menuPlacement="up"
               replyMode={replyMode}
               onReplyModeChange={setReplyMode}
               model={model}

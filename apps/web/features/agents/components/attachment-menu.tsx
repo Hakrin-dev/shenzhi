@@ -13,6 +13,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { popoverPosition, usePopoverPlacement } from "@/lib/use-popover-placement";
 import { feedPapers } from "@/lib/data/papers";
 import { patents } from "@/lib/data/patents";
 import { fundings } from "@/lib/data/funding";
@@ -172,13 +173,11 @@ function RefPanel({
 }
 
 export function AttachmentMenu({
-  placement = "down",
   onAdd,
   accept = ".pdf,.docx,.md,.txt",
   maxFiles = 5,
   maxSizeMb = 20,
 }: {
-  placement?: "up" | "down";
   onAdd?: (item: ChatAttachment) => void;
   accept?: string;
   maxFiles?: number;
@@ -187,6 +186,7 @@ export function AttachmentMenu({
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const placement = usePopoverPlacement(open, rootRef, 320);
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
@@ -264,12 +264,12 @@ export function AttachmentMenu({
       />
       <button
         type="button"
-        aria-label="上传附件或引用"
+        aria-label="上传附件"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex size-9 cursor-pointer items-center justify-center rounded-xl transition-colors",
-          open ? "bg-chip text-ink" : "text-muted hover:bg-chip",
+          "flex size-8 cursor-pointer items-center justify-center rounded-full border border-line transition-colors",
+          open ? "border-primary/30 bg-primary-soft text-primary" : "text-muted hover:bg-chip hover:text-ink",
         )}
       >
         <Paperclip className="size-4.5" strokeWidth={1.8} />
@@ -278,8 +278,8 @@ export function AttachmentMenu({
       {open && (
         <div
           className={cn(
-            "absolute left-0 z-50 w-52 rounded-xl border border-line bg-card p-1.5 shadow-pop",
-            placement === "down" ? "top-full mt-2" : "bottom-full mb-2",
+            "absolute left-0 z-[120] w-52 rounded-xl border border-line bg-card p-1.5 shadow-pop",
+            popoverPosition(placement),
           )}
         >
           <button

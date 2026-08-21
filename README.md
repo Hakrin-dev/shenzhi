@@ -27,7 +27,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Web 环境变量 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`（仅服务端）。通信架构见 [docs/dev/前后端通信架构.md](docs/dev/前后端通信架构.md)。
+Web 环境变量 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`（仅服务端）。项目介绍见 [docs/dev/项目介绍.md](docs/dev/项目介绍.md)，进度见 [docs/dev/开发日志.md](docs/dev/开发日志.md)。
 
 打开 http://localhost:3000 。URL 加 `?theme=dark` / `?theme=light` 可强制日/夜模式(用于调试与分享)。
 

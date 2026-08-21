@@ -7,7 +7,7 @@ export const institutions: Institution[] = [
     nameCn: "清华大学",
     nameEn: "Tsinghua University",
     initials: "THU",
-    logoColor: "#002FA7",
+    logoColor: "#174A7E",
     type: "高校",
     location: "中国 · 北京",
     intro:
