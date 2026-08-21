@@ -18,24 +18,24 @@ test("keeps the existing OTP length, expiry, and attempt limit", () => {
   assert.equal(EMAIL_OTP_OPTIONS.allowedAttempts, 3);
 });
 
-test("forced verification requires a provider before email/password sign-up", () => {
-  assert.equal(requiresEmailDelivery("/sign-up/email", true), true);
-});
-
-test("disabled verification keeps the existing sign-up path unguarded", () => {
-  assert.equal(requiresEmailDelivery("/sign-up/email", false), false);
+test("pre-verified email/password sign-up sends no second message", () => {
+  assert.equal(requiresEmailDelivery("/sign-up/email"), false);
 });
 
 test("missing-provider guard does not block password or Email OTP login", () => {
-  assert.equal(requiresEmailDelivery("/sign-in/email", true), false);
-  assert.equal(requiresEmailDelivery("/sign-in/email-otp", true), false);
+  assert.equal(requiresEmailDelivery("/sign-in/email"), false);
+  assert.equal(requiresEmailDelivery("/sign-in/email-otp"), false);
 });
 
 test("mail-delivery endpoints remain guarded when they actually send mail", () => {
-  assert.equal(requiresEmailDelivery("/send-verification-email", false), true);
-  assert.equal(requiresEmailDelivery("/request-password-reset", false), true);
+  assert.equal(requiresEmailDelivery("/send-verification-email"), true);
+  assert.equal(requiresEmailDelivery("/request-password-reset"), true);
   assert.equal(
-    requiresEmailDelivery("/email-otp/send-verification-otp", false),
+    requiresEmailDelivery("/email-otp/send-verification-otp"),
+    true,
+  );
+  assert.equal(
+    requiresEmailDelivery("/registration-email/send-otp"),
     true,
   );
 });

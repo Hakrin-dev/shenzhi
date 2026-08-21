@@ -64,6 +64,12 @@ export function getAuthErrorMessage(
   }
 
   if (code === "PASSWORD_POLICY_VIOLATION") return PASSWORD_POLICY_MESSAGE;
+  if (code === "EMAIL_ALREADY_REGISTERED") {
+    return "该邮箱已注册，请直接登录";
+  }
+  if (code === "REGISTRATION_EMAIL_NOT_VERIFIED") {
+    return "邮箱验证已失效，请重新验证";
+  }
   if (code === "INVALID_EMAIL") return "请输入有效邮箱";
   if (code === "PASSWORD_TOO_SHORT" || code === "PASSWORD_TOO_LONG") {
     return PASSWORD_POLICY_MESSAGE;

@@ -305,8 +305,13 @@ function ExpandableNav({
 }
 
 /** 登录后「···」向上弹出的标签栏:登出 */
-function LogoutPopup({ onClose }: { onClose: () => void }) {
-  const { refetch: refetchSession } = authClient.useSession();
+function LogoutPopup({
+  onClose,
+  onLoggedOut,
+}: {
+  onClose: () => void;
+  onLoggedOut: () => void;
+}) {
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -338,8 +343,7 @@ function LogoutPopup({ onClose }: { onClose: () => void }) {
         return;
       }
 
-      await refetchSession();
-      onClose();
+      onLoggedOut();
     } catch {
       setError("退出失败，请稍后重试");
     } finally {
@@ -379,7 +383,21 @@ export function AppSidebar() {
     ? null
     : session?.user.name?.trim() || session?.user.email || null;
   const [loginOpen, setLoginOpen] = React.useState(false);
+  const [loginNotice, setLoginNotice] = React.useState<string | null>(null);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
+  const openLogin = () => {
+    setLoginNotice(null);
+    setLoginOpen(true);
+  };
+  const handleLoggedOut = () => {
+    setLogoutOpen(false);
+    setLoginNotice("已退出登录，你可以重新登录或注册");
+    setLoginOpen(true);
+  };
+  const closeLogin = () => {
+    setLoginOpen(false);
+    setLoginNotice(null);
+  };
 
   return (
     <aside
@@ -478,7 +496,7 @@ export function AppSidebar() {
             aria-label={userName ? "账号菜单" : "登录"}
             className="flex size-9 cursor-pointer items-center justify-center rounded-full bg-primary-soft"
             onClick={() =>
-              userName ? setLogoutOpen((v) => !v) : setLoginOpen(true)
+              userName ? setLogoutOpen((v) => !v) : openLogin()
             }
           >
             {userName ? (
@@ -489,7 +507,12 @@ export function AppSidebar() {
               <User className="size-4.5 text-primary" />
             )}
           </button>
-          {userName && logoutOpen && <LogoutPopup onClose={() => setLogoutOpen(false)} />}
+          {userName && logoutOpen && (
+            <LogoutPopup
+              onClose={() => setLogoutOpen(false)}
+              onLoggedOut={handleLoggedOut}
+            />
+          )}
         </div>
       ) : userName ? (
         <div className="relative mt-2">
@@ -512,13 +535,18 @@ export function AppSidebar() {
               <MoreHorizontal className="size-4" />
             </button>
           </div>
-          {logoutOpen && <LogoutPopup onClose={() => setLogoutOpen(false)} />}
+          {logoutOpen && (
+            <LogoutPopup
+              onClose={() => setLogoutOpen(false)}
+              onLoggedOut={handleLoggedOut}
+            />
+          )}
         </div>
       ) : (
         <button
           type="button"
           className="mt-2 flex cursor-pointer items-center gap-2.5 rounded-xl bg-card p-2.5 text-left shadow-card transition-colors hover:bg-chip"
-          onClick={() => setLoginOpen(true)}
+          onClick={openLogin}
         >
           <span className="flex size-9 items-center justify-center rounded-full bg-primary-soft">
             <User className="size-4.5 text-primary" />
@@ -541,7 +569,7 @@ export function AppSidebar() {
         </p>
       )}
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      <LoginModal open={loginOpen} notice={loginNotice} onClose={closeLogin} />
     </aside>
   );
 }

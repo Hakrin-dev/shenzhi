@@ -1,15 +1,11 @@
 import {
   optionalEnv,
-  parseBooleanEnv,
   parseCommaSeparatedEnv,
 } from "./env";
 
 const secret = optionalEnv("BETTER_AUTH_SECRET");
 const baseURL = optionalEnv("BETTER_AUTH_URL");
 const trustedOrigins = parseCommaSeparatedEnv("BETTER_AUTH_TRUSTED_ORIGINS");
-const requireEmailVerification = parseBooleanEnv(
-  "AUTH_REQUIRE_EMAIL_VERIFICATION",
-);
 
 /**
  * Server-side Better Auth environment configuration.
@@ -21,20 +17,18 @@ export const authConfig = {
   ...(secret ? { secret } : {}),
   ...(baseURL ? { baseURL } : {}),
   ...(trustedOrigins.length > 0 ? { trustedOrigins } : {}),
-  requireEmailVerification,
 };
 
-export function getAuthEmailVerificationSettings(
-  required = authConfig.requireEmailVerification,
-) {
+export function getAuthEmailVerificationSettings() {
   return {
-    // The Email OTP plugin overrides Better Auth's default link email, so the
-    // core sign-up flow emits an OTP only after a real user is created. Its
-    // synthetic duplicate response remains indistinguishable and sends none.
-    sendOnSignUp: required,
+    // Registration verifies the mailbox before Better Auth creates the user,
+    // so sign-up must not send a second verification message.
+    sendOnSignUp: false,
     sendVerificationOnSignUp: false,
     overrideDefaultEmailVerification: true,
-    autoSignInAfterVerification: required,
-    requireEmailVerification: required,
+    autoSignInAfterVerification: false,
+    // Keep password sign-in closed to any historical unverified accounts.
+    // Newly registered users are marked verified by the registration plugin.
+    requireEmailVerification: true,
   };
 }
