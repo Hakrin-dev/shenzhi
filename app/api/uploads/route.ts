@@ -24,7 +24,6 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import type { ApiEnvelope } from "@/types/ai-search";
 import {
-  isTruncated,
   parseDocument,
   ParseError,
 } from "@/lib/c-server/parse-document";
@@ -45,8 +44,16 @@ interface UploadsData {
   filename: string;
   parse_status: "ok" | "failed";
   text?: string;
+  /** 单附件是否被 3 万字硬截断（对应 ATTACHMENT_TRUNCATED_30K） */
   truncated?: boolean;
+  /** 原始字数（截断前） */
+  originalLength?: number;
+  /** 返回字数（截断后） */
+  finalLength?: number;
+  /** 中文告警文案（可直接展示） */
   warning?: string;
+  /** 机器可读告警码：ATTACHMENT_TRUNCATED_30K | ATTACHMENT_OVERALL_TRUNCATED_60K */
+  warningCode?: "ATTACHMENT_TRUNCATED_30K" | "ATTACHMENT_OVERALL_TRUNCATED_60K";
 }
 
 function envelope<T>(code: number, rest: { data?: T; message?: string }): ApiEnvelope<T> {
@@ -109,11 +116,11 @@ export async function POST(req: Request) {
     return fail(20017, `读取文件内容失败：${(e as Error).message}`, 500);
   }
 
-  // 4. 解析文档
+  // 4. 解析文档（升级为 ParseResult：含截断状态 / 字数 / 告警码）
   const file_id = randomBytes(12).toString("hex");
-  let text: string;
+  let result: Awaited<ReturnType<typeof parseDocument>>;
   try {
-    text = await parseDocument(buffer, filename);
+    result = await parseDocument(buffer, filename);
   } catch (e) {
     const message = e instanceof ParseError ? e.message : `解析失败：${(e as Error).message}`;
     return NextResponse.json<ApiEnvelope<UploadsData>>(
@@ -130,20 +137,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const truncated = isTruncated(text);
-  const warning = truncated
-    ? `附件过长，已截断至前 ${text.length} 字（单附件上限 3 万字 / 总 6 万字，防上下文溢出）`
-    : undefined;
-
   return NextResponse.json<ApiEnvelope<UploadsData>>(
     envelope(0, {
       data: {
         file_id,
         filename,
         parse_status: "ok",
-        text,
-        truncated,
-        warning,
+        text: result.text,
+        truncated: result.truncatedPerFile,
+        originalLength: result.originalLength,
+        finalLength: result.finalLength,
+        warning: result.warning,
+        warningCode: result.warningCode,
       },
     }),
     { status: 200 },

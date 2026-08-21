@@ -422,6 +422,9 @@ async function streamB(
     safe.onMeta!({ phase: "正在生成", read_count: refs.length });
   }
 
+  // Task 4 · R1 思考链缓冲区：meta(phase=thinking) 逐 delta 累加 → done 时汇总写 thinkingContent
+  let thinkingBuf = "";
+
   // 调用 B 原型 /api/ai/chat
   const body = {
     mode: "ai" as const,
@@ -450,6 +453,7 @@ async function streamB(
             safe.onDone?.({
               status: "done",
               duration_ms: Date.now() - t0,
+              thinkingContent: thinkingBuf || undefined,
             });
             return;
           }
@@ -463,6 +467,22 @@ async function streamB(
           }
 
           switch (ev.type) {
+            // Task 4 · R1：meta 承载 warning / thinking
+            case "meta": {
+              const rawPhase = (ev as any).phase as unknown;
+              const phase = typeof rawPhase === "string" ? rawPhase : undefined;
+              const tdelta = (ev as any).thinking_delta;
+              if (typeof tdelta === "string") thinkingBuf += tdelta;
+              // 转发到 onMeta（让消费方按 phase / thinking_delta 处理）
+              safe.onMeta?.({
+                phase,
+                read_count: typeof (ev as any).read_count === "number" ? (ev as any).read_count : undefined,
+                context_truncated: !!((ev as any).context_truncated ?? undefined),
+                thinking_delta: typeof tdelta === "string" ? tdelta : undefined,
+                warning: (ev as any).warning ?? undefined,
+              } as StreamMetaEvent);
+              break;
+            }
             case "token":
               safe.onDelta?.({ text: ev.token ?? "" });
               break;
@@ -486,6 +506,11 @@ async function streamB(
               break;
             }
             case "done": {
+              // Task 4：如果后端 done 直接带 thinkingContent → 覆盖本地 buffer
+              const tc: string | undefined =
+                (ev as any).thinkingContent || thinkingBuf || undefined;
+              thinkingBuf = "";
+
               // ⚠️ B 原型后端旧协议（token/sources/done）没有 followups 事件 → 在 done 之前合成追问建议
               // （和 A 后端风格一致的追问条，渲染为 FollowUpsBar 按钮）
               const q = payload.request.question ?? "";
@@ -507,6 +532,7 @@ async function streamB(
               safe.onDone?.({
                 status: "done",
                 duration_ms: Date.now() - t0,
+                thinkingContent: tc,
               });
               break;
             }

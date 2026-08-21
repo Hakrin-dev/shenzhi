@@ -10,6 +10,12 @@
 # production
 /build
 
+# database (SQLite 本地库，含用户数据，绝不入库)
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/dev.db-wal
+/prisma/dev.db-shm
+
 # misc
 .DS_Store
 Thumbs.db
@@ -62,3 +68,5 @@ __pycache__/
 *.tar
 .superpowers/
 docs/superpowers/
+
+/lib/generated/prisma

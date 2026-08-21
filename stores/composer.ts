@@ -32,6 +32,8 @@ export const MODEL_OPTIONS: { id: string; label: string }[] = [
   { id: "gpt-4o", label: "GPT-4o" },
   { id: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
   { id: "deepseek-v3", label: "DeepSeek-V3" },
+  // Task 4 · deepseek-reasoner (R1)：推理模型，产出 reasoning_content 思考链
+  { id: "deepseek-reasoner", label: "DeepSeek-R1（深度推理）" },
   { id: "subscription", label: "订阅专属模型" },
   { id: "byok", label: "API 接入模型" },
 ];

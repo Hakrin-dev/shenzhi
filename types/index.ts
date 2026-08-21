@@ -378,6 +378,12 @@ export type ChatMessageRole = "system" | "user" | "assistant";
 export interface ChatMessage {
   role: ChatMessageRole;
   content: string;
+  /**
+   * R1 / 推理模型（deepseek-reasoner）的内部思考链。
+   * - 发送给模型：当 role=assistant 且是历史多轮时，用于让模型知道"之前自己如何推理"；
+   * - 来自模型流式：SSE 的 reasoning_content 字段逐 token 拼入此字段。
+   */
+  reasoning_content?: string;
 }
 
 /**
@@ -441,10 +447,18 @@ export interface ChatRequest {
   messages: ChatMessage[];
 }
 
-/** SSE 流式事件 —— B 模块前后端协议（旧命名，/api/ai/chat 仍使用） */
+/** SSE 流式事件 —— B 模块前后端协议（旧命名，/api/ai/chat 仍使用）
+ * UPDATE: 2026-08-21 P1 / 对齐 lib/api/search.ts 的 meta-delta-refs 六类事件：
+ *   旧: token/sources/done/error → 新: meta/delta/refs/followups/done/error
+ *   保留旧值向后兼容；/api/ai/chat 新增 meta（思考面板 / 附件告警 / 思考链首帧）。
+ */
 export type ChatStreamEventType =
-  | "token"        // 增量 token
-  | "sources"      // 来源引用（一次性下发）
+  | "token"        // 增量 token（旧名；后续建议逐步改 delta）
+  | "delta"        // 增量文本（A 协议名；两端新增字段使用）
+  | "sources"      // 来源引用（一次性下发，旧名 = refs）
+  | "refs"         // 来源引用（A 协议名：lib/api/search.ts 对齐）
+  | "meta"         // 首帧/中间帧状态（phase、思考链 thinking、附件截断 warning）
+  | "followups"    // 推荐追问（done 前一帧）
   | "done"         // 流结束
   | "error";       // 中途出错
 
@@ -481,10 +495,18 @@ export interface ChatUIMessage extends ChatMessage {
   /** 思考阶段元信息（meta 事件累计） */
   meta?: {
     read_count?: number;
-    phase?: "检索中" | "正在生成";
+    phase?: "检索中" | "正在生成" | "warning" | string;
     context_truncated?: boolean;
     duration_ms?: number;
+    /** 附件截断告警（Task 3 / 思考面板展示） */
+    warnings?: any[];
   };
+  /**
+   * R1 思考链完整内容（流式逐 token 累加后落盘）。
+   * UI 会在助手消息上方渲染"深度思考"折叠面板。
+   * 与 ChatMessage.reasoning_content 语义一致但放在 UI 扩展层（不影响上游 messages 数组序列化）。
+   */
+  thinkingContent?: string;
   /** 该助手消息对应的 message_id（停止/继续生成接口需要） */
   backendMsgId?: string;
   /** 错误消息（UI 层展示） */

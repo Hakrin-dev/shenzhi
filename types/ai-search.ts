@@ -159,6 +159,15 @@ export interface StreamMetaEvent {
   ephemeral?: boolean;
   arxiv_resolved?: number;
   context_truncated?: boolean;
+  /** R1 思考链增量（Task 4）：流式逐 token 拼入 ChatUIMessage.thinkingContent */
+  thinking_delta?: string;
+  /**
+   * R1 思考链完整版本（done 事件之前，后端可以在最后一帧 meta 里一次性给整段）。
+   * 也兼容 done 里带 thinkingContent。二者 UI 层都接受。
+   */
+  thinkingContent?: string;
+  /** 附件截断告警（Task 3）：任意自定义结构 */
+  warning?: unknown;
 }
 
 /** delta 事件负载 */
@@ -180,6 +189,8 @@ export interface StreamFollowupsEvent {
 export interface StreamDoneEvent {
   duration_ms: number;
   status: ChatMessageStatus;
+  /** R1 思考链完整内容（Task 4）：后端 done 事件直接携带时的承载字段 */
+  thinkingContent?: string;
 }
 
 /** error 事件负载（A 模块：code 是 number） */
@@ -209,6 +220,8 @@ export interface AIEventFollowups extends StreamFollowupsEvent {}
 export interface AIEventDone {
   duration_ms?: number;
   status: "completed" | "stopped" | "interrupted" | ChatMessageStatus;
+  /** Task 4 · R1：完整思考链，透传 StreamDoneEvent.thinkingContent */
+  thinkingContent?: string;
 }
 
 /** error 事件负载（B 兼容版本：code 可为 string，如 "NGROK_INTERCEPT"/"TIMEOUT" 等） */

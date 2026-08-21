@@ -86,12 +86,17 @@ async function extractDeepSeekError(res: Response): Promise<{
   return { code, message };
 }
 
-/** 把 OpenAI 兼容 SSE 的 data: 行拆出来，逐 token yield */
+/** 把 OpenAI 兼容 SSE 的 data: 行拆出来，逐 token yield
+ * UPDATE: 2026-08-21 Task 4 · R1 推理模型 thinking_content 支持
+ *  - deepseek-reasoner 会额外在 delta 上写 reasoning_content（思考链，正文前先吐）。
+ *  - 新增 yield { type: "thinking", token: string } 事件，createModelStream 透传 → SSE meta/delta 推前端。
+ */
 async function* streamDeepSeekChunks(
   res: Response,
   signal: AbortSignal,
 ): AsyncGenerator<
   | { type: "token"; token: string }
+  | { type: "thinking"; token: string }
   | { type: "error"; code: string; message: string },
   void,
   unknown
@@ -123,9 +128,16 @@ async function* streamDeepSeekChunks(
           if (data === "[DONE]") return; // OpenAI/DeepSeek 结束信号
           try {
             const payload = JSON.parse(data);
-            const delta = payload?.choices?.[0]?.delta?.content;
+            const choice0 = payload?.choices?.[0];
+            // 正文 delta（所有模型都会有）
+            const delta = choice0?.delta?.content;
             if (delta && typeof delta === "string") {
               yield { type: "token", token: delta };
+            }
+            // 推理链 delta（deepseek-reasoner 等 R 系列；正文出现前可能多帧连续）
+            const reasoning = choice0?.delta?.reasoning_content;
+            if (reasoning && typeof reasoning === "string") {
+              yield { type: "thinking", token: reasoning };
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -201,8 +213,9 @@ async function* createModelStream(opts: {
   signal: AbortSignal;
 }): AsyncGenerator<
   | { type: "sources"; sources: ChatSource[] }
+  | { type: "thinking"; token: string }
   | { type: "token"; token: string }
-  | { type: "done"; content: string }
+  | { type: "done"; content: string; thinkingContent?: string }
   | { type: "error"; code: string; message: string },
   void,
   unknown
@@ -222,17 +235,24 @@ async function* createModelStream(opts: {
 
   // 1. 构造最小兼容字段集（经验 939355：只发标准字段，避免供应商特有字段导致 400）
   const model = resolveModel(opts.model);
-  const temperature = STYLE_TEMPERATURE[style] ?? 0.7;
-  const maxTokens = 4096; // DeepSeek chat 默认 4096；reasoning 上限更高也会自动截断
+  const isReasoningModel = /reasoner|r1/i.test(model) || model.includes("R1");
+  // UPDATE: 2026-08-21 Task 4 · R1 推理模型推荐参数：
+  //   - temperature：R1 官方文档说模型自己控制节奏，传 0 或 undefined 更稳；
+  //     这里采用"如果是推理模型就不传 temperature"的策略，避免 400 风险。
+  //   - max_tokens：R1 上下文预算大，拉到 8192；V3 维持 4096（怕长输出计费爆炸 + 原型可读）。
+  const temperature = isReasoningModel
+    ? undefined
+    : (STYLE_TEMPERATURE[style] ?? 0.7);
+  const maxTokens = isReasoningModel ? 8192 : 4096;
   const url = `${DEEPSEEK_BASE_URL}/chat/completions`;
   const payload: Record<string, unknown> = {
     model,
     messages,
-    temperature,
     max_tokens: maxTokens,
     stream: true,
     // stream_options: { include_usage: true }  —— DeepSeek 当前不支持，不传
   };
+  if (temperature !== undefined) payload.temperature = temperature;
 
   // eslint-disable-next-line no-console
   console.log(
@@ -273,12 +293,16 @@ async function* createModelStream(opts: {
     return;
   }
 
-  // 4. 流式逐 token 产出
+  // 4. 流式逐 token 产出（正文 token + 思考链 thinking token 并行）
   let fullContent = "";
+  let fullThinking = "";
   for await (const ev of streamDeepSeekChunks(res, signal)) {
     if (signal.aborted) return;
     if (ev.type === "token") {
       fullContent += ev.token;
+      yield ev;
+    } else if (ev.type === "thinking") {
+      fullThinking += ev.token;
       yield ev;
     } else if (ev.type === "error") {
       yield ev;
@@ -289,10 +313,14 @@ async function* createModelStream(opts: {
 
   // eslint-disable-next-line no-console
   console.log(
-    `[DeepSeek] ✅ 生成结束 | model=${model} | 输出字符=${fullContent.length}`,
+    `[DeepSeek] ✅ 生成结束 | model=${model} | 输出字符=${fullContent.length} | 思考链=${fullThinking.length}`,
   );
 
-  yield { type: "done", content: fullContent };
+  yield {
+    type: "done",
+    content: fullContent,
+    thinkingContent: fullThinking || undefined,
+  };
 }
 
 /* -------- 主路由 -------- */
@@ -337,7 +365,7 @@ export async function POST(req: NextRequest) {
   //           [1..N-1] history = body.messages 里的多轮 user/assistant（body.messages
   //                      不包含 system，拼到后面保持顺序）
   //           [N] 当前 user 提问 = 包含在 body.messages 末尾，buildModelMessages 已做追加
-  const builtMessages = buildModelMessages({
+  const built = buildModelMessages({
     style: body.style,
     history: body.messages,
     attachments: body.attachments,
@@ -346,6 +374,7 @@ export async function POST(req: NextRequest) {
     // 以后 B 后端自己想做联网时，再把 sources 通过新字段传进来。
     webSearchSources: [],
   });
+  const { messages: builtMessages, attachmentWarnings } = built;
 
   // —— 4. 写 SSE 流
   const sse = new NextResponseSSE();
@@ -353,6 +382,28 @@ export async function POST(req: NextRequest) {
   // 异步跑 generator，边跑边 push
   (async () => {
     try {
+      // UPDATE: 2026-08-21 P1 Build 修复
+      //  ① buildModelMessages 返回值现在是 { messages, attachmentWarnings } 对象，
+      //    不再是数组；这里解构后把 messages（数组）传给 createModelStream。
+      //  ② 附件告警（ATTACHMENT_TRUNCATED_30K / 60K）：流式开始前立即作为
+      //    phase="warning" 的 meta 事件首帧下发，与前端 chat-stream.ts 的
+      //    onMeta → ThinkingPanel warnings 卡片链路打通（两端统一）。
+      if (attachmentWarnings.length > 0) {
+        for (const w of attachmentWarnings) {
+          sse.push(
+            sseLine("meta", {
+              id: (body as any).message_id || "",
+              phase: "warning",
+              status: "pending",
+              code: "ATTACHMENT_WARNING",
+              read_count: undefined,
+              context_truncated: true,
+              warning: w,
+            }),
+          );
+        }
+      }
+
       const gen = createModelStream({
         model: body.model,
         style: body.style,
@@ -369,11 +420,21 @@ export async function POST(req: NextRequest) {
           case "sources":
             sse.push(sseLine("sources", { sources: ev.sources }));
             break;
+          case "thinking":
+            sse.push(sseLine("meta", {
+              phase: "thinking",
+              status: "streaming",
+              thinking_delta: ev.token,
+            }));
+            break;
           case "token":
             sse.push(sseLine("token", { token: ev.token }));
             break;
           case "done":
-            sse.push(sseLine("done", { content: ev.content }));
+            sse.push(sseLine("done", {
+              content: ev.content,
+              thinkingContent: (ev as any).thinkingContent ?? undefined,
+            }));
             break;
           case "error":
             sse.push(sseLine("error", { code: ev.code, message: ev.message }));

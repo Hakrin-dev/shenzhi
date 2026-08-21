@@ -193,7 +193,8 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
       });
 
       // 3. 构造 messages（含 system + 历史，给后端 buildModelMessages 用或模式 B 直接透传）
-      const builtMessages = buildModelMessages({
+      //    attachmentWarnings：3万/6万字硬截断告警 → 下面流式前就注入思考面板 meta warning
+      const { messages: builtMessages, attachmentWarnings } = buildModelMessages({
         style: opts.style,
         history: opts.history,
         attachments: opts.attachments,
@@ -249,6 +250,19 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
       if (webSearchSources.length > 0) {
         cbs().onRefs(backendMsgId, webSearchSources);
       }
+      // ✨ 思考面板告警（第二阶段 P1 附件截断）：如果 buildAttachmentContext 返回了
+      // ATTACHMENT_TRUNCATED_30K / ATTACHMENT_OVERALL_TRUNCATED_60K → 作为 meta 事件
+      // 注入 phase="warning" + context_truncated=true，思考面板 step 会展示 ⚠️ 红标
+      if (attachmentWarnings.length > 0) {
+        for (const w of attachmentWarnings) {
+          cbs().onMeta(backendMsgId, {
+            phase: "warning" as any,
+            read_count: undefined as any,
+            context_truncated: true,
+            warning: w,
+          } as any);
+        }
+      }
 
       // 5. streamChatMessage 拉 SSE
       //    ⚠️ 修复：超时定时器必须在调用流式之前设置（原顺序反了，导致流式中 onDelta 清不到 timer，60s 超时也不生效）
@@ -299,6 +313,7 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
             cbs().onDone(backendMsgId, {
               duration_ms: d.duration_ms,
               status: normalizeDoneStatus(d.status as any),
+              thinkingContent: d.thinkingContent,
             });
           },
           onError: (d: StreamErrorEvent) => {
@@ -377,6 +392,7 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
           cbs().onDone(newId, {
             duration_ms: d.duration_ms,
             status: normalizeDoneStatus(d.status as any),
+            thinkingContent: d.thinkingContent,
           }),
         onError: (d: StreamErrorEvent) =>
           cbs().onError(newId, {

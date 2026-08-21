@@ -32,6 +32,7 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   BookOpenCheck,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
   MessageSquarePlus,
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { ComposerShell } from "./composer";
 import { CWebSearchProvider } from "./c-web-search-provider";
 import { ReferenceGrid } from "./reference-grid";
+import { CitationProvider, CitationContent } from "@/lib/citations";
 import { useAskSession, type AskStreamCallbacks } from "@/lib/chat-stream";
 import { useComposerStore } from "@/stores/composer";
 import { mapToAMode, mapToBStyle } from "@/lib/api/search";
@@ -106,16 +108,27 @@ function ThinkingPanel({
   readCount,
   durationMs,
   truncated,
+  warnings,
 }: {
-  phase?: "检索中" | "正在生成";
+  phase?: "检索中" | "正在生成" | "warning" | (string & {});
   readCount?: number;
   durationMs?: number;
   truncated?: boolean;
+  /** 附件截断告警（Task 3 新增：ATTACHMENT_TRUNCATED_30K / 60K） */
+  warnings?: Array<{ code: string; message: string; files?: string[] }>;
 }) {
   const [open, setOpen] = useState(true);
   const items = useMemo(() => {
-    const arr: { icon: typeof Sparkles; label: string; value?: string }[] = [];
-    if (phase) arr.push({ icon: Sparkles, label: "阶段", value: phase });
+    const arr: { icon: typeof Sparkles; label: string; value?: string; tone?: "danger" }[] = [];
+    if (phase && phase !== "warning") arr.push({ icon: Sparkles, label: "阶段", value: phase });
+    if (phase === "warning") {
+      arr.push({
+        icon: AlertTriangle,
+        label: "状态",
+        value: "有告警信息（见下方）",
+        tone: "danger",
+      });
+    }
     if (typeof readCount === "number")
       arr.push({
         icon: BookOpenCheck,
@@ -138,9 +151,16 @@ function ThinkingPanel({
         icon: AlertTriangle,
         label: "上下文",
         value: "已截断（超长输入被裁剪）",
+        tone: "danger",
       });
     return arr;
   }, [phase, readCount, durationMs, truncated]);
+
+  // 合并外部传入 warnings（附件截断）+ phase=warning 时的告警
+  const warningItems = (warnings ?? []).filter(Boolean);
+  const hasAnyWarning = warningItems.length > 0 || phase === "warning" || truncated;
+  // 保留变量（后续用于思考面板右上角红点指示器）
+  void hasAnyWarning;
 
   if (items.length === 0) return null;
   return (
@@ -168,18 +188,125 @@ function ThinkingPanel({
         )}
       </button>
       {open && (
-        <div className="border-t border-line/70 px-3 py-2">
+        <div className="border-t border-line/70 px-3 py-2 space-y-2.5">
           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
             {items.map((it) => (
               <div
                 key={it.label}
-                className="flex items-center gap-1.5 text-[12px] text-muted"
+                className={cn(
+                  "flex items-center gap-1.5 text-[12px]",
+                  it.tone === "danger" ? "text-rose-600 dark:text-rose-400" : "text-muted",
+                )}
               >
-                <it.icon className="size-3.5 shrink-0 text-faint" />
+                <it.icon
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    it.tone === "danger"
+                      ? "text-rose-500 dark:text-rose-400"
+                      : "text-faint",
+                  )}
+                />
                 <span className="text-faint">{it.label}:</span>
                 <span className="font-medium text-ink-2">{it.value}</span>
               </div>
             ))}
+          </div>
+
+          {/* 附件截断告警（Task 3 思考面板告警新增） */}
+          {warningItems.length > 0 && (
+            <div className="flex flex-col gap-1.5 rounded-lg border border-rose-200/70 bg-rose-50/60 p-2 dark:border-rose-900/40 dark:bg-rose-950/20">
+              {warningItems.map((w, i) => (
+                <div
+                  key={`${w.code}-${i}`}
+                  className="flex items-start gap-1.5 text-[12px] leading-relaxed"
+                >
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-500 dark:text-rose-400" />
+                  <div className="min-w-0">
+                    <div className="font-medium text-rose-700 dark:text-rose-300">
+                      {w.code === "ATTACHMENT_TRUNCATED_30K"
+                        ? "单附件超 3 万字，已截断"
+                        : w.code === "ATTACHMENT_OVERALL_TRUNCATED_60K"
+                          ? "多附件合计超 6 万字，部分未注入"
+                          : w.code}
+                    </div>
+                    <div className="mt-0.5 text-rose-700/90 dark:text-rose-300/90">
+                      {w.message}
+                    </div>
+                    {w.files && w.files.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {w.files.map((f) => (
+                          <span
+                            key={f}
+                            className="rounded border border-rose-200 bg-white/60 px-1.5 py-0.5 text-[10.5px] text-rose-600 dark:border-rose-800/50 dark:bg-rose-950/30 dark:text-rose-300"
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// UPDATE: 2026-08-21 已移到 ThinkingPanel 函数体内 void 引用；模块域占位保留避免 diff 空行
+void 0;
+
+/* =========================================================
+ *  Task 4 · 子组件：R1 深度思考折叠面板
+ *   - 流式中默认展开；结束后默认折叠
+ *   - 显示「深度思考中…」badge + token 计数
+ *   - 超长内容按 max-h-[380px] 滚动，避免长思考链撑高首屏
+ * ======================================================= */
+function ReasoningChainPanel({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  // 流式中默认展开；已完成默认折叠（首屏不被长思考链占用）
+  const [open, setOpen] = useState(Boolean(streaming));
+  useEffect(() => {
+    // streaming 切换时同步展开状态
+    if (streaming) setOpen(true);
+  }, [streaming]);
+
+  const tokens = Array.from(content).length;
+  if (!content) return null;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-primary/20 bg-primary-soft/40">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 text-faint" />
+        ) : (
+          <ChevronRight className="size-3.5 text-faint" />
+        )}
+        <BrainCircuit className="size-3.5 text-primary" />
+        <span className="text-[12px] font-medium text-ink-2">深度思考</span>
+        <span className="ml-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          {streaming ? "思考中…" : "已完成"}
+        </span>
+        <span className="ml-auto text-[11px] text-faint">{tokens} 字</span>
+      </button>
+      {open && (
+        <div className="border-t border-primary/10 bg-white/50 p-3 dark:bg-ink-950/20">
+          <div className="max-h-[380px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white/80 p-3 text-[12.5px] leading-6 text-ink-2 shadow-inner ring-1 ring-line/60 dark:bg-ink-950/40">
+            {content}
+            {streaming && (
+              <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-primary align-[-2px]" />
+            )}
           </div>
         </div>
       )}
@@ -352,13 +479,37 @@ export function AgentChat() {
       }
     },
     onMeta: (id, d) => {
-      patchAssistantByBackendId(id, {
+      const idx = msgIdIdxRef.current.get(id);
+      const patchObj: Partial<ChatUIMessage> = {
         meta: {
           read_count: d.read_count,
           phase: (d.phase as "检索中" | "正在生成" | undefined) ?? undefined,
           context_truncated: d.context_truncated,
-        },
-      });
+          warnings: (d as any).warning
+            ? [...(((messagesRef.current[idx!]?.meta as any)?.warnings) ?? []), (d as any).warning]
+            : undefined,
+        } as any,
+      };
+      // Task 4 · R1：思考链增量 / 完整版
+      if (typeof (d as any).thinkingContent === "string" && (d as any).thinkingContent) {
+        patchObj.thinkingContent = (d as any).thinkingContent;
+      } else if (typeof d.thinking_delta === "string") {
+        // 用函数式 setMessages 做追加，避免 onMeta 乱序丢失 token
+        setMessages((prev) => {
+          if (idx === undefined || idx >= prev.length) return prev;
+          const m = prev[idx];
+          if (!m || m.role !== "assistant") return prev;
+          const next = prev.slice();
+          next[idx] = {
+            ...m,
+            thinkingContent: (m.thinkingContent ?? "") + d.thinking_delta!,
+          };
+          messagesRef.current = next;
+          return next;
+        });
+      }
+      // 基础 meta 增量走 patch
+      patchAssistantByBackendId(id, patchObj);
     },
     onDelta: (id, text) => {
       const idx = msgIdIdxRef.current.get(id);
@@ -384,6 +535,9 @@ export function AgentChat() {
       const prevMeta = (idx !== undefined && idx >= 0)
         ? messagesRef.current[idx]?.meta ?? {}
         : {};
+      const prevThinking = (idx !== undefined && idx >= 0)
+        ? messagesRef.current[idx]?.thinkingContent ?? undefined
+        : undefined;
       // normalizeDoneStatus → ChatMessageStatus（"done" | "stopped" | "failed" | "streaming"）
       // → 映射为 B 内部 ChatSessionStatus（"idle" | "stopped" | "error" | "streaming"）
       let st: "idle" | "stopped" | "error" | "streaming" = "idle";
@@ -392,6 +546,7 @@ export function AgentChat() {
       else if (d.status === "streaming") st = "streaming";
       patchAssistantByBackendId(id, {
         status: st,
+        thinkingContent: d.thinkingContent || prevThinking,
         meta: {
           ...prevMeta,
           duration_ms: d.duration_ms,
@@ -760,15 +915,34 @@ export function AgentChat() {
                   <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft">
                     <Sparkles className="size-4 text-primary" />
                   </span>
+                  {/* 🔗 引用双向联动作用域：每条助手消息单独一个 CitationProvider
+                        保证正文 [n] ↔ ReferenceGrid 卡片的 activeCitation 互不干擾 */}
+                  <CitationProvider>
                   <div className="max-w-[80%] space-y-3">
                     {/* 思考面板（流式中 / 有 meta 信息都展示） */}
                     {(msg.meta || msg.status === "streaming") && (
                       <ThinkingPanel
-                        phase={msg.meta?.phase}
+                        phase={msg.meta?.phase as "检索中" | "正在生成" | "warning" | undefined}
                         readCount={msg.meta?.read_count}
                         durationMs={msg.meta?.duration_ms}
                         truncated={msg.meta?.context_truncated}
+                        warnings={
+                          // Task 3：附件截断告警有两种形态：
+                          //   - 单条：meta.warning（chat-stream.ts 里 onMeta 注入时）
+                          //   - 多条：meta.warnings（onMeta 聚合时 push 进数组）
+                          ([
+                            ...(((msg.meta as any)?.warnings as any[]) ?? []),
+                            ...((msg.meta as any)?.warning
+                              ? [(msg.meta as any).warning]
+                              : []),
+                          ] as any[]).filter(Boolean) as any
+                        }
                       />
+                    )}
+
+                    {/* Task 4 · R1：深度思考折叠面板（有思考链才渲染） */}
+                    {msg.thinkingContent && (
+                      <ReasoningChainPanel content={msg.thinkingContent} streaming={msg.status === "streaming"} />
                     )}
 
                     {/* 错误：显示 ErrorBubble */}
@@ -781,9 +955,14 @@ export function AgentChat() {
                         canResume={msg.errorCode === "20004"}
                       />
                     ) : (
-                      <div className="rounded-2xl rounded-tl-md bg-card px-4 py-2.5 text-sm leading-relaxed text-ink shadow-card whitespace-pre-wrap">
-                        {msg.content ||
-                          (loading ? <TypingDots /> : "\u00A0")}
+                      <div className="rounded-2xl rounded-tl-md bg-card px-4 py-2.5 text-sm leading-relaxed text-ink shadow-card whitespace-pre-wrap break-words">
+                        {/* 旧：直接纯文本渲染 {msg.content} */}
+                        {/* 新：CitationContent 把 [n] 转成可点击按钮，联动 ReferenceGrid */}
+                        {msg.content ? (
+                          <CitationContent text={msg.content} />
+                        ) : (
+                          loading ? <TypingDots /> : "\u00A0"
+                        )}
                         {msg.status === "streaming" && msg.content && (
                           <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-ink-2 align-[-2px]" />
                         )}
@@ -829,6 +1008,7 @@ export function AgentChat() {
                       />
                     )}
                   </div>
+                  </CitationProvider>
                 </div>
               );
             })}
