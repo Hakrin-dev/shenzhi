@@ -35,7 +35,6 @@ import {
   BrainCircuit,
   ChevronDown,
   ChevronRight,
-  MessageSquarePlus,
   Play,
   RefreshCw,
   Sparkles,
@@ -46,16 +45,26 @@ import { cn } from "@/lib/utils";
 import { ComposerShell } from "./composer";
 import { CWebSearchProvider } from "./c-web-search-provider";
 import { ReferenceGrid } from "./reference-grid";
-import { CitationProvider, CitationContent } from "@/lib/citations";
+import { SessionList } from "./session-list";
+import { CitationProvider } from "@/lib/citations";
+import { MarkdownContent } from "@/lib/markdown-content";
 import { useAskSession, type AskStreamCallbacks } from "@/lib/chat-stream";
 import { useComposerStore } from "@/stores/composer";
 import { mapToAMode, mapToBStyle } from "@/lib/api/search";
+import {
+  appendSessionMessage,
+  createSession,
+  getSession,
+  getSessionMessages,
+  type SessionListItem,
+} from "@/lib/api/sessions";
 import {
   asMode,
   asModel,
   asWebSearch,
   clearAskDraft,
   readAskDraft,
+  toAAttachment,
   toBAttachment,
 } from "@/lib/ask/draft";
 import { normalizeAIError } from "@/lib/ask/errors";
@@ -74,13 +83,6 @@ const SUGGESTIONS = [
   "RDT-1B 和 π0 的技术路线有什么差异？",
   "推荐几篇机器人基础模型方向值得精读的论文",
   "帮我起草一份关于操作泛化性的研究计划",
-];
-
-const HISTORY = [
-  "长上下文 Transformer 调研",
-  "NeurIPS 2026 投稿筛选",
-  "扩散模型效率优化",
-  "操作泛化性研究计划",
 ];
 
 function uid() {
@@ -430,6 +432,9 @@ export function AgentChat() {
   /** backendMsgId → index in messages[] 的映射（流式事件回调快速定位） */
   const msgIdIdxRef = useRef<Map<string, number>>(new Map());
 
+  /** 数据库会话 id（Task 15 历史持久化）：首条消息前 POST /api/sessions 建立，续问复用 */
+  const dbSessionIdRef = useRef<string | null>(null);
+
   /* ---------- 3. Composer 共享状态总线 ---------- */
   const storeModel = useComposerStore((s) => s.model);
   const storeStyle = useComposerStore((s) => s.style);
@@ -443,6 +448,27 @@ export function AgentChat() {
   const setComposerWebSearch = useComposerStore((s) => s.setWebSearch);
   const addAttachments = useComposerStore((s) => s.addAttachment);
   const resetDraft = useComposerStore((s) => s.resetDraft);
+
+  /* ---------- 3.5 历史会话持久化：确保有数据库会话 id ---------- */
+  const ensureDbSession = useCallback(
+    async (title?: string): Promise<string | null> => {
+      if (dbSessionIdRef.current) return dbSessionIdRef.current;
+      try {
+        const { id } = await createSession({
+          title: title || "新的对话",
+          model: storeModel,
+          style: storeStyle,
+          webSearch: storeWebSearch,
+          attachments: storeAttachments,
+        });
+        dbSessionIdRef.current = id;
+        return id;
+      } catch {
+        return null; // 未登录(401) / 网络失败 → 不持久化
+      }
+    },
+    [storeModel, storeStyle, storeWebSearch, storeAttachments],
+  );
 
   /* ---------- 4. useAskSession 回调：把 6 种事件写到 messages 对应 index ---------- */
 
@@ -552,6 +578,20 @@ export function AgentChat() {
           duration_ms: d.duration_ms,
         },
       });
+
+      // Task 15：assistant 完成后写库（未登录 / 失败跳过）
+      const dbId = dbSessionIdRef.current;
+      if (dbId && st !== "error") {
+        const m = idx !== undefined && idx >= 0 ? messagesRef.current[idx] : undefined;
+        if (m && m.role === "assistant" && m.content) {
+          appendSessionMessage(dbId, {
+            role: "assistant",
+            content: m.content,
+            thinkingContent: m.thinkingContent || d.thinkingContent || undefined,
+            sources: m.sources,
+          }).catch(() => {});
+        }
+      }
     },
     onError: (id, d) => {
       patchAssistantByBackendId(id, {
@@ -615,6 +655,12 @@ export function AgentChat() {
         .slice(0, -1)
         .map((m) => ({ role: m.role, content: m.content }));
 
+      // Task 15：持久化 —— 首条消息前建会话（title=首条 30 字）+ 写 user 消息
+      const dbSessionId = await ensureDbSession(q.slice(0, 30));
+      if (dbSessionId) {
+        appendSessionMessage(dbSessionId, { role: "user", content: q }).catch(() => {});
+      }
+
       const backendId = await sessionRef.current.send({
         question: q,
         style: storeStyle,
@@ -645,6 +691,7 @@ export function AgentChat() {
       storeWebSearchFn,
       patchAssistantByBackendId,
       resetDraft,
+      ensureDbSession,
     ],
   );
 
@@ -780,11 +827,55 @@ export function AgentChat() {
     await sessionRef.current.stop();
     sessionRef.current.reset();
     msgIdIdxRef.current.clear();
+    dbSessionIdRef.current = null; // Task 15：新对话 = 新数据库会话
     setMessages([]);
     messagesRef.current = [];
     setActiveConv(null);
     setComposerMessage("");
   }, [setComposerMessage]);
+
+  /* ---------- 12.5 点击历史 → 回灌（Task 17） ---------- */
+  const openSession = useCallback(
+    async (s: SessionListItem) => {
+      await sessionRef.current.stop();
+      sessionRef.current.reset();
+      msgIdIdxRef.current.clear();
+
+      setActiveConv(s.id);
+      dbSessionIdRef.current = s.id;
+
+      try {
+        const [msgs, detail] = await Promise.all([
+          getSessionMessages(s.id),
+          getSession(s.id),
+        ]);
+
+        // 回灌 Composer 快照（附件 MVP 暂不回灌，附件有解析时效性）
+        if (detail.model && detail.model !== "default") setComposerModel(detail.model as any);
+        if (detail.style) setComposerStyle(detail.style as ChatStyle);
+        if (typeof detail.webSearch === "boolean") setComposerWebSearch(detail.webSearch);
+
+        // 回灌 messages（保留 R1 思考链）
+        const restored: ChatUIMessage[] = msgs.map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          thinkingContent: m.thinkingContent ?? undefined,
+          sources: (m.sources as any) ?? undefined,
+          status: m.role === "assistant" ? "idle" : undefined,
+        }));
+        setMessages(restored);
+        messagesRef.current = restored;
+      } catch {
+        // 会话不存在 / 越权 → 返回空态
+        setMessages([]);
+        messagesRef.current = [];
+        setActiveConv(null);
+        dbSessionIdRef.current = null;
+      }
+    },
+    [setComposerModel, setComposerStyle, setComposerWebSearch],
+  );
 
   /* ---------- 13. Composer 实例 ---------- */
   const composer = (
@@ -798,13 +889,33 @@ export function AgentChat() {
       onModelChange={(m) => setComposerModel(m)}
       webSearch={storeWebSearch}
       onWebSearchChange={setComposerWebSearch}
-      attachments={storeAttachments as any}
+      attachments={toAAttachment(storeAttachments) as any}
       onAttachmentsChange={(items) => {
-        // ComposerShell 内用 A 格式 ChatAttachment（types/ai-search），
-        // store 接受 B 旧格式，先 toBAttachment 再批量写入
-        useComposerStore.getState().clearAttachments();
-        const bAtts = toBAttachment(items as any);
-        for (const a of bAtts) useComposerStore.getState().addAttachment(a);
+        // ⚠️ 修复（2026-08-22）：A 格式 ChatAttachment 不含 text/error 等 B 扩展字段，
+        //   不能简单 clear + toBAttachment 重建，否则附件解析后的 text 会丢失，
+        //   导致 buildAttachmentContext 过滤为空、AI 读不到附件正文。
+        //   改为「合并同步」：以 UI 层传入的 A 格式列表为准，同时保留 store 中
+        //   已有的 text/error/size/type/warningCode 等 B 扩展字段。
+        const store = useComposerStore.getState();
+        const existingMap = new Map(store.attachments.map((a) => [a.id, a]));
+        const merged = toBAttachment(items as any).map((a) => {
+          const existing = existingMap.get(a.id);
+          if (existing) {
+            return {
+              ...a,
+              text: existing.text ?? a.text,
+              error: existing.error ?? a.error,
+              size: existing.size ?? a.size,
+              type: existing.type ?? a.type,
+              kind: existing.kind ?? a.kind,
+              ref_id: existing.ref_id ?? a.ref_id,
+              warningCode: (existing as any).warningCode ?? (a as any).warningCode,
+            };
+          }
+          return a;
+        });
+        store.clearAttachments();
+        for (const a of merged) store.addAttachment(a);
       }}
       busy={isStreaming}
       onStop={stopStreaming}
@@ -813,50 +924,19 @@ export function AgentChat() {
         if (payload.mode) setComposerStyle(mapToBStyle(payload.mode));
         if (payload.model) setComposerModel(payload.model);
         if (typeof payload.web_search === "boolean") setComposerWebSearch(payload.web_search);
-        if (payload.attachments && payload.attachments.length > 0) {
-          useComposerStore.getState().clearAttachments();
-          const bAtts = toBAttachment(payload.attachments as any);
-          for (const a of bAtts) useComposerStore.getState().addAttachment(a);
-        }
+        // ⚠️ 修复（2026-08-22）：不再 clear + toBAttachment 重建 attachments。
+        //   onAttachmentsChange 已经在每次附件变化时做了合并同步，store 中 attachments 是最新的
+        //   （含 text/error），sendInternal 直接读取 storeAttachments 即可。
+        //   之前的重建逻辑会用 A 格式（无 text）覆盖 B 格式（有 text），导致附件内容丢失。
         sendInternal(payload.question);
       }}
       menuPlacement="up"
     />
   );
 
-  /* ---------- 14. 左侧历史栏 ---------- */
+  /* ---------- 14. 左侧历史栏（Task 16：真实 API 列表） ---------- */
   const historyPanel = (
-    <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-line bg-sidebar p-3">
-      <button
-        type="button"
-        onClick={newChat}
-        className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90"
-      >
-        <MessageSquarePlus className="size-4" strokeWidth={1.8} />
-        新对话
-      </button>
-      <p className="shrink-0 px-3 pb-1.5 pt-4 text-[11px] font-medium tracking-wide text-faint">
-        历史对话
-      </p>
-      <div className="scrollbar-subtle flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-        {HISTORY.map((title) => (
-          <button
-            key={title}
-            type="button"
-            aria-current={activeConv === title ? "page" : undefined}
-            onClick={() => setActiveConv(title)}
-            className={cn(
-              "flex h-9 shrink-0 cursor-pointer items-center rounded-lg px-3 text-left text-sm transition-colors",
-              activeConv === title
-                ? "bg-card font-medium text-primary shadow-sm"
-                : "text-muted hover:bg-card hover:text-ink-2",
-            )}
-          >
-            <span className="truncate">{title}</span>
-          </button>
-        ))}
-      </div>
-    </aside>
+    <SessionList activeId={activeConv} onSelect={openSession} onNew={newChat} />
   );
 
   /* ---------- 15. 空状态 ---------- */
@@ -955,11 +1035,10 @@ export function AgentChat() {
                         canResume={msg.errorCode === "20004"}
                       />
                     ) : (
-                      <div className="rounded-2xl rounded-tl-md bg-card px-4 py-2.5 text-sm leading-relaxed text-ink shadow-card whitespace-pre-wrap break-words">
-                        {/* 旧：直接纯文本渲染 {msg.content} */}
-                        {/* 新：CitationContent 把 [n] 转成可点击按钮，联动 ReferenceGrid */}
+                      <div className="rounded-2xl rounded-tl-md bg-card px-4 py-2.5 text-sm leading-relaxed text-ink shadow-card">
+                        {/* Markdown 渲染（代码/表格/公式）+ 保留 [n] 引用联动 */}
                         {msg.content ? (
-                          <CitationContent text={msg.content} />
+                          <MarkdownContent text={msg.content} />
                         ) : (
                           loading ? <TypingDots /> : "\u00A0"
                         )}

@@ -23,7 +23,6 @@ import type {
   ChatStyle,
   ChatStreamEventType,
 } from "@/types";
-import { buildModelMessages } from "@/lib/chat-prompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -360,21 +359,10 @@ export async function POST(req: NextRequest) {
     ).toResponse(422);
   }
 
-  // —— 3. 构造最终 messages 数组（真实版本：真正传给 DeepSeek）
-  //      结构：[0] system = STYLE_PROMPTS[style] +（附件上下文）+（联网上下文）
-  //           [1..N-1] history = body.messages 里的多轮 user/assistant（body.messages
-  //                      不包含 system，拼到后面保持顺序）
-  //           [N] 当前 user 提问 = 包含在 body.messages 末尾，buildModelMessages 已做追加
-  const built = buildModelMessages({
-    style: body.style,
-    history: body.messages,
-    attachments: body.attachments,
-    // C 模块前置联网搜索结果：如果前端注册了 webSearchFn，
-    // chat-stream.ts 会把搜索结果注入到后续的流式上下文事件中；
-    // 以后 B 后端自己想做联网时，再把 sources 通过新字段传进来。
-    webSearchSources: [],
-  });
-  const { messages: builtMessages, attachmentWarnings } = built;
+  // —— 3. messages 直接采用前端构造好的 body.messages
+  //      前端 chat-stream.ts 已通过 buildModelMessages 拼好 system（风格 + 附件 + 联网上下文），
+  //      这里不再二次拼接，避免出现双 system prompt。
+  //      附件截断告警也由前端 chat-stream.ts 直接注入思考面板，后端不重复下发。
 
   // —— 4. 写 SSE 流
   const sse = new NextResponseSSE();
@@ -382,35 +370,11 @@ export async function POST(req: NextRequest) {
   // 异步跑 generator，边跑边 push
   (async () => {
     try {
-      // UPDATE: 2026-08-21 P1 Build 修复
-      //  ① buildModelMessages 返回值现在是 { messages, attachmentWarnings } 对象，
-      //    不再是数组；这里解构后把 messages（数组）传给 createModelStream。
-      //  ② 附件告警（ATTACHMENT_TRUNCATED_30K / 60K）：流式开始前立即作为
-      //    phase="warning" 的 meta 事件首帧下发，与前端 chat-stream.ts 的
-      //    onMeta → ThinkingPanel warnings 卡片链路打通（两端统一）。
-      if (attachmentWarnings.length > 0) {
-        for (const w of attachmentWarnings) {
-          sse.push(
-            sseLine("meta", {
-              id: (body as any).message_id || "",
-              phase: "warning",
-              status: "pending",
-              code: "ATTACHMENT_WARNING",
-              read_count: undefined,
-              context_truncated: true,
-              warning: w,
-            }),
-          );
-        }
-      }
-
       const gen = createModelStream({
         model: body.model,
         style: body.style,
-        // ⚠️ 关键：传 builtMessages（含风格 System Prompt + 附件 + 历史多轮），
-        //    而不是原始 body.messages（只有 user/assistant 对，没有 system，
-        //    会导致回复风格不生效 / AI 看不懂附件内容）。
-        messages: builtMessages,
+        // 直接使用前端拼好的 body.messages（已含 system + 附件 + 历史多轮）
+        messages: body.messages,
         webSearch: body.webSearch,
         signal: abortCtl.signal,
       });

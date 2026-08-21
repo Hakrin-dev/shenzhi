@@ -402,24 +402,10 @@ async function streamB(
   const t0 = Date.now();
   safe.onMeta!({ phase: "检索中", read_count: 0 });
 
-  // 如果 C 模块有前置联网搜索，先抛一次 refs 事件（模拟「先显示来源」）
+  // 如果 C 模块有前置联网搜索，来源卡片已由 chat-stream 提前 onRefs 下发（避免重复），
+  // 这里只更新 meta 的「已阅读 N 篇」状态
   if (payload.webSearchSources && payload.webSearchSources.length > 0) {
-    const refs: StreamRefsEvent["references"] = payload.webSearchSources.map(
-      (s, idx) => ({
-        ordinal: s.id || idx + 1,
-        source_type: (s.type as any) ?? "paper",
-        source_id: s.url ?? `src_${idx}`,
-        title: s.title,
-        venue: s.venue ?? null,
-        org: null,
-        authors: s.author ?? "",
-        citation_count: Number((s.citations ?? "").replace(/\D/g, "")) || 0,
-        recommended: !!s.recommended,
-        url: s.url ?? null,
-      }),
-    );
-    safe.onRefs!({ references: refs });
-    safe.onMeta!({ phase: "正在生成", read_count: refs.length });
+    safe.onMeta!({ phase: "正在生成", read_count: payload.webSearchSources.length });
   }
 
   // Task 4 · R1 思考链缓冲区：meta(phase=thinking) 逐 delta 累加 → done 时汇总写 thinkingContent

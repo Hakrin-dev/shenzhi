@@ -20,8 +20,9 @@ const { auth } = NextAuth(authConfig);
 import { NextResponse, type NextRequest } from "next/server";
 
 // 需要登录才能访问的 路径前缀
+// UPDATE 2026-08-21: 按用户要求暂时放开 /agents/*（AI 助手页），保证演示顺畅——
+// 登录/注册作为可选入口；历史会话/收藏/分享等个人数据仍在 API 层通过 getCurrentUserOrThrow 判断。
 const PROTECTED_ROUTE_PREFIXES: string[] = [
-  "/agents/",           // /agents/ask、/agents/deep-search 等（/agents 广场首页未列在，公开可访问）
   "/settings",          // /settings 及子页
   "/submit",            // /submit/journals 等
 ];
