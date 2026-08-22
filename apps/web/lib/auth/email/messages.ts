@@ -8,13 +8,15 @@ export type EmailOtpType =
   | "sign-in"
   | "email-verification"
   | "forget-password"
-  | "change-email";
+  | "change-email"
+  | "set-password";
 
 const OTP_PURPOSE_LABELS: Record<EmailOtpType, string> = {
   "sign-in": "登录",
   "email-verification": "邮箱验证",
   "forget-password": "密码重置",
   "change-email": "邮箱变更",
+  "set-password": "设置密码",
 };
 
 function escapeHtml(value: string): string {

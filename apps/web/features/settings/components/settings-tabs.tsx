@@ -313,6 +313,21 @@ function AccountSection() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpNotice, setOtpNotice] = useState<string | null>(null);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpSending, setOtpSending] = useState(false);
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setOtpCooldown((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [otpCooldown]);
 
   const displayName = nameDraft ?? currentSession?.user.name ?? "";
 
@@ -402,6 +417,98 @@ function AccountSection() {
     }
   };
 
+  const sendSetPasswordOtp = useCallback(async () => {
+    setOtpSending(true);
+    setOtpError(null);
+    setOtpNotice(null);
+    try {
+      const response = await fetch("/api/auth/password/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || data.error) {
+        setOtpError(data.message ?? "验证码发送失败，请稍后重试");
+        return;
+      }
+
+      setOtpCooldown(60);
+      setOtpNotice("验证码已发送，请查收邮件");
+    } catch {
+      setOtpError("验证码发送失败，请稍后重试");
+    } finally {
+      setOtpSending(false);
+    }
+  }, []);
+
+  const handleSendSetPasswordOtp = async () => {
+    setOtpError(null);
+    setOtpNotice(null);
+
+    if (!currentSession?.user.email) {
+      setOtpError("无法获取邮箱");
+      return;
+    }
+    if (otpCooldown > 0) return;
+
+    await sendSetPasswordOtp();
+  };
+
+  const handleSetPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const code = otp.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setPasswordError("请输入6位数字验证码");
+      setPasswordNotice(null);
+      return;
+    }
+    if (!validatePasswordPolicy(newPassword).valid) {
+      setPasswordError(PASSWORD_POLICY_MESSAGE);
+      setPasswordNotice(null);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("两次输入的密码不一致");
+      setPasswordNotice(null);
+      return;
+    }
+
+    setPasswordSubmitting(true);
+    setPasswordError(null);
+    setPasswordNotice(null);
+    try {
+      const response = await fetch("/api/auth/password/set", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp: code, newPassword }),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || data.error) {
+        setPasswordError(data.message ?? "设置密码失败，请稍后重试");
+        return;
+      }
+
+      setOtp("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordNotice("密码已设置");
+      await refetch();
+    } catch {
+      setPasswordError("设置密码失败，请稍后重试");
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
+
   if (isPending) {
     return (
       <div className="mt-3 rounded-2xl bg-card p-7 text-sm text-muted shadow-card">
@@ -417,6 +524,10 @@ function AccountSection() {
       </div>
     );
   }
+
+  const hasPassword = Boolean(
+    (currentSession.user as { hasPassword?: boolean }).hasPassword,
+  );
 
   return (
     <div className="mt-3 space-y-5 rounded-2xl bg-card p-7 shadow-card">
@@ -454,58 +565,147 @@ function AccountSection() {
         </Button>
       </form>
 
-      <form className="space-y-4 border-t border-line pt-5" onSubmit={handleChangePassword}>
-        <div>
-          <p className="text-[13px] font-medium text-ink-2">修改密码</p>
-          <p className="mt-1 text-xs text-muted">{PASSWORD_POLICY_MESSAGE}</p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-ink-2">当前密码</span>
-            <Input
-              type="password"
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-ink-2">新密码</span>
-            <Input
-              type="password"
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN_LENGTH}
-              maxLength={PASSWORD_MAX_LENGTH}
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-ink-2">确认新密码</span>
-            <Input
-              type="password"
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN_LENGTH}
-              maxLength={PASSWORD_MAX_LENGTH}
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-            />
-          </label>
-        </div>
-        {passwordError && (
-          <p className="text-[13px] text-danger" role="alert">
-            {passwordError}
-          </p>
-        )}
-        {passwordNotice && (
-          <p className="text-[13px] text-muted" role="status">
-            {passwordNotice}
-          </p>
-        )}
-        <Button type="submit" variant="outline" disabled={passwordSubmitting}>
-          {passwordSubmitting ? "修改中..." : "修改密码"}
-        </Button>
-      </form>
+      {hasPassword ? (
+        <form className="space-y-4 border-t border-line pt-5" onSubmit={handleChangePassword}>
+          <div>
+            <p className="text-[13px] font-medium text-ink-2">修改密码</p>
+            <p className="mt-1 text-xs text-muted">{PASSWORD_POLICY_MESSAGE}</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-ink-2">当前密码</span>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-ink-2">新密码</span>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-ink-2">确认新密码</span>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+          </div>
+          {passwordError && (
+            <p className="text-[13px] text-danger" role="alert">
+              {passwordError}
+            </p>
+          )}
+          {passwordNotice && (
+            <p className="text-[13px] text-muted" role="status">
+              {passwordNotice}
+            </p>
+          )}
+          <Button type="submit" variant="outline" disabled={passwordSubmitting}>
+            {passwordSubmitting ? "修改中..." : "修改密码"}
+          </Button>
+        </form>
+      ) : (
+        <form className="space-y-4 border-t border-line pt-5" onSubmit={handleSetPassword}>
+          <div>
+            <p className="text-[13px] font-medium text-ink-2">设置密码</p>
+            <p className="mt-1 text-xs text-muted">{PASSWORD_POLICY_MESSAGE}</p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">邮箱验证码</span>
+            <div className="flex gap-2">
+              <Input
+                placeholder="请输入6位验证码"
+                className="flex-1"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otp}
+                onChange={(event) =>
+                  setOtp(event.target.value.replace(/\D/g, ""))
+                }
+              />
+              <Button
+                variant="outline"
+                type="button"
+                className="shrink-0"
+                disabled={otpSending || otpCooldown > 0}
+                onClick={handleSendSetPasswordOtp}
+              >
+                {otpSending
+                  ? "发送中..."
+                  : otpCooldown > 0
+                    ? `${otpCooldown}s后重发`
+                    : "获取验证码"}
+              </Button>
+            </div>
+          </div>
+
+          {otpNotice && (
+            <p className="text-xs leading-5 text-muted" role="status">
+              {otpNotice}
+            </p>
+          )}
+          {otpError && (
+            <p className="text-[13px] text-danger" role="alert">
+              {otpError}
+            </p>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-ink-2">新密码</span>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-ink-2">确认新密码</span>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+          </div>
+
+          {passwordError && (
+            <p className="text-[13px] text-danger" role="alert">
+              {passwordError}
+            </p>
+          )}
+          {passwordNotice && (
+            <p className="text-[13px] text-muted" role="status">
+              {passwordNotice}
+            </p>
+          )}
+          <Button type="submit" variant="outline" disabled={passwordSubmitting}>
+            {passwordSubmitting ? "设置中..." : "设置密码"}
+          </Button>
+        </form>
+      )}
 
       <SessionSection currentToken={currentSession.session.token} />
     </div>

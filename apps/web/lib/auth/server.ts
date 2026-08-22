@@ -39,7 +39,9 @@ import {
 import {
   generateRandomOAuthPassword,
   OAUTH_CREDENTIAL_PROVIDER_ID,
+  OAUTH_PLACEHOLDER_SCOPE,
 } from "@/lib/auth/providers/oauth/credential";
+import { passwordStatus } from "@/lib/auth/plugins/password-status";
 import { registrationEmailVerification } from "@/lib/auth/plugins/registration-email-verification";
 
 const betterAuthConfig = authConfig;
@@ -186,6 +188,7 @@ export const auth = betterAuth({
             providerId: OAUTH_CREDENTIAL_PROVIDER_ID,
             accountId: user.id,
             password: hash,
+            scope: OAUTH_PLACEHOLDER_SCOPE,
           });
         },
       },
@@ -203,5 +206,6 @@ export const auth = betterAuth({
     registrationEmailVerification({
       sendVerificationOTP: emailCallbacks.sendVerificationOTP,
     }),
+    passwordStatus(),
   ],
 });
