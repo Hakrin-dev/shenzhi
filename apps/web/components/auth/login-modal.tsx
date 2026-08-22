@@ -45,6 +45,8 @@ type Submission =
   | "register"
   | null;
 
+type SendOtpResult = "sent" | "captcha-required" | "error";
+
 function Field({
   label,
   ...props
@@ -141,11 +143,15 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export function LoginModal({ open, notice, onClose }: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
-  const turnstileVerifiedRef = React.useRef(false);
   const pendingEmailRef = React.useRef<string | null>(null);
-  const registerTurnstileVerifiedRef = React.useRef(false);
   const registerPendingEmailRef = React.useRef<string | null>(null);
   const registerPendingIntentRef = React.useRef<RegisterOtpIntent>("initial");
   const [showTurnstile, setShowTurnstile] = React.useState(false);
@@ -288,7 +294,10 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
   };
 
   const sendOtp = React.useCallback(
-    async (email: string, turnstileToken?: string) => {
+    async (
+      email: string,
+      turnstileToken?: string,
+    ): Promise<SendOtpResult> => {
       setSubmission("otp-send");
       try {
         const { error } = await authClient.emailOtp.sendVerificationOtp(
@@ -299,21 +308,28 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error) {
-          turnstileVerifiedRef.current = false;
+          if (
+            !turnstileToken &&
+            (errorCodeOf(error) === "MISSING_RESPONSE" ||
+              errorCodeOf(error) === "VERIFICATION_FAILED")
+          ) {
+            return "captcha-required";
+          }
+
           setCodeError(
             getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
           );
-          return;
+          return "error";
         }
 
-        if (turnstileToken) turnstileVerifiedRef.current = true;
         setCodeCooldown(60);
         setCodeNotice("验证码已发送，请查收邮件");
+        return "sent";
       } catch (error) {
-        turnstileVerifiedRef.current = false;
         setCodeError(
           getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
         );
+        return "error";
       } finally {
         setSubmission(null);
       }
@@ -350,15 +366,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
     }
     if (codeCooldown > 0) return;
 
-    // 首次发送需要先完成人机验证;通过后本地与服务端都会记住。
-    if (TURNSTILE_SITE_KEY && !turnstileVerifiedRef.current) {
+    // 先不带 token 尝试发送;后端若判定需要人机验证则弹出 Turnstile。
+    const result = await sendOtp(email);
+    if (result === "captcha-required") {
       pendingEmailRef.current = email;
       setShowTurnstile(true);
       setCodeNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendOtp(email);
   };
 
   const sendRegisterOtp = React.useCallback(
@@ -366,7 +380,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       email: string,
       intent: RegisterOtpIntent,
       turnstileToken?: string,
-    ) => {
+    ): Promise<SendOtpResult> => {
       setSubmission(intent === "initial" ? "register-send" : "register-resend");
       if (intent === "initial") {
         setRegisterEmailError(null);
@@ -383,7 +397,14 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error || !data?.challengeId) {
-          registerTurnstileVerifiedRef.current = false;
+          if (
+            !turnstileToken &&
+            (errorCodeOf(error) === "MISSING_RESPONSE" ||
+              errorCodeOf(error) === "VERIFICATION_FAILED")
+          ) {
+            return "captcha-required";
+          }
+
           const message = getAuthErrorMessage(
             error,
             "验证码发送失败，请稍后重试",
@@ -391,10 +412,9 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
           );
           if (intent === "initial") setRegisterEmailError(message);
           else setRegisterCodeError(message);
-          return;
+          return "error";
         }
 
-        if (turnstileToken) registerTurnstileVerifiedRef.current = true;
         setRegisterEmail(email);
         setRegisterChallengeId(data.challengeId);
         setRegisterCode("");
@@ -402,8 +422,8 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         setRegisterStage("verify-email");
         setRegisterEmailNotice(null);
         setRegisterCodeNotice("验证码已发送，请查收邮件");
+        return "sent";
       } catch (error) {
-        registerTurnstileVerifiedRef.current = false;
         const message = getAuthErrorMessage(
           error,
           "验证码发送失败，请稍后重试",
@@ -411,6 +431,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
         if (intent === "initial") setRegisterEmailError(message);
         else setRegisterCodeError(message);
+        return "error";
       } finally {
         setSubmission(null);
       }
@@ -455,15 +476,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       return;
     }
 
-    if (TURNSTILE_SITE_KEY && !registerTurnstileVerifiedRef.current) {
+    const result = await sendRegisterOtp(email, "initial");
+    if (result === "captcha-required") {
       registerPendingEmailRef.current = email;
       registerPendingIntentRef.current = "initial";
       setRegisterShowTurnstile(true);
       setRegisterEmailNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendRegisterOtp(email, "initial");
   };
 
   const handleResendRegisterOtp = async () => {
@@ -477,15 +496,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       return;
     }
 
-    if (TURNSTILE_SITE_KEY && !registerTurnstileVerifiedRef.current) {
+    const result = await sendRegisterOtp(email, "resend");
+    if (result === "captcha-required") {
       registerPendingEmailRef.current = email;
       registerPendingIntentRef.current = "resend";
       setRegisterShowTurnstile(true);
       setRegisterCodeNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendRegisterOtp(email, "resend");
   };
 
   const handleOtpLogin = async (event: React.FormEvent<HTMLFormElement>) => {

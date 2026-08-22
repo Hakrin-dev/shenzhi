@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { authConfig } from "@/config/auth";
 import { githubOAuthConfigured } from "@/config/oauth";
 import { isTurnstileEnabled, turnstileConfig } from "@/config/turnstile";
 import {
+  createTurnstileClientId,
   getClientIP,
+  isSecureCookieBaseURL,
+  TURNSTILE_ANON_ID_COOKIE,
   verifyCloudflareTurnstileToken,
 } from "@/lib/auth/captcha/turnstile";
+import {
+  isTurnstileVerified,
+  markTurnstileVerified,
+} from "@/lib/auth/captcha/verification-store";
 import { auth } from "@/lib/auth/server";
 
 const GITHUB_PROVIDER = "github";
@@ -36,6 +44,9 @@ function extractSetCookies(headers: Headers | undefined): string[] {
  * 浏览器完成 Turnstile 后把一次性 token POST 到这里;校验通过后,本端点调用
  * Better Auth 的 `/sign-in/social` 生成授权 URL 与 OAuth state Cookie,并把两者
  * 返回给前端,由前端跳转到 GitHub 授权页。
+ *
+ * 若该匿名客户端在 15 分钟内已通过任一功能的人机验证(状态在后端数据库),
+ * 则无需再次携带 token,直接返回授权 URL。
  */
 export async function POST(request: NextRequest) {
   if (!githubOAuthConfigured) {
@@ -56,30 +67,43 @@ export async function POST(request: NextRequest) {
     token = typeof value === "string" ? value.trim() : null;
   }
 
+  let clientId = request.cookies.get(TURNSTILE_ANON_ID_COOKIE)?.value ?? null;
+  let shouldSetClientCookie = false;
+
   if (isTurnstileEnabled()) {
     const secretKey = turnstileConfig.secretKey;
     if (!secretKey) {
       return errorResponse("人机验证未配置", "turnstile_not_configured", 503);
     }
 
-    if (!token) {
-      return errorResponse(
-        "缺少人机验证凭证",
-        "missing_captcha_response",
-        400,
-      );
-    }
+    const verified = await isTurnstileVerified(clientId);
+    if (!verified) {
+      if (!token) {
+        return errorResponse(
+          "请先完成人机验证",
+          "verification_required",
+          428,
+        );
+      }
 
-    const valid = await verifyCloudflareTurnstileToken({
-      token,
-      secretKey,
-      remoteIP: getClientIP(request),
-      expectedAction: turnstileConfig.expectedAction,
-      allowedHostnames: turnstileConfig.allowedHostnames,
-    });
+      const valid = await verifyCloudflareTurnstileToken({
+        token,
+        secretKey,
+        remoteIP: getClientIP(request),
+        expectedAction: turnstileConfig.expectedAction,
+        allowedHostnames: turnstileConfig.allowedHostnames,
+      });
 
-    if (!valid) {
-      return errorResponse("人机验证失败，请重试", "verification_failed", 400);
+      if (!valid) {
+        return errorResponse("人机验证失败，请重试", "verification_failed", 400);
+      }
+
+      if (!clientId) {
+        clientId = createTurnstileClientId();
+        shouldSetClientCookie = true;
+      }
+
+      await markTurnstileVerified(clientId);
     }
   }
 
@@ -104,6 +128,17 @@ export async function POST(request: NextRequest) {
     }
 
     const response = NextResponse.json({ url });
+
+    if (shouldSetClientCookie && clientId) {
+      response.cookies.set(TURNSTILE_ANON_ID_COOKIE, clientId, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: isSecureCookieBaseURL(authConfig.baseURL),
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+    }
+
     for (const cookie of extractSetCookies(result.headers)) {
       response.headers.append("Set-Cookie", cookie);
     }

@@ -12,10 +12,12 @@ type VerifyResponse = {
 /**
  * GitHub 登录前的独立人机验证页。
  *
- * 页面只呈现 Cloudflare Turnstile 组件,完成验证后自动向后端发送 token;
- * 后端校验通过后返回 GitHub 授权地址并跳转,失败则重置组件供重新验证。
+ * 进入页面先询问后端是否已在 15 分钟内通过验证;已通过则直接跳转 GitHub
+ * 授权页,否则只显示一个 Cloudflare Turnstile 组件,完成后自动发送 token。
  */
 export function GithubVerifyPage() {
+  // 后端要求先做人机验证时才显示验证框。
+  const [needsChallenge, setNeedsChallenge] = React.useState(false);
   // 验证失败后自增,强制重新挂载 Turnstile 组件以便再次验证。
   const [attempt, setAttempt] = React.useState(0);
   const submittedRef = React.useRef(false);
@@ -38,12 +40,46 @@ export function GithubVerifyPage() {
         return;
       }
 
+      setNeedsChallenge(true);
       setAttempt((value) => value + 1);
     } catch {
+      setNeedsChallenge(true);
       setAttempt((value) => value + 1);
     } finally {
       submittedRef.current = false;
     }
+  }, []);
+
+  // 挂载时先询问后端是否已通过验证,已通过则自动进入 GitHub 授权页。
+  React.useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/auth/github/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        const data = (await response.json().catch(() => null)) as VerifyResponse | null;
+
+        if (cancelled) return;
+        if (response.ok && data?.url) {
+          window.location.assign(data.url);
+          return;
+        }
+
+        setNeedsChallenge(true);
+      } catch {
+        if (!cancelled) setNeedsChallenge(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleToken = React.useCallback(
@@ -69,13 +105,15 @@ export function GithubVerifyPage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-4">
-      <CloudflareTurnstile
-        key={attempt}
-        siteKey={TURNSTILE_SITE_KEY}
-        scale={1.5}
-        onToken={handleToken}
-        onError={handleError}
-      />
+      {needsChallenge && (
+        <CloudflareTurnstile
+          key={attempt}
+          siteKey={TURNSTILE_SITE_KEY}
+          scale={1.5}
+          onToken={handleToken}
+          onError={handleError}
+        />
+      )}
     </main>
   );
 }

@@ -10,13 +10,19 @@ import { emailDeliveryConfigured } from "@/config/email";
 import { githubOAuthConfig } from "@/config/oauth";
 import { turnstileConfig } from "@/config/turnstile";
 import {
+  createTurnstileClientId,
   getClientIP,
-  persistTurnstileVerificationCookie,
+  isSecureCookieBaseURL,
+  persistTurnstileClientCookie,
   shouldEnforceTurnstile,
-  TURNSTILE_VERIFIED_CONTEXT_KEY,
-  TURNSTILE_VERIFIED_COOKIE,
+  TURNSTILE_ANON_ID_COOKIE,
+  TURNSTILE_CLIENT_ID_CONTEXT_KEY,
   verifyCloudflareTurnstileToken,
 } from "@/lib/auth/captcha/turnstile";
+import {
+  isTurnstileVerified,
+  markTurnstileVerified,
+} from "@/lib/auth/captcha/verification-store";
 import { createBetterAuthEmailCallbacks } from "@/lib/auth/email/callbacks";
 import { EMAIL_OTP_OPTIONS } from "@/lib/auth/email/options";
 import { requiresEmailDelivery } from "@/lib/auth/email/requirements";
@@ -64,18 +70,18 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
-      let shouldRememberTurnstile = false;
+      let turnstileClientId: string | null = null;
 
-      // 人机验证:发送验证码前需先通过 Turnstile,通过一次后以签名 Cookie 记住。
+      // 人机验证:发送验证码前需先通过 Turnstile。
+      // 已验证状态保存在后端数据库,15 分钟内邮箱验证码与 GitHub OAuth 共享。
       if (shouldEnforceTurnstile(ctx.path, turnstileConfig.enabled)) {
         const turnstileSecretKey = turnstileConfig.secretKey;
         if (turnstileSecretKey) {
-          const verified = await ctx.getSignedCookie(
-            TURNSTILE_VERIFIED_COOKIE,
-            ctx.context.secret,
-          );
+          const existingClientId = ctx.getCookie(TURNSTILE_ANON_ID_COOKIE);
+          const clientId = existingClientId || createTurnstileClientId();
+          const verified = await isTurnstileVerified(clientId);
 
-          if (verified !== "1") {
+          if (!verified) {
             const token = ctx.getHeader("x-captcha-response");
             if (!token) {
               return ctx.error("BAD_REQUEST", {
@@ -99,8 +105,21 @@ export const auth = betterAuth({
               });
             }
 
-            shouldRememberTurnstile = true;
+            await markTurnstileVerified(clientId);
+
+            // 立即写回匿名 id Cookie:若后续 before 钩子返回错误(如邮件未配置),
+            // 该 Cookie 会随错误响应下发;成功路径的响应头会被端点替换,由 after 钩子补写。
+            ctx.setCookie(TURNSTILE_ANON_ID_COOKIE, clientId, {
+              httpOnly: true,
+              sameSite: "Lax",
+              secure: isSecureCookieBaseURL(ctx.context.baseURL),
+              maxAge: 60 * 60 * 24 * 365,
+              path: "/",
+            });
           }
+
+          // 验证通过后把匿名客户端 id 写回 Cookie(成功路径由 after hook 执行)。
+          turnstileClientId = clientId;
         }
       }
 
@@ -119,10 +138,10 @@ export const auth = betterAuth({
         ctx.path === "/reset-password" || ctx.path === "/change-password";
 
       if (!isSignUp && !isNewPasswordOperation) {
-        return shouldRememberTurnstile
+        return turnstileClientId
           ? {
               context: {
-                [TURNSTILE_VERIFIED_CONTEXT_KEY]: true,
+                [TURNSTILE_CLIENT_ID_CONTEXT_KEY]: turnstileClientId,
               },
             }
           : undefined;
@@ -140,7 +159,7 @@ export const auth = betterAuth({
         });
       }
     }),
-    after: persistTurnstileVerificationCookie,
+    after: persistTurnstileClientCookie,
   },
   emailAndPassword: {
     enabled: true,
