@@ -692,6 +692,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
 
   const handleGithubLogin = async () => {
     if (submission || socialSubmitting) return;
+
+    // 跳转式人机验证:先进入独立验证页,完成 Turnstile 后由后端发起 GitHub OAuth。
+    if (TURNSTILE_SITE_KEY) {
+      window.location.assign("/login/github");
+      return;
+    }
+
     setSocialSubmitting(true);
     setSocialError(null);
 

@@ -75,6 +75,9 @@ The server side does not import browser Client modules.
 - Settings uses the Better Auth session for profile display, `updateUser`,
   `changePassword`, `listSessions`, and `revokeOtherSessions`.
 - GitHub 登录使用 Better Auth `signIn.social()`；浏览器不读取 OAuth secret。
+- GitHub 登录默认走跳转式人机验证：点击 GitHub 图标后先进入 `/login/github`
+  独立验证页，完成 Cloudflare Turnstile 后由 `POST /api/auth/github/verify`
+  校验 token 并生成 OAuth 授权 URL，浏览器再跳转到 GitHub 授权页。
 - Email OTP 登录与注册发送验证码时，可先渲染 Cloudflare Turnstile 并把一次性 token
   交给服务端验证。
 
@@ -101,6 +104,8 @@ The server side does not import browser Client modules.
 - GitHub OAuth provider 仅在 client ID/secret 同时存在时启用；未配置不会阻止应用启动。
 - `apps/web/lib/auth/captcha/turnstile.ts` 只在显式启用且存在 secret 时保护 Email OTP
   发送端点，并在 Cloudflare 校验失败时 fail closed。
+- GitHub 登录的跳转式验证入口是 `apps/web/app/api/auth/github/verify/route.ts`，它复用
+  `verifyCloudflareTurnstileToken` 并调用 `auth.api.signInSocial()` 生成授权 URL。
 
 Authentication model:
 

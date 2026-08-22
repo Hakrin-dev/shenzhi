@@ -35,6 +35,8 @@ export interface CloudflareTurnstileProps {
   siteKey: string;
   action?: string;
   theme?: TurnstileTheme;
+  /** 等比例放大 normal 尺寸组件(默认 1,1.5 表示放大 50%)。 */
+  scale?: number;
   /** 用户完成人机验证后回调(带一次性 token)。 */
   onToken?: (token: string) => void;
   /** 脚本加载失败等异常回调。 */
@@ -79,6 +81,7 @@ export function CloudflareTurnstile({
   siteKey,
   action,
   theme = "auto",
+  scale = 1,
   onToken,
   onError,
 }: CloudflareTurnstileProps) {
@@ -120,5 +123,9 @@ export function CloudflareTurnstile({
     };
   }, [siteKey, action, theme, onToken, onError]);
 
-  return <div ref={containerRef} />;
+  return (
+    <div style={scale !== 1 ? { zoom: scale } : undefined}>
+      <div ref={containerRef} />
+    </div>
+  );
 }
