@@ -11,7 +11,7 @@ Baseline is production [http://47.238.241.77/](http://47.238.241.77/) (`bb4ec5d`
 
 ## A overlay
 
-Home composer toolbar: circular + , upload (paperclip), model pill, circular arrow send — like alphaXiv. Entry mode (搜索/问 AI), reply style, web search live in + menu. Model list always visible.
+Home composer toolbar: plain + and paperclip (no circle border); model pill only has rounded border. Pill opens panel: mode fast/deep toggle, style submenu expands right, model list expands down covering panel. Alt+Enter shows search inline below on home. Logos on models. Quota compact ring.
 
 - Enter = current mode. Alt+Enter = search. Shift+Enter = newline. IME Enter does not submit.
 - 搜索 → `/search?q=`

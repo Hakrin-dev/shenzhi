@@ -268,8 +268,8 @@ export function AttachmentMenu({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex size-8 cursor-pointer items-center justify-center rounded-full border border-line transition-colors",
-          open ? "border-primary/30 bg-primary-soft text-primary" : "text-muted hover:bg-chip hover:text-ink",
+          "flex size-9 cursor-pointer items-center justify-center rounded-xl text-muted transition-colors hover:bg-chip hover:text-ink",
+          open && "bg-chip text-ink",
         )}
       >
         <Paperclip className="size-4.5" strokeWidth={1.8} />
