@@ -2,7 +2,7 @@
 # 用法：.\scripts\setup-feishu-cli.ps1
 
 $ErrorActionPreference = "Stop"
-$Cli = "npx --yes @larksuite/cli@latest"
+$Cli = @('npx', '--yes', '@larksuite/cli@latest')
 
 Write-Host "=== 飞书 CLI 首次配置 ===" -ForegroundColor Cyan
 Write-Host ""
