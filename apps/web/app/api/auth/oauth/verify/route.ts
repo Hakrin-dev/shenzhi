@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authConfig } from "@/config/auth";
-import { githubOAuthConfigured } from "@/config/oauth";
+import { getOAuthProviderConfig } from "@/config/oauth";
 import { isTurnstileEnabled, turnstileConfig } from "@/config/turnstile";
 import {
   createTurnstileClientId,
@@ -15,8 +15,6 @@ import {
   markTurnstileVerified,
 } from "@/lib/auth/captcha/verification-store";
 import { auth } from "@/lib/auth/server";
-
-const GITHUB_PROVIDER = "github";
 
 function errorResponse(message: string, code: string, status: number) {
   return NextResponse.json({ error: code, message }, { status });
@@ -39,18 +37,21 @@ function extractSetCookies(headers: Headers | undefined): string[] {
 }
 
 /**
- * GitHub 登录的跳转式人机验证入口。
+ * OAuth 登录的跳转式人机验证入口(通用 Provider)。
  *
  * 浏览器完成 Turnstile 后把一次性 token POST 到这里;校验通过后,本端点调用
  * Better Auth 的 `/sign-in/social` 生成授权 URL 与 OAuth state Cookie,并把两者
- * 返回给前端,由前端跳转到 GitHub 授权页。
+ * 返回给前端,由前端跳转到对应 Provider 的授权页。
  *
  * 若该匿名客户端在 15 分钟内已通过任一功能的人机验证(状态在后端数据库),
  * 则无需再次携带 token,直接返回授权 URL。
  */
 export async function POST(request: NextRequest) {
-  if (!githubOAuthConfigured) {
-    return errorResponse("GitHub 登录未配置", "oauth_not_configured", 503);
+  const provider =
+    new URL(request.url).searchParams.get("provider") ?? undefined;
+
+  if (!provider || !getOAuthProviderConfig(provider)) {
+    return errorResponse("该登录方式未配置", "oauth_not_configured", 503);
   }
 
   let token: string | null = null;
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
   try {
     const result = await auth.api.signInSocial({
       body: {
-        provider: GITHUB_PROVIDER,
+        provider,
         callbackURL: "/",
         disableRedirect: true,
       },
@@ -120,11 +121,7 @@ export async function POST(request: NextRequest) {
 
     const url = result.response?.url;
     if (!url) {
-      return errorResponse(
-        "无法创建 GitHub 登录链接",
-        "oauth_init_failed",
-        500,
-      );
+      return errorResponse("无法创建登录链接", "oauth_init_failed", 500);
     }
 
     const response = NextResponse.json({ url });
@@ -144,6 +141,6 @@ export async function POST(request: NextRequest) {
     }
     return response;
   } catch {
-    return errorResponse("无法创建 GitHub 登录链接", "oauth_init_failed", 500);
+    return errorResponse("无法创建登录链接", "oauth_init_failed", 500);
   }
 }

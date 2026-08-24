@@ -22,8 +22,9 @@ Configuration areas:
 - `database.ts`: PostgreSQL connection URL.
 - `email.ts`: Alibaba DirectMail provider selection and sender/deployment
   metadata; provider credentials remain deployment-only.
-- `oauth.ts`: GitHub OAuth client credentials; missing configuration is
-  tolerated at startup and only surfaces when GitHub sign-in is attempted.
+- `oauth.ts`: OAuth Provider 注册表；每个 Provider 读取各自的
+  `{大写ID}_CLIENT_ID` / `{大写ID}_CLIENT_SECRET`，缺失配置在启动时被容忍，
+  仅在该 Provider 登录被触发时才报未配置。
 - `turnstile.ts`: Cloudflare Turnstile human-verification toggle, secret key,
   and optional token constraints.
 - `backend.ts`: FastAPI 根地址 `BUSINESS_BACKEND_URL`（仅服务端）。

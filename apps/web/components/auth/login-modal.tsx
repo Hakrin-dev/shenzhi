@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, CheckCircle2, Circle, Github, X } from "lucide-react";
+import { Check, CheckCircle2, Circle, X } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
 import {
   sendRegistrationEmailOtp,
   verifyRegistrationEmailOtp,
 } from "@/components/auth/registration-client";
+import { listSocialProviders } from "@/components/auth/social-providers";
 import { CloudflareTurnstile } from "@/components/auth/turnstile";
 import {
   getAuthErrorMessage,
@@ -707,12 +708,12 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
     }
   };
 
-  const handleGithubLogin = async () => {
+  const handleSocialLogin = async (providerId: string) => {
     if (submission || socialSubmitting) return;
 
-    // 跳转式人机验证:先进入独立验证页,完成 Turnstile 后由后端发起 GitHub OAuth。
+    // 跳转式人机验证:先进入独立验证页,完成 Turnstile 后由后端发起 OAuth。
     if (TURNSTILE_SITE_KEY) {
-      window.location.assign("/login/github");
+      window.location.assign(`/login/${providerId}`);
       return;
     }
 
@@ -721,19 +722,19 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
 
     try {
       const { error } = await authClient.signIn.social({
-        provider: "github",
+        provider: providerId,
         callbackURL: "/",
       });
 
       if (error) {
         setSocialError(
-          getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+          getAuthErrorMessage(error, "登录失败，请稍后重试", "login"),
         );
         setSocialSubmitting(false);
       }
     } catch (error) {
       setSocialError(
-        getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+        getAuthErrorMessage(error, "登录失败，请稍后重试", "login"),
       );
       setSocialSubmitting(false);
     }
@@ -1231,16 +1232,19 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
               <div className="h-px flex-1 bg-line" />
             </div>
 
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                aria-label="使用 GitHub 登录"
-                disabled={Boolean(submission) || socialSubmitting}
-                onClick={handleGithubLogin}
-                className="flex size-11 items-center justify-center rounded-full border border-line text-ink-2 transition hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Github className="size-5" />
-              </button>
+            <div className="mt-4 flex justify-center gap-3">
+              {listSocialProviders().map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  aria-label={`使用 ${provider.label} 登录`}
+                  disabled={Boolean(submission) || socialSubmitting}
+                  onClick={() => handleSocialLogin(provider.id)}
+                  className="flex size-11 items-center justify-center rounded-full border border-line text-ink-2 transition hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <provider.icon className="size-5" />
+                </button>
+              ))}
             </div>
 
             {socialError && (

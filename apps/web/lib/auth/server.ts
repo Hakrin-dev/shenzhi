@@ -7,7 +7,7 @@ import {
   getAuthEmailVerificationSettings,
 } from "@/config/auth";
 import { emailDeliveryConfigured } from "@/config/email";
-import { githubOAuthConfig } from "@/config/oauth";
+import { configuredOAuthProviders } from "@/config/oauth";
 import { turnstileConfig } from "@/config/turnstile";
 import {
   createTurnstileClientId,
@@ -46,13 +46,13 @@ import { registrationEmailVerification } from "@/lib/auth/plugins/registration-e
 
 const betterAuthConfig = authConfig;
 
-const socialProviders = githubOAuthConfig
-  ? {
-      github: {
-        clientId: githubOAuthConfig.clientId,
-        clientSecret: githubOAuthConfig.clientSecret,
-      },
-    }
+const socialProviders = configuredOAuthProviders.length
+  ? Object.fromEntries(
+      configuredOAuthProviders.map(({ id, clientId, clientSecret }) => [
+        id,
+        { clientId, clientSecret },
+      ]),
+    )
   : undefined;
 const emailVerificationSettings = getAuthEmailVerificationSettings();
 const { requireEmailVerification } = emailVerificationSettings;
