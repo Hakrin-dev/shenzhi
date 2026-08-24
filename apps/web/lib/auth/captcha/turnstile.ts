@@ -7,6 +7,9 @@ import { REGISTRATION_EMAIL_SEND_OTP_PATH } from "../registration/constants";
 /** 需要人机验证的 Better Auth 端点(发送验证码)。 */
 export const TURNSTILE_SEND_OTP_PATH = "/email-otp/send-verification-otp";
 
+/** 需要人机验证的 Better Auth 端点(发送密码重置邮件)。 */
+export const TURNSTILE_RESET_PASSWORD_PATH = "/request-password-reset";
+
 /**
  * 匿名客户端标识 Cookie。只承载一个随机 id,用于在后端查找“已通过验证”状态;
  * “已验证”状态本身只保存在后端数据库,不写入前端 Cookie/localStorage。
@@ -99,6 +102,7 @@ export function shouldEnforceTurnstile(
   return (
     enabled &&
     (path === TURNSTILE_SEND_OTP_PATH ||
+      path === TURNSTILE_RESET_PASSWORD_PATH ||
       path === REGISTRATION_EMAIL_SEND_OTP_PATH)
   );
 }

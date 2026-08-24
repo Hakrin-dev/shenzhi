@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
+import { CloudflareTurnstile } from "@/components/auth/turnstile";
 import {
   EMAIL_PROVIDER_MESSAGE,
   getAuthErrorMessage,
@@ -18,6 +19,8 @@ import {
   validatePasswordPolicy,
 } from "@/lib/auth/policies/password";
 import { Logo } from "@/components/layout/logo";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 function Field({
   label,
@@ -35,6 +38,14 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+type SendResetResult = "sent" | "captcha-required" | "error";
+
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -47,8 +58,77 @@ function ResetPasswordContent() {
   );
   const [notice, setNotice] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [showTurnstile, setShowTurnstile] = React.useState(false);
+  const [cooldown, setCooldown] = React.useState(0);
+  const pendingEmailRef = React.useRef<string | null>(null);
 
-  const handleRequestReset = async (event: React.FormEvent<HTMLFormElement>) => {
+  React.useEffect(() => {
+    if (cooldown <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setCooldown((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [cooldown]);
+
+  const sendResetEmail = React.useCallback(
+    async (
+      resetEmail: string,
+      turnstileToken?: string,
+    ): Promise<SendResetResult> => {
+      setSubmitting(true);
+      setError(null);
+      setNotice(null);
+
+      try {
+        const result = await authClient.requestPasswordReset(
+          {
+            email: resetEmail,
+            redirectTo: `${window.location.origin}/reset-password`,
+          },
+          turnstileToken
+            ? { headers: { "x-captcha-response": turnstileToken } }
+            : {},
+        );
+
+        if (result.error) {
+          if (
+            !turnstileToken &&
+            (errorCodeOf(result.error) === "MISSING_RESPONSE" ||
+              errorCodeOf(result.error) === "VERIFICATION_FAILED")
+          ) {
+            return "captcha-required";
+          }
+
+          setError(
+            getAuthErrorMessage(
+              result.error,
+              EMAIL_PROVIDER_MESSAGE,
+              "reset",
+            ),
+          );
+          return "error";
+        }
+
+        setCooldown(60);
+        setNotice("如果该邮箱存在，我们会发送重置邮件。");
+        return "sent";
+      } catch (requestError) {
+        setError(
+          getAuthErrorMessage(requestError, EMAIL_PROVIDER_MESSAGE, "reset"),
+        );
+        return "error";
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [],
+  );
+
+  const handleRequestReset = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
     const normalizedEmail = normalizeEmail(email);
 
@@ -57,37 +137,35 @@ function ResetPasswordContent() {
       setNotice(null);
       return;
     }
+    if (cooldown > 0) return;
 
-    setSubmitting(true);
-    setError(null);
-    setNotice(null);
-
-    try {
-      const result = await authClient.requestPasswordReset({
-        email: normalizedEmail,
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-
-      if (result.error) {
-        setError(
-          getAuthErrorMessage(
-            result.error,
-            EMAIL_PROVIDER_MESSAGE,
-            "reset",
-          ),
-        );
-        return;
-      }
-
-      setNotice("如果该邮箱存在，我们会发送重置邮件。");
-    } catch (requestError) {
-      setError(
-        getAuthErrorMessage(requestError, EMAIL_PROVIDER_MESSAGE, "reset"),
-      );
-    } finally {
-      setSubmitting(false);
+    // 先不带 token 尝试发送;后端若判定需要人机验证则弹出 Turnstile。
+    const result = await sendResetEmail(normalizedEmail);
+    if (result === "captcha-required") {
+      pendingEmailRef.current = normalizedEmail;
+      setShowTurnstile(true);
+      setNotice("请先完成上方人机验证");
     }
   };
+
+  const handleTurnstileToken = React.useCallback(
+    async (token: string) => {
+      setShowTurnstile(false);
+      setNotice(null);
+
+      const resetEmail = pendingEmailRef.current;
+      pendingEmailRef.current = null;
+      if (!resetEmail) return;
+
+      await sendResetEmail(resetEmail, token);
+    },
+    [sendResetEmail],
+  );
+
+  const handleTurnstileError = React.useCallback(() => {
+    setShowTurnstile(false);
+    setError("人机验证失败，请重试");
+  }, []);
 
   const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -216,6 +294,13 @@ function ResetPasswordContent() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
+            {showTurnstile && TURNSTILE_SITE_KEY && (
+              <CloudflareTurnstile
+                siteKey={TURNSTILE_SITE_KEY}
+                onToken={handleTurnstileToken}
+                onError={handleTurnstileError}
+              />
+            )}
             {error && (
               <p className="text-[13px] text-danger" role="alert">
                 {error}
@@ -226,8 +311,17 @@ function ResetPasswordContent() {
                 {notice}
               </p>
             )}
-            <Button type="submit" className="mt-1 w-full" disabled={submitting}>
-              {submitting ? "发送中..." : "发送重置邮件"}
+            <Button
+              type="submit"
+              className="mt-1 w-full"
+              disabled={submitting || cooldown > 0}
+              aria-busy={submitting}
+            >
+              {submitting
+                ? "发送中..."
+                : cooldown > 0
+                  ? `${cooldown}s后重发`
+                  : "发送重置邮件"}
             </Button>
           </form>
         )}

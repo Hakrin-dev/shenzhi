@@ -75,13 +75,15 @@ The server side does not import browser Client modules.
 - Settings uses the Better Auth session for profile display, `updateUser`,
   `changePassword`, `listSessions`, and `revokeOtherSessions`.
 - GitHub 登录使用 Better Auth `signIn.social()`；浏览器不读取 OAuth secret。
-- GitHub 登录默认走跳转式人机验证：点击 GitHub 图标后先进入 `/login/github`
-  独立验证页，完成 Cloudflare Turnstile 后由 `POST /api/auth/github/verify`
-  校验 token 并生成 OAuth 授权 URL，浏览器再跳转到 GitHub 授权页。
+- OAuth 登录默认走跳转式人机验证：点击 Provider 图标后先进入 `/login/[provider]`
+  独立验证页，完成 Cloudflare Turnstile 后由 `POST /api/auth/oauth/verify` 校验 token
+  并生成授权 URL，浏览器再跳转到对应 Provider 授权页。
 - Email OTP 登录与注册发送验证码时，先不带 token 尝试发送；后端判定需要人机验证时
   再渲染 Cloudflare Turnstile 并把一次性 token 交给服务端验证。
-- 邮箱验证码与 GitHub OAuth 共享后端“已通过验证”状态：任一功能通过后 15 分钟内，
-  触发另一功能不再弹验证。
+- 找回密码发送重置邮件（`/request-password-reset`）同样在发送前校验人机验证，并与
+  邮箱验证码、OAuth 登录一致：先不带 token 尝试，需要验证时再弹出 Turnstile。
+- 邮箱验证码、发送重置邮件、OAuth 登录共享后端“已通过验证”状态：任一功能通过后
+  15 分钟内，触发另一功能不再弹验证。
 
 ## Better Auth backend boundary
 
