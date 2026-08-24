@@ -1,5 +1,6 @@
 import { apiJson, apiPath } from "@/lib/api/http";
 import { readSseStream, type SseEvent } from "@/lib/sse";
+import type { FeedPaper, Scholar } from "@/types";
 import type {
   CreateChatSessionRequest,
   CreateChatSessionResponse,
@@ -24,6 +25,13 @@ export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
     accept: [".pdf", ".docx", ".md", ".txt"],
   },
 };
+
+export interface ExploreSearchResponse {
+  papers: FeedPaper[];
+  scholars: Scholar[];
+  source: "retrieval" | "retrieval_empty" | "local";
+  total?: number;
+}
 
 export function createChatSession(
   body: CreateChatSessionRequest,
@@ -66,6 +74,18 @@ export async function getSearchConfig(): Promise<SearchConfig> {
   } catch {
     return FALLBACK_SEARCH_CONFIG;
   }
+}
+
+/** 论文检索：FastAPI 代理外部 retrieval 服务；失败时由调用方 fallback */
+export function exploreSearch(query: string, mode: "fast" | "deep" = "fast") {
+  return apiJson<ExploreSearchResponse>("/search/explore", {
+    method: "POST",
+    body: JSON.stringify({
+      query: query.trim(),
+      top_k: mode === "deep" ? 10 : 5,
+      mode,
+    }),
+  });
 }
 
 export interface ChatStreamHandlers {

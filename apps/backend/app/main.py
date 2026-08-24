@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import Any
@@ -7,6 +8,12 @@ from typing import Any
 from fastapi import FastAPI, File, Header, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+from app.retrieval import (
+    map_hit_to_feed_paper,
+    map_hit_to_reference,
+    retrieval_search,
+)
 
 app = FastAPI(title="ShenZhi AI API", version="0.1.0")
 
@@ -33,6 +40,12 @@ class FollowupBody(BaseModel):
     model: str | None = None
     web_search: bool | None = None
     attachments: list[ChatAttachment] | None = None
+
+
+class ExploreBody(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    top_k: int = Field(default=10, ge=1, le=20)
+    mode: str = "fast"
 
 
 # 进程内骨架存储；正式实现应换 PostgreSQL。
@@ -142,6 +155,25 @@ def search_config() -> JSONResponse:
     )
 
 
+@app.post("/api/v1/search/explore")
+async def search_explore(body: ExploreBody) -> JSONResponse:
+    query = body.query.strip()
+    if not query:
+        return fail(20001, "请输入检索关键词")
+
+    hits = await retrieval_search(query, top_k=body.top_k, mode=body.mode)
+    papers = [map_hit_to_feed_paper(hit, i) for i, hit in enumerate(hits)]
+
+    return ok(
+        {
+            "papers": papers,
+            "scholars": [],
+            "source": "retrieval" if papers else "retrieval_empty",
+            "total": len(papers),
+        }
+    )
+
+
 @app.post("/api/v1/search/sessions")
 def create_session(
     body: CreateSessionBody,
@@ -210,14 +242,37 @@ async def stream(message_id: str) -> StreamingResponse:
         return fail(20004, "消息不存在", 404)
 
     question = message["question"]
+    session = _sessions.get(message["session_id"], {})
+    mode = session.get("mode", "fast")
     started = time.time()
 
     async def events():
-        yield 'event: meta\ndata: {"read_count": 0, "phase": "generating"}\n\n'
-        text = (
-            f"这是 FastAPI 骨架回复，尚未接入真实模型。问题是：{question}\n\n"
-            "Next.js 微后端已把请求转发到本服务；接上检索与模型后替换此生成逻辑即可。"
-        )
+        hits = await retrieval_search(question, top_k=10, mode=mode)
+        references = [
+            map_hit_to_reference(hit, i + 1) for i, hit in enumerate(hits)
+        ]
+        read_count = len(references)
+        meta = {"read_count": read_count, "phase": "generating"}
+        yield f"event: meta\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        if references:
+            refs_payload = {"references": references}
+            yield f"event: refs\ndata: {json.dumps(refs_payload, ensure_ascii=False)}\n\n"
+
+        if hits:
+            lead = references[0]["title"] if references else ""
+            text = (
+                f"已检索到 {read_count} 篇相关论文（外部检索服务）。"
+                f"问题是：{question}\n\n"
+                f"与问题最相关的一篇是「{lead}」。"
+                " FastAPI 骨架尚未接入真实大模型，以上为检索占位回复；"
+                "引用列表已通过 refs 事件返回，可在前端 ReferenceGrid 展示。"
+            )
+        else:
+            text = (
+                f"未在外部论文库中检索到与「{question}」足够相关的结果，"
+                "建议更换关键词或开启联网搜索。"
+                " FastAPI 骨架尚未接入真实大模型。"
+            )
         chunk_size = 24
         for i in range(0, len(text), chunk_size):
             piece = text[i : i + chunk_size].replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")

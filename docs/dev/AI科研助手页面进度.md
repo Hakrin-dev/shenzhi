@@ -1,7 +1,7 @@
 # AI科研助手页面进度
 
 > 与飞书同步：https://fcnwq2xz3qtd.feishu.cn/wiki/IpUJwDQK2iZBICkRMP6ciCeMnxb  
-> 更新 **2026-08-24** · 飞书 CLI 自动同步
+> 更新 **2026-08-24** · 论文检索已接入
 
 ---
 
@@ -19,7 +19,7 @@
 
 **搜索与入口**
 
-首页有统一搜索框，可在普通搜索与问 AI 之间切换。Enter 发送问 AI 并跳转 agents ask，Shift+Enter 换行，Alt+Enter 在首页输入框下方内联展示论文搜索结果（不再跳转搜索页）。普通搜索跳转结果页，检索内容目前为本地假数据。
+首页有统一搜索框，可在普通搜索与问 AI 之间切换。Enter 发送问 AI 并跳转 agents ask，Shift+Enter 换行，Alt+Enter 在首页输入框下方内联展示论文搜索结果（不再跳转搜索页）。普通搜索跳转结果页；论文检索经 FastAPI 代理外部论文库，服务不可用时回退本地示例。
 
 **输入框与工具栏**
 
@@ -37,7 +37,7 @@
 
 **问 AI 与对话**
 
-问 AI 页支持多轮输入、流式展示、停止生成。会话与流式协议已搭好，网站转发 FastAPI。会话未持久化，配额与历史列表未做。
+问 AI 页支持多轮输入、流式展示、停止生成。会话与流式协议已搭好，网站转发 FastAPI。问 AI 流式会先检索论文库并通过 refs 事件返回引用，生成正文仍为占位。会话未持久化，配额与历史列表未做。
 
 **登录**
 
@@ -61,7 +61,7 @@ NextAuth v5 + Prisma + SQLite，含注册、登录、找回密码与路由守卫
 
 ### 尚未实现
 
-dev 上真实大模型按 model 路由、文献检索、B 分支能力合入 monorepo、收藏分享等仍待做。B 与 dev 认证体系（Better Auth vs NextAuth）合并时保留 Better Auth。
+dev 上真实大模型按 model 路由、B 分支能力合入 monorepo、论文详情与引用图谱、收藏分享等仍待做。B 与 dev 认证体系（Better Auth vs NextAuth）合并时保留 Better Auth。
 
 契约见 apps web types ai search ts，认证见认证说明。
 
@@ -99,4 +99,4 @@ dev 前端配色改为深知蓝体系。首页与问 AI 输入框参考 alphaXiv
 
 ### 2026年8月24日
 
-dev 接入飞书 CLI 与 sync-feishu-progress 脚本，进度页可一键覆盖同步。查阅 feat/ai-agent-B 最新提交 98daf7e：历史会话持久化、Markdown 与公式渲染、会话列表 UI 已就绪；此前已合入 C 模块附件与联网、P1 用户系统、R1 思考链与引用联动。项目介绍已更新 B 分支摘要。
+dev 接入飞书 CLI 与进度页同步脚本，更新 B 分支摘要。FastAPI 新增论文检索代理，首页 Alt+Enter 与搜索页改调真实论文库；问 AI SSE 返回检索 refs。已 push 并同步飞书。

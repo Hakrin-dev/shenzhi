@@ -18,4 +18,10 @@ Web 侧设置（仅服务端，不要 `NEXT_PUBLIC_`）：
 BUSINESS_BACKEND_URL=http://127.0.0.1:8000
 ```
 
-当前 `app/main.py` 是契约骨架（建会话 + SSE 占位回复），真实模型 / 检索由 AI 对话方向替换，路径与包络不要改。
+当前 `app/main.py` 提供会话契约、**论文检索代理**（`POST /api/v1/search/explore` → 外部 `RETRIEVAL_API_URL`）与 SSE 占位回复（检索结果经 `refs` 事件返回）。真实大模型生成待 B 分支合入。
+
+检索环境变量见 `.env.example`：
+
+```
+RETRIEVAL_API_URL=http://47.110.47.12
+```
