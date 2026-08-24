@@ -380,6 +380,11 @@ function AccountSection() {
       setPasswordNotice(null);
       return;
     }
+    if (currentPassword === newPassword) {
+      setPasswordError("新密码不能与旧密码相同");
+      setPasswordNotice(null);
+      return;
+    }
 
     setPasswordSubmitting(true);
     setPasswordError(null);
