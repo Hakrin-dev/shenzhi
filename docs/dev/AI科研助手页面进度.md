@@ -1,7 +1,7 @@
 # AI科研助手页面进度
 
 > 与飞书同步：https://fcnwq2xz3qtd.feishu.cn/wiki/IpUJwDQK2iZBICkRMP6ciCeMnxb  
-> 更新 **2026-08-23** · 复制本节以下内容至飞书对应位置
+> 更新 **2026-08-24** · 飞书 CLI 自动同步
 
 ---
 
@@ -49,19 +49,19 @@ B 分支在旧目录结构下把第一阶段核心需求跑通。
 
 **问 AI 与模型**
 
-已接入 DeepSeek 真流式，含 R1 思考链。支持多轮、停止与继续、四档风格、Markdown 与公式。模型侧为默认、订阅、自带密钥三档，与 dev 新的多模型列表不是同一套 UI，合并时需统一。
+已接入 DeepSeek 真流式（V3 与 R1），R1 支持思考链折叠面板。支持多轮、停止与继续、四档风格、Markdown 与公式渲染。历史会话已持久化，含会话列表与消息 CRUD API。模型侧仍为 default / subscription / byok 三档，与 dev 多厂商 pill 列表不是同一套 UI，合并时需统一。
 
 **附件与联网**
 
-可上传 PDF、Markdown、文本、Word，可联网搜索，有来源卡片。
+可上传 PDF、Markdown、文本并解析正文；C 模块已接 Tavily 优先、SearXNG 降级的联网搜索。参考来源卡片为真实数据，正文 [N] 与卡片双向高亮。单附件 3 万、多附件合计 6 万字截断并告警。
 
 **登录与用户**
 
-NextAuth 与 SQLite，与会话 CRUD、历史列表骨架已有，写库与历史回灌未完成。
+NextAuth v5 + Prisma + SQLite，含注册、登录、找回密码与路由守卫。会话与消息已写库，历史列表可加载回灌。
 
 ### 尚未实现
 
-dev 上真实大模型按 model 路由、文献检索、会话持久化、引用联动、收藏分享等仍待做。B 分支能力合入 dev 时保留 Better Auth。
+dev 上真实大模型按 model 路由、文献检索、B 分支能力合入 monorepo、收藏分享等仍待做。B 与 dev 认证体系（Better Auth vs NextAuth）合并时保留 Better Auth。
 
 契约见 apps web types ai search ts，认证见认证说明。
 
@@ -96,3 +96,7 @@ dev 前端配色改为深知蓝体系。首页与问 AI 输入框参考 alphaXiv
 ### 2026年8月23日
 
 输入框第二轮改版合入 dev 并 push 至 GitHub（6ec5f80、fc5a48c）。加号与上传恢复无圆框样式，仅模型 pill 保留圆角边框。模型面板分三行：模式快速与深度切换、风格子菜单向右展开、模型列表向下展开并盖住上行。各模型使用厂商 logo，配额改为紧凑圆环。Alt+Enter 在首页下方内联展示搜索结果，Enter 发送问 AI，Shift+Enter 换行。去掉工具栏分割线并收窄输入区高度。新建发现与搜索页面进度文档，项目介绍同步第二轮输入框说明。
+
+### 2026年8月24日
+
+dev 接入飞书 CLI 与 sync-feishu-progress 脚本，进度页可一键覆盖同步。查阅 feat/ai-agent-B 最新提交 98daf7e：历史会话持久化、Markdown 与公式渲染、会话列表 UI 已就绪；此前已合入 C 模块附件与联网、P1 用户系统、R1 思考链与引用联动。项目介绍已更新 B 分支摘要。
