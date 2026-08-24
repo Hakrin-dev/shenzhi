@@ -29,8 +29,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession, signIn as nextAuthSignIn } from "next-auth/react";
 import {
   AlertTriangle,
+  ArrowRight,
   BookOpenCheck,
   BrainCircuit,
   ChevronDown,
@@ -177,10 +179,16 @@ function ThinkingPanel({
         ) : (
           <ChevronRight className="size-3.5 text-faint" />
         )}
+        <BrainCircuit className="size-3.5 text-muted" />
         <span className="text-[12px] font-medium text-ink-2">思考状态</span>
-        {phase && (
+        {phase && phase !== "warning" && (
           <span className="ml-1 rounded-md bg-primary-soft px-1.5 py-0.5 text-[10px] font-medium text-primary">
             {phase}
+          </span>
+        )}
+        {phase === "warning" && (
+          <span className="ml-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            有告警
           </span>
         )}
         {!phase && typeof durationMs === "number" && (
@@ -284,7 +292,7 @@ function ReasoningChainPanel({
   if (!content) return null;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-primary/20 bg-primary-soft/40">
+    <div className="overflow-hidden rounded-xl border border-primary/20 bg-primary-soft/40 dark:bg-card/60 dark:border-line/60">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -296,15 +304,15 @@ function ReasoningChainPanel({
           <ChevronRight className="size-3.5 text-faint" />
         )}
         <BrainCircuit className="size-3.5 text-primary" />
-        <span className="text-[12px] font-medium text-ink-2">深度思考</span>
+        <span className="text-[12px] font-medium text-ink-2 dark:text-ink">深度思考</span>
         <span className="ml-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
           {streaming ? "思考中…" : "已完成"}
         </span>
         <span className="ml-auto text-[11px] text-faint">{tokens} 字</span>
       </button>
       {open && (
-        <div className="border-t border-primary/10 bg-white/50 p-3 dark:bg-ink-950/20">
-          <div className="max-h-[380px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white/80 p-3 text-[12.5px] leading-6 text-ink-2 shadow-inner ring-1 ring-line/60 dark:bg-ink-950/40">
+        <div className="border-t border-primary/10 bg-white/50 p-3 dark:bg-panel/50 dark:border-line/40">
+          <div className="max-h-[380px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white/80 p-3 text-[12.5px] leading-6 text-ink-2 shadow-inner ring-1 ring-line/60 dark:bg-card dark:text-ink-2 dark:ring-line/40">
             {content}
             {streaming && (
               <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-primary align-[-2px]" />
@@ -328,23 +336,22 @@ function FollowUpsBar({
 }) {
   if (!items || items.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-faint">
-        你可能还想问
-      </p>
-      <div className="flex flex-wrap gap-2">
+    <section className="w-full">
+      <p className="text-xs text-faint">继续深入研究</p>
+      <div className="mt-2.5 flex flex-col gap-2.5">
         {items.map((q, idx) => (
           <button
             key={idx}
             type="button"
             onClick={() => onPick(q)}
-            className="cursor-pointer rounded-full border border-line bg-card px-3.5 py-1.5 text-[12px] text-muted transition-colors hover:border-primary/40 hover:text-primary"
+            className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-line bg-card px-5 py-2.5 text-left text-[14px] text-ink-2 transition-colors hover:border-primary hover:text-primary"
           >
-            {q}
+            <span className="flex-1">{q}</span>
+            <ArrowRight className="size-4 shrink-0 text-faint" />
           </button>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -412,6 +419,21 @@ function ErrorBubble({
  *  主组件 AgentChat
  * ======================================================= */
 export function AgentChat() {
+  /* ---------- 0. 自动登录（演示模式：qixi / 1823tao） ---------- */
+  const { data: authSession, status: authStatus } = useSession();
+  const autoLoginTriedRef = useRef(false);
+  useEffect(() => {
+    if (authStatus !== "unauthenticated") return;
+    if (autoLoginTriedRef.current) return;
+    autoLoginTriedRef.current = true;
+    // 静默登录：不跳页、不刷新，直接以演示账号登录
+    nextAuthSignIn("credentials", {
+      name: "qixi",
+      password: "1823tao",
+      redirect: false,
+    }).catch(() => {});
+  }, [authStatus]);
+
   /* ---------- 1. URL 参数 + 草稿读取（A→B 传参） ---------- */
   const searchParams = useSearchParams();
   // URL 参数（A 模块 askQueryString 构造）
@@ -958,7 +980,7 @@ export function AgentChat() {
                 key={s}
                 type="button"
                 onClick={() => sendInternal(s)}
-                className="cursor-pointer rounded-full border border-line bg-card px-3.5 py-1.5 text-[13px] text-muted transition-colors hover:border-primary/40 hover:text-primary"
+                className="cursor-pointer rounded-full border border-line bg-card px-3.5 py-1.5 text-[13px] text-muted transition-colors hover:border-primary hover:text-primary"
               >
                 {s}
               </button>
@@ -981,7 +1003,7 @@ export function AgentChat() {
               if (msg.role === "user") {
                 return (
                   <div key={msg.id} className="flex justify-end">
-                    <p className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm leading-relaxed text-white">
+                    <p className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[15px] leading-relaxed text-white">
                       {msg.content}
                     </p>
                   </div>
@@ -992,7 +1014,7 @@ export function AgentChat() {
                 msg.status === "sending";
               return (
                 <div key={msg.id} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft">
+                  <span className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft">
                     <Sparkles className="size-4 text-primary" />
                   </span>
                   {/* 🔗 引用双向联动作用域：每条助手消息单独一个 CitationProvider
@@ -1035,16 +1057,27 @@ export function AgentChat() {
                         canResume={msg.errorCode === "20004"}
                       />
                     ) : (
-                      <div className="rounded-2xl rounded-tl-md bg-card px-4 py-2.5 text-sm leading-relaxed text-ink shadow-card">
-                        {/* Markdown 渲染（代码/表格/公式）+ 保留 [n] 引用联动 */}
-                        {msg.content ? (
-                          <MarkdownContent text={msg.content} />
-                        ) : (
-                          loading ? <TypingDots /> : "\u00A0"
-                        )}
-                        {msg.status === "streaming" && msg.content && (
-                          <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-ink-2 align-[-2px]" />
-                        )}
+                      <div className="overflow-hidden rounded-2xl border border-line/60 bg-card shadow-card">
+                        {/* 回答卡片头部 */}
+                        <div className="flex items-center gap-2.5 border-b border-line/60 px-4 py-2.5">
+                          <span className="text-sm font-semibold text-ink">深知 AI</span>
+                          {msg.meta?.duration_ms && (
+                            <span className="text-xs text-faint">
+                              · 耗时 {(msg.meta.duration_ms / 1000).toFixed(1)}s
+                            </span>
+                          )}
+                        </div>
+                        {/* 回答内容 */}
+                        <div className="px-4 py-3 text-[15px] leading-relaxed text-ink-2">
+                          {msg.content ? (
+                            <MarkdownContent text={msg.content} />
+                          ) : (
+                            loading ? <TypingDots /> : "\u00A0"
+                          )}
+                          {msg.status === "streaming" && msg.content && (
+                            <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-ink-2 align-[-2px]" />
+                          )}
+                        </div>
                       </div>
                     )}
 

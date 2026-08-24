@@ -24,7 +24,6 @@ import { NextResponse, type NextRequest } from "next/server";
 // 登录/注册作为可选入口；历史会话/收藏/分享等个人数据仍在 API 层通过 getCurrentUserOrThrow 判断。
 const PROTECTED_ROUTE_PREFIXES: string[] = [
   "/settings",          // /settings 及子页
-  "/submit",            // /submit/journals 等
 ];
 
 // 已登录用户访问这些应该跳回主页（避免重复进入登录/注册）
@@ -79,14 +78,19 @@ export default auth((req: NextRequest & { auth: any }) => {
 
 /** API 路由鉴权：只对需要登录的接口做 401 拦截（静态资源 / 公开接口放行） */
 function needLoginForApi(path: string): boolean {
-  // 公开接口：ai/chat、web-search、uploads、v1 代理（原 A 模式）、auth/* 已单独处理
-  // 第二阶段 P1 新接口 /api/users/*、/api/sessions/*、/api/favorites/*、/api/share/* → 都需要登录
-  // 这里"默认放行旧公开接口，新接口统一拦截"的策略
+  // 公开接口：
+  //   - ai/chat、web-search、uploads、v1 代理（原 A 模式）
+  //   - 用户注册 / 找回密码 / 重置密码（未登录用户也能访问）
+  //   - auth/* 已单独处理
+  // 第二阶段 P1 新接口 /api/sessions/*、/api/favorites/*、/api/share/* → 都需要登录
   const PUBLIC_API_PREFIXES = [
     "/api/ai/chat",
     "/api/web-search",
     "/api/uploads",
     "/api/v1/",
+    "/api/users/register",
+    "/api/users/forgot-password",
+    "/api/users/reset-password",
   ];
   if (PUBLIC_API_PREFIXES.some((p) => path.startsWith(p))) return false;
   return true;

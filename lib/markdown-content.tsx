@@ -64,7 +64,7 @@ export function MarkdownContent({ text }: { text: string }) {
             );
           },
           pre: ({ children }) => (
-            <pre className="my-2 overflow-x-auto rounded-lg bg-ink-950 p-3 text-[13px] leading-relaxed text-ink-50">
+            <pre className="my-2 overflow-x-auto rounded-lg bg-panel p-3 text-[13px] leading-relaxed text-ink ring-1 ring-line/60 dark:bg-card/80 dark:ring-line/40">
               {children}
             </pre>
           ),

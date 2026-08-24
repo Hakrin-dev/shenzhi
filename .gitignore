@@ -28,9 +28,27 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# env files
-.env*
+# env files (所有环境变量文件均不入库，防止密钥泄露)
+.env
+.env.local
+.env.*
 !.env.example
+
+# 密钥 & 凭证（安全兜底，防止误提交）
+*.key
+*.pem
+*.crt
+*.cer
+secrets.json
+credentials.json
+service-account.json
+
+# 敏感数据导出
+*.sql
+*.dump
+*.backup
+export_*.json
+export_*.csv
 
 # —— 本地临时验证脚本的产物 & 私密调试文件 ——
 # 这些是开发过程中一次性生成的 E2E 脚本 / 截图 / 日志，不应该进入仓库

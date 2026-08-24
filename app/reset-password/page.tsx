@@ -14,6 +14,11 @@
  *
  * UPDATE: 2026-08-21 P1 用户系统 / Build 修复
  *  - 同 login：useSearchParams 必须包 Suspense boundary
+ *
+ * UPDATE: 2026-08-24 UI 增强
+ *  - 参考 dev 分支 ResetPasswordPage 设计风格，统一使用设计系统 CSS 变量
+ *  - 优化卡片阴影、间距、错误/成功提示样式
+ *  - 增加入场动效与表单微交互
  */
 
 import * as React from "react";
@@ -21,10 +26,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Loader2, Mail } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/layout/logo";
 
+/* ---------- 复用组件：表单字段 ---------- */
 function Field({
   label,
   error,
@@ -35,10 +42,21 @@ function Field({
       <span className="text-[13px] font-medium text-ink-2">{label}</span>
       <Input
         {...props}
-        className={error ? "border-rose-400 focus-visible:ring-rose-400" : undefined}
+        className={cn(
+          error &&
+            "border-danger focus-visible:border-danger focus-visible:ring-danger/15",
+        )}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${props.id || props.name}-error` : undefined}
       />
       {error && (
-        <span className="text-[11.5px] text-rose-500">{error}</span>
+        <span
+          id={`${props.id || props.name}-error`}
+          className="text-[12px] text-danger"
+          role="alert"
+        >
+          {error}
+        </span>
       )}
     </label>
   );
@@ -55,8 +73,8 @@ export default function ResetPasswordPage() {
               <div className="h-5 w-28 animate-pulse rounded bg-line" />
             </div>
             <div className="mt-6 space-y-4">
-              <div className="h-10 rounded-lg bg-line/60" />
-              <div className="h-10 rounded-lg bg-line/60" />
+              <div className="h-10 rounded-xl bg-line/60" />
+              <div className="h-10 rounded-xl bg-line/60" />
             </div>
           </div>
         </div>
@@ -80,8 +98,14 @@ function ResetPasswordPageInner() {
   const [globalError, setGlobalError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
   // 开发模式：接口直接返回 token → 存在此状态里并在下一步显示"点此跳转"
   const [devToken, setDevToken] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const timer = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(timer);
+  }, []);
 
   const step1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,7 +205,13 @@ function ResetPasswordPageInner() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-card">
+      <div
+        className={cn(
+          "w-full max-w-sm rounded-2xl bg-card p-6 shadow-pop transition-all duration-500",
+          mounted ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
+        )}
+      >
+        {/* 头部 */}
         <div className="flex flex-col items-center gap-2">
           <Logo compact />
           <h1 className="text-base font-semibold text-ink">
@@ -196,33 +226,50 @@ function ResetPasswordPageInner() {
 
         {/* Step 1：发起找回 */}
         {!hasToken && (
-          <form onSubmit={step1Submit} className="mt-6 flex flex-col gap-4">
+          <form onSubmit={step1Submit} className="mt-6 flex flex-col gap-4" noValidate>
             <Field
               label="用户名或邮箱"
+              name="account"
               placeholder="请输入注册时的用户名或邮箱"
               value={account}
               onChange={(e) => setAccount(e.target.value)}
               error={errors.account}
+              disabled={loading}
               required
             />
+
+            {/* 全局错误提示 */}
             {globalError && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-600 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300">
-                {globalError}
+              <div
+                className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger-soft px-3 py-2.5 text-[13px] leading-5 text-danger"
+                role="alert"
+              >
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-current">
+                  <span className="text-[10px] font-bold">!</span>
+                </span>
+                <span>{globalError}</span>
               </div>
             )}
-            {success && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300 flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+
+            {/* 成功提示 */}
+            {success && !devToken && (
+              <div
+                className="flex items-start gap-2 rounded-xl border border-success/20 bg-success-soft px-3 py-2.5 text-[13px] leading-5 text-success"
+                role="status"
+              >
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{success}</span>
               </div>
             )}
+
+            {/* 开发模式令牌 */}
             {devToken && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Mail className="size-3.5" />
+              <div className="rounded-xl border border-line bg-panel p-3 text-[12.5px] text-ink-2">
+                <div className="flex items-center gap-1.5 font-medium text-ink-2">
+                  <Mail className="size-3.5" aria-hidden="true" />
                   开发模式专属 · 拿到临时令牌
                 </div>
-                <p className="mt-1 break-all font-mono text-[11.5px]">
+                <p className="mt-1 break-all font-mono text-[11.5px] text-muted">
                   token = {devToken}
                 </p>
                 <Button
@@ -233,16 +280,18 @@ function ResetPasswordPageInner() {
                   onClick={() =>
                     router.replace(`/reset-password?token=${encodeURIComponent(devToken)}`)
                   }
+                  disabled={loading}
                 >
                   进入设置新密码 →
                 </Button>
               </div>
             )}
-            <Button type="submit" disabled={loading} className="w-full">
+
+            <Button type="submit" disabled={loading} aria-busy={loading} className="w-full">
               {loading ? (
-                <Loader2 className="mr-1.5 size-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Mail className="mr-1.5 size-4" />
+                <Mail className="size-4" aria-hidden="true" />
               )}
               {loading ? "发送中…" : "发送重置链接"}
             </Button>
@@ -251,55 +300,74 @@ function ResetPasswordPageInner() {
 
         {/* Step 2：输入新密码 */}
         {hasToken && (
-          <form onSubmit={step2Submit} className="mt-6 flex flex-col gap-4">
+          <form onSubmit={step2Submit} className="mt-6 flex flex-col gap-4" noValidate>
             <Field
               label="新密码"
+              name="pwd1"
               type="password"
               placeholder="至少 6 个字符"
               autoComplete="new-password"
               value={pwd1}
               onChange={(e) => setPwd1(e.target.value)}
               error={errors.pwd1}
+              disabled={loading}
               required
             />
             <Field
               label="再次输入新密码"
+              name="pwd2"
               type="password"
               placeholder="与上面一致"
               autoComplete="new-password"
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
               error={errors.pwd2}
+              disabled={loading}
               required
             />
+
+            {/* 全局错误提示 */}
             {globalError && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-600 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300">
-                {globalError}
+              <div
+                className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger-soft px-3 py-2.5 text-[13px] leading-5 text-danger"
+                role="alert"
+              >
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-current">
+                  <span className="text-[10px] font-bold">!</span>
+                </span>
+                <span>{globalError}</span>
               </div>
             )}
+
+            {/* 成功提示 */}
             {success && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300 flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+              <div
+                className="flex items-start gap-2 rounded-xl border border-success/20 bg-success-soft px-3 py-2.5 text-[13px] leading-5 text-success"
+                role="status"
+              >
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{success}</span>
               </div>
             )}
-            <Button type="submit" disabled={loading} className="w-full">
+
+            <Button type="submit" disabled={loading} aria-busy={loading} className="w-full">
               {loading ? (
-                <Loader2 className="mr-1.5 size-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="mr-1.5 size-4" />
+                <CheckCircle2 className="size-4" aria-hidden="true" />
               )}
               {loading ? "提交中…" : "重置密码"}
             </Button>
           </form>
         )}
 
+        {/* 底部返回 */}
         <div className="mt-4 flex justify-center">
           <Link
             href="/login"
             className="flex items-center gap-1 text-[13px] text-muted transition-colors hover:text-primary"
           >
-            <ArrowLeft className="size-3.5" />
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
             返回登录
           </Link>
         </div>

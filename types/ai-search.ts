@@ -250,7 +250,7 @@ export interface ComposerSubmitPayload {
 /* ---------- SearchConfig（A 模块标准模型/额度/上传配置） ---------- */
 
 export interface SearchModelOption {
-  value: ChatModelId;
+  value: ChatModelId | string;
   label: string;
   enabled: boolean;
   reason?: string; // disabled 时的原因："not_subscribed" | "no_api_key" 等

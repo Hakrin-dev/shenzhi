@@ -42,8 +42,13 @@ async function searchTavily(
       api_key: apiKey,
       query,
       max_results: Math.min(maxResults, 8),
-      search_depth: "basic",
+      search_depth: "advanced",
       include_answer: false,
+      include_raw_content: false,
+      include_images: false,
+      // 优先返回最新结果（Tavily 默认会混合新旧，但 topic=news 时强制按时间排序）
+      topic: "general",
+      days: 180, // 只搜近 6 个月内的结果，保证时效性
     }),
     signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
   });
@@ -51,13 +56,13 @@ async function searchTavily(
     throw new Error(`Tavily HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
   const json = (await res.json()) as {
-    results?: { title?: string; url?: string; content?: string }[];
+    results?: { title?: string; url?: string; content?: string; published_date?: string }[];
   };
   return (json.results ?? []).map((r) => ({
     title: r.title ?? "未命名结果",
     url: r.url ?? "",
     snippet: r.content ?? "",
-    engine: "tavily",
+    engine: r.published_date ? `tavily · ${r.published_date.slice(0, 10)}` : "tavily",
   }));
 }
 

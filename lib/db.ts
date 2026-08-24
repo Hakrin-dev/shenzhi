@@ -10,7 +10,7 @@
  *     相比 libsql 更适合单机文件模式（Node 原生同步 API，无 Turso/远程依赖）。
  */
 
-import { PrismaClient } from './generated/prisma';
+import { PrismaClient } from './generated/prisma/client';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 // UPDATE: 2026-08-21 Build 修复
 //  不要 `require('node:path')` 动态 require——turbopack NFT 追踪会把整个项目误判为"动态 filesystem

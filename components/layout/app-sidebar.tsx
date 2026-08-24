@@ -5,23 +5,16 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import {
   ChevronDown,
-  Compass,
-  Folder,
   History,
-  Layers,
-  Library,
   LogOut,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
-  Send,
   Sparkles,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SITE } from "@/lib/constants";
-import { projects } from "@/lib/data/projects";
 import { useSidebarStore } from "@/stores/sidebar";
 import { useAuthStore } from "@/stores/auth";
 import { Logo } from "./logo";
@@ -31,48 +24,29 @@ import { LoginModal } from "@/components/auth/login-modal";
 interface NavItem {
   href: string;
   label: string;
-  icon: typeof Compass;
+  icon: typeof Sparkles;
   badge?: string;
   disabled?: boolean;
   /** 前缀匹配(用于详情页保持高亮) */
   matchPrefix?: string;
 }
 
-const RESEARCH_NAV: NavItem[] = [
-  { href: "/", label: "发现", icon: Compass, badge: "新" },
-];
+interface SubNavItem {
+  href: string;
+  label: string;
+  /** 前缀匹配(用于详情页保持高亮) */
+  matchPrefix?: string;
+}
 
-/** 「投稿」的子栏目:会议即原投稿页面,点击投稿默认打开 */
-const SUBMIT_SUB_NAV = [
-  { href: "/submit", label: "会议" },
-  { href: "/submit/journals", label: "期刊" },
-];
-
-/** 「知识库」的子栏目 */
-const KNOWLEDGE_SUB_NAV = [
-  { href: "/knowledge/papers", label: "论文库" },
-  { href: "/knowledge/patents", label: "专利库" },
-  { href: "/knowledge/funding", label: "项目基金库" },
-  { href: "/knowledge/scholars", label: "学者关系" },
-  { href: "/knowledge/institutions", label: "研究机构" },
-];
-
-/** 「AI 助手」的子栏目;AI 助手本身有独立对话页(/agents),不与子栏目共享 */
-const AGENT_SUB_NAV = [
+/** 「AI 助手」的子栏目 */
+const AGENT_SUB_NAV: SubNavItem[] = [
+  { href: "/agents", label: "AI 对话", matchPrefix: "/agents" },
   { href: "/agents/deep-research", label: "Deep Research" },
   { href: "/agents/auto-research", label: "Auto Research" },
 ];
 
-/** 「科研项目」的子栏目即用户创建的项目列表(副标题 = 项目名称) */
-const PROJECT_SUB_NAV = projects.map((p) => ({
-  href: `/projects/${p.id}`,
-  label: p.name,
-}));
-
 const HISTORY_NAV: NavItem[] = [
   { href: "/history", label: "搜索", icon: History, disabled: true },
-  { href: "/my-projects", label: "项目", icon: Folder, disabled: true },
-  { href: "/deliveries", label: "投递", icon: Send, disabled: true },
 ];
 
 /** 路径所属主标题栏目(取首段):/knowledge/papers → /knowledge,/ → / */
@@ -183,10 +157,10 @@ function ExpandableNav({
 }: {
   href: string;
   label: string;
-  icon: typeof Compass;
-  subNav: { href: string; label: string }[];
+  icon: typeof Sparkles;
+  subNav: SubNavItem[];
   collapsed: boolean;
-  /** 子栏目列表末尾的附加内容(如「新建项目」) */
+  /** 子栏目列表末尾的附加内容 */
   footer?: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -276,7 +250,13 @@ function ExpandableNav({
       {open && (
         <div className="mt-0.5 flex flex-col gap-0.5 pl-6">
           {subNav.map((sub) => {
-            const active = pathname === sub.href;
+            // 精确匹配优先；若配置了 matchPrefix 且无任何子项精确匹配，则用前缀匹配
+            const exactMatch = subNav.some((s) => pathname === s.href);
+            const active = exactMatch
+              ? pathname === sub.href
+              : sub.matchPrefix
+                ? pathname.startsWith(sub.matchPrefix)
+                : pathname === sub.href;
             return (
               <Link
                 key={sub.href}
@@ -344,7 +324,7 @@ function LogoutPopup({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** 全局侧边栏 —— 对应 SVG 原型 240px 左侧栏(背景 #EEF1F8),可折叠为 64px 图标栏 */
+/** 全局侧边栏 —— 精简版：仅保留 AI 助手栏目（登录模块 + AI 助手核心功能） */
 export function AppSidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
@@ -384,48 +364,14 @@ export function AppSidebar() {
       <nav className="scrollbar-subtle mt-4 flex flex-1 flex-col gap-0.5 overflow-y-auto">
         {!collapsed && (
           <p className="shrink-0 px-3 pb-1.5 pt-2 text-[11px] font-medium tracking-wide text-faint">
-            研究
+            AI 助手
           </p>
         )}
-        {RESEARCH_NAV.map((item) => (
-          <NavLink key={item.label} item={item} collapsed={collapsed} />
-        ))}
         <ExpandableNav
           href="/agents"
           label="AI 助手"
           icon={Sparkles}
           subNav={AGENT_SUB_NAV}
-          collapsed={collapsed}
-        />
-        <ExpandableNav
-          href="/knowledge"
-          label="知识库"
-          icon={Library}
-          subNav={KNOWLEDGE_SUB_NAV}
-          collapsed={collapsed}
-        />
-        <ExpandableNav
-          href="/projects"
-          label="科研项目"
-          icon={Layers}
-          subNav={PROJECT_SUB_NAV}
-          collapsed={collapsed}
-          footer={
-            <button
-              type="button"
-              title="新建项目(演示)"
-              className="flex h-9 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm text-faint transition-colors hover:bg-card hover:text-ink-2"
-            >
-              <Plus className="size-3.5" />
-              新建项目
-            </button>
-          }
-        />
-        <ExpandableNav
-          href="/submit"
-          label="投稿"
-          icon={Send}
-          subNav={SUBMIT_SUB_NAV}
           collapsed={collapsed}
         />
         {!collapsed && (

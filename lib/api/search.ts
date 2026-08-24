@@ -60,6 +60,9 @@ const V1_PREFIX = "/api/v1";
 /** A 模块标准 SearchConfig 兜底（当后端 /search/config 不可达时使用） */
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
   models: [
+    { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro", enabled: true },
+    { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash", enabled: true },
+    { value: "deepseek-chat", label: "DeepSeek V3", enabled: true },
     { value: "default", label: "默认", enabled: true },
     {
       value: "subscription",
@@ -491,29 +494,19 @@ async function streamB(
               safe.onRefs?.({ references: refs });
               break;
             }
+            case "followups": {
+              // B 后端已支持动态追问 → 直接透传（由 AI 根据对话内容生成）
+              const items = Array.isArray((ev as any).items) ? (ev as any).items : [];
+              if (items.length > 0) {
+                safe.onFollowups?.({ items: items.slice(0, 3) });
+              }
+              break;
+            }
             case "done": {
               // Task 4：如果后端 done 直接带 thinkingContent → 覆盖本地 buffer
               const tc: string | undefined =
                 (ev as any).thinkingContent || thinkingBuf || undefined;
               thinkingBuf = "";
-
-              // ⚠️ B 原型后端旧协议（token/sources/done）没有 followups 事件 → 在 done 之前合成追问建议
-              // （和 A 后端风格一致的追问条，渲染为 FollowUpsBar 按钮）
-              const q = payload.request.question ?? "";
-              const builtin: string[] = [
-                `简要总结关于「${q.slice(0, 12)}」的要点`,
-                "能否列出核心概念的对比关系？",
-                "请给出可落地的入门学习路径",
-              ];
-              // 如果 payload 里 webSearch 有结果，再补一个"深入某篇"的追问
-              const refsInferred = payload.webSearchSources?.slice(0, 1);
-              const items: string[] = refsInferred && refsInferred[0]
-                ? [
-                    `展开讲解「${refsInferred[0].title?.slice(0, 18) ?? "代表性论文"}」的核心贡献`,
-                    ...builtin.slice(0, 2),
-                  ]
-                : builtin;
-              safe.onFollowups?.({ items });
 
               safe.onDone?.({
                 status: "done",

@@ -43,7 +43,7 @@ const DEEPSEEK_BASE_URL = (
  * 其他模型名（如 "gpt-4o-mini"、"deepseek-chat"、"deepseek-reasoner"）原样透传。
  */
 const DEEPSEEK_DEFAULT_MODEL =
-  process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat";
+  process.env.DEEPSEEK_MODEL?.trim() || "deepseek-v4-pro";
 const A_PROTOCOL_FALLBACKS = new Set(["default", "subscription", "byok"]);
 
 function resolveModel(raw: string | undefined | null): string {
@@ -214,6 +214,7 @@ async function* createModelStream(opts: {
   | { type: "sources"; sources: ChatSource[] }
   | { type: "thinking"; token: string }
   | { type: "token"; token: string }
+  | { type: "followups"; items: string[] }
   | { type: "done"; content: string; thinkingContent?: string }
   | { type: "error"; code: string; message: string },
   void,
@@ -315,6 +316,101 @@ async function* createModelStream(opts: {
     `[DeepSeek] ✅ 生成结束 | model=${model} | 输出字符=${fullContent.length} | 思考链=${fullThinking.length}`,
   );
 
+  // —— 5. 动态生成 3 个追问建议（基于当前问答，不使用完整 system prompt，避免跑偏）
+  let followupItems: string[] = [];
+  if (!signal.aborted && fullContent.length > 20) {
+    try {
+      const followupModel = "deepseek-chat";
+      // 只取最后一条用户问题 + 助手回答，上下文最精准，追问不容易跑偏
+      // （如果带了一堆 system prompt / 附件全文 / 历史消息，V3 容易被干扰）
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      const lastUserContent = lastUserMsg ? lastUserMsg.content : "";
+      // 回答过长时截断（保留前 1500 字符足够生成相关追问）
+      const answerForFollowup = fullContent.length > 1500
+        ? fullContent.slice(0, 1500) + "…"
+        : fullContent;
+      const followupMessages = [
+        {
+          role: "system",
+          content: "你是一个善于引导对话的助手。你的任务是根据用户的问题和AI的回答，生成3个用户最可能继续追问的问题。",
+        },
+        { role: "user", content: lastUserContent || "用户提问" },
+        { role: "assistant", content: answerForFollowup },
+        {
+          role: "user",
+          content:
+            "请根据以上回答，生成3个用户最可能继续追问的问题。要求：" +
+            "1) 必须紧扣回答内容，和当前话题高度相关；" +
+            "2) 由浅入深，逐步拓展（细节→对比→应用/延伸）；" +
+            "3) 句式自然口语化，不要用模板腔；" +
+            "4) 用纯 JSON 数组返回：[\"问题1\", \"问题2\", \"问题3\"]；" +
+            "5) 不要输出任何其他文字，只返回 JSON 数组。",
+        },
+      ];
+      const fRes = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          model: followupModel,
+          messages: followupMessages,
+          stream: false,
+          temperature: 0.8,
+          max_tokens: 300,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (fRes.ok) {
+        const fData = await fRes.json();
+        const fText = fData?.choices?.[0]?.message?.content ?? "";
+        // 去掉可能的 markdown 代码块包裹
+        const cleaned = fText
+          .replace(/```json\s*/gi, "")
+          .replace(/```\s*$/g, "")
+          .trim();
+        // 尝试从文本中提取 JSON 数组
+        const match = cleaned.match(/\[[\s\S]*?\]/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[0]);
+            if (Array.isArray(parsed) && parsed.length >= 2) {
+              followupItems = parsed.slice(0, 3).map((s: unknown) => String(s).trim()).filter(Boolean);
+            }
+          } catch {
+            // JSON 解析失败，尝试按行拆分
+            const lines = cleaned.split("\n").map((l: string) => l.replace(/^\d+[\.\)]\s*/, "").trim()).filter(Boolean);
+            followupItems = lines.slice(0, 3).filter((l: string) => l.length > 4);
+          }
+        } else {
+          // 没有 JSON 格式，尝试按行/序号拆分
+          const lines = cleaned
+            .split("\n")
+            .map((l: string) => l.replace(/^\d+[\.\)]\s*/, "").replace(/^[-*•]\s*/, "").trim())
+            .filter((l: string) => l.length > 4 && l.length < 60 && !l.startsWith("```"));
+          followupItems = lines.slice(0, 3);
+        }
+        // eslint-disable-next-line no-console
+        console.log(
+          `[DeepSeek] ✅ 追问生成 | model=${followupModel} | 数量=${followupItems.length}`,
+        );
+        if (followupItems.length === 0) {
+          console.warn("[followups] 原始返回:", fText.slice(0, 200));
+        }
+      }
+    } catch (e) {
+      // 追问生成失败不影响主流程，静默降级
+      console.warn("[followups] 生成失败，跳过:", (e as Error).message);
+    }
+  }
+
+  yield {
+    type: "followups",
+    items: followupItems,
+  };
+
   yield {
     type: "done",
     content: fullContent,
@@ -393,6 +489,9 @@ export async function POST(req: NextRequest) {
             break;
           case "token":
             sse.push(sseLine("token", { token: ev.token }));
+            break;
+          case "followups":
+            sse.push(sseLine("followups", { items: (ev as any).items || [] }));
             break;
           case "done":
             sse.push(sseLine("done", {

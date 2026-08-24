@@ -119,7 +119,7 @@ export function SessionList({
   };
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-line bg-sidebar p-3">
+    <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-line bg-sidebar p-3">
       <button
         type="button"
         onClick={onNew}
@@ -189,7 +189,7 @@ export function SessionList({
                     type="button"
                     aria-current={activeId === s.id ? "page" : undefined}
                     onClick={() => onSelect(s)}
-                    className="min-w-0 flex-1 cursor-pointer text-left"
+                    className="min-w-0 flex-1 cursor-pointer pr-16 text-left"
                   >
                     <span className="block truncate text-[13px] text-ink-2">
                       {s.title}
@@ -199,13 +199,14 @@ export function SessionList({
                       {s.messageCount > 0 && ` · ${s.messageCount} 条`}
                     </span>
                   </button>
-                  {/* hover 操作：编辑 / 删除 */}
-                  <div className="absolute right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  {/* 右侧渐变遮罩 + hover 操作按钮 */}
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-sidebar to-transparent group-hover:from-transparent" />
+                  <div className="absolute right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                     <button
                       type="button"
                       title="重命名"
                       onClick={() => startEdit(s)}
-                      className="cursor-pointer rounded p-1 text-faint hover:bg-chip hover:text-ink-2"
+                      className="pointer-events-auto rounded-md bg-card p-1 text-faint shadow-sm ring-1 ring-line/60 transition-all hover:bg-primary-soft hover:text-primary hover:ring-primary/40"
                     >
                       <Pencil className="size-3.5" />
                     </button>
@@ -213,7 +214,7 @@ export function SessionList({
                       type="button"
                       title="删除"
                       onClick={() => remove(s)}
-                      className="cursor-pointer rounded p-1 text-faint hover:bg-rose-50 hover:text-rose-500"
+                      className="pointer-events-auto rounded-md bg-card p-1 text-faint shadow-sm ring-1 ring-line/60 transition-all hover:bg-rose-50 hover:text-rose-500 hover:ring-rose-200 dark:hover:bg-rose-950/40 dark:hover:ring-rose-900/50"
                     >
                       <Trash2 className="size-3.5" />
                     </button>

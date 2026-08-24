@@ -1,17 +1,9 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { SearchHero } from "@/components/features/search/search-hero";
-import { FeedTabs } from "@/components/features/search/feed-tabs";
-import { FeedList } from "@/components/features/search/feed-list";
+import { redirect } from "next/navigation";
 
-/** 主发现页 `/` —— 对应「深知-主发现页.svg」 */
+/**
+ * 首页 —— 重定向到 AI 助手页（当前核心功能）
+ * 原首页为"发现"页（搜索 + 信息流），已在精简中移除。
+ */
 export default function HomePage() {
-  return (
-    <AppShell>
-      <div className="mx-auto max-w-[1080px] space-y-5 px-8 py-6">
-        <SearchHero />
-        <FeedTabs />
-        <FeedList />
-      </div>
-    </AppShell>
-  );
+  redirect("/agents/ask");
 }

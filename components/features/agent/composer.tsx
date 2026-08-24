@@ -1,25 +1,24 @@
 "use client";
 
 /**
- * UPDATE: 2026-08-18 A+B 单前端整合
- *   —— 1) ModeSelect / EntryModeSelect 图标补 "text-muted" className，修复 TS 类型
- *        "className is not optional in ButtonIcon"；
- *   —— 2) 新增 questionSchema 依赖导入（对齐 A 版 validations.ts 导出）；
- *   —— 3) ComposerShell props 扩展：entryMode / attachments / busy / onEntryModeChange
- *        等 A 协议必需项全部支持，外部可从 search-hero / agent-chat 统一接入 Zustand store。
- * 修改日志：任务日志/对于A的修改/2026.8.18-A+B整合单前端化修改.md
+ * UPDATE: 2026-08-24 alphaxiv 风格极简 Composer
+ *   —— 底部工具栏只保留左侧 + 号和右侧发送按钮
+ *   —— 所有控制项收进 + 号下拉菜单：
+ *        1. 模型切换（子菜单）
+ *        2. 添加附件
+ *        3. 联网搜索（toggle）
+ *        4. 深度思考 / 回答模式（子菜单）
  */
 
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  ChevronDown,
+  ChevronRight,
   CircleHelp,
   Globe,
   Lightbulb,
-  Plug,
+  Paperclip,
   Plus,
-  Scroll,
   Search,
   Sparkles,
   Square,
@@ -27,8 +26,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FALLBACK_SEARCH_CONFIG } from "@/lib/api/search";
-import { AttachmentMenu } from "./attachment-menu";
+import { uploadFile } from "@/lib/api/uploads";
 import { questionSchema } from "@/lib/validations";
+import { useComposerStore } from "@/stores/composer";
 import type { ComposerEntryMode } from "@/types";
 import type {
   ChatAttachment,
@@ -40,11 +40,6 @@ import type {
 
 export type { ComposerEntryMode, ComposerSubmitPayload } from "@/types";
 
-const ENTRY_MODES = [
-  { value: "search" as const, label: "搜索", icon: Search },
-  { value: "ai" as const, label: "问 AI", icon: Sparkles },
-];
-
 const MODE_META = [
   { value: "fast" as const, label: "快速", icon: Zap },
   { value: "deep" as const, label: "深度", icon: Search },
@@ -52,12 +47,9 @@ const MODE_META = [
   { value: "doubt" as const, label: "质疑", icon: CircleHelp },
 ] as const;
 
-const MODEL_LABEL: Record<ChatModelId, string> = {
-  default: "默认",
-  subscription: "订阅",
-  byok: "API接入",
-};
-
+/* -------------------------------------------------------------------------- */
+/* 工具 hook：点击外部关闭                                                     */
+/* -------------------------------------------------------------------------- */
 function useCloseOnOutside(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -71,268 +63,323 @@ function useCloseOnOutside(open: boolean, close: () => void) {
   return ref;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 开关 Toggle 组件                                                           */
+/* -------------------------------------------------------------------------- */
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!on);
+      }}
+      className={cn(
+        "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+        on ? "bg-primary" : "bg-line",
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+          on ? "left-4" : "left-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* PlusMenu：alphaxiv 风格 + 号菜单                                           */
+/* -------------------------------------------------------------------------- */
 function PlusMenu({
-  placement = "down",
+  placement = "up",
+  model,
+  onModelChange,
+  models,
   webSearch,
   onWebSearchChange,
+  replyMode,
+  onReplyModeChange,
+  replyModes,
+  onAddAttachment,
+  uploadAccept,
+  uploadMaxFiles,
+  uploadMaxSizeMb,
 }: {
   placement?: "up" | "down";
+    model: ChatModelId | string;
+    onModelChange: (v: ChatModelId | string) => void;
+    models: SearchConfig["models"];
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
+  replyMode: ChatReplyMode;
+  onReplyModeChange: (v: ChatReplyMode) => void;
+  replyModes: ChatReplyMode[];
+  onAddAttachment: (item: ChatAttachment) => void;
+  uploadAccept: string;
+  uploadMaxFiles: number;
+  uploadMaxSizeMb: number;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useCloseOnOutside(open, () => setOpen(false));
+  const [subMenu, setSubMenu] = useState<"model" | "mode" | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const ref = useCloseOnOutside(open, () => {
+    setOpen(false);
+    setSubMenu(null);
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const addB = useComposerStore((s) => s.addAttachment);
+
+  const currentModel = models.find((m) => m.value === model) ?? models[0];
+  const allowedModes = MODE_META.filter((m) => replyModes.includes(m.value));
+  const currentMode = allowedModes.find((m) => m.value === replyMode) ?? allowedModes[0] ?? MODE_META[0];
+
+  const hasActiveFeature = webSearch || model !== "default" || replyMode !== "fast";
+
+  const extToBType = (name: string): "pdf" | "txt" | "md" | "other" => {
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    if (ext === "pdf") return "pdf";
+    if (ext === "md") return "md";
+    if (ext === "txt") return "txt";
+    return "other";
+  };
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const list = Array.from(files).slice(0, uploadMaxFiles);
+    if (list.length === 0) return;
+    setUploading(true);
+    setOpen(false);
+    try {
+      for (const file of list) {
+        if (file.size > uploadMaxSizeMb * 1024 * 1024) {
+          const errAtt: ChatAttachment = {
+            kind: "file",
+            file_id: `err_${Date.now().toString(36)}`,
+            title: file.name,
+          };
+          addB({
+            id: `att_err_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: extToBType(file.name),
+            size: file.size,
+            kind: "file",
+            error: `文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB，上限 ${uploadMaxSizeMb}MB）`,
+          });
+          onAddAttachment(errAtt);
+          continue;
+        }
+        try {
+          const upload = await uploadFile(file);
+          addB({
+            id: upload.file_id,
+            name: upload.filename,
+            type: extToBType(upload.filename),
+            size: file.size,
+            kind: "file",
+            text: upload.parse_status === "ok" ? upload.text : undefined,
+            error:
+              upload.parse_status === "failed"
+                ? upload.warning || "解析失败（仅支持文字版 PDF / TXT / MD）"
+                : undefined,
+          });
+          onAddAttachment({
+            kind: "file",
+            file_id: upload.file_id,
+            title: upload.filename,
+          });
+        } catch (e) {
+          addB({
+            id: `att_err_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            type: extToBType(file.name),
+            size: file.size,
+            kind: "file",
+            error: (e as Error).message || "上传失败",
+          });
+          onAddAttachment({
+            kind: "file",
+            file_id: `err_${Date.now().toString(36)}`,
+            title: file.name,
+          });
+        }
+      }
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
+      {/* + 号按钮 */}
       <button
         type="button"
         aria-label="更多操作"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          setSubMenu(null);
+        }}
         className={cn(
-          "flex size-9 cursor-pointer items-center justify-center rounded-xl transition-colors",
-          open || webSearch ? "bg-chip text-ink" : "text-muted hover:bg-chip",
+          "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-all",
+          open || hasActiveFeature
+            ? "bg-chip text-ink"
+            : "hover:bg-chip hover:text-ink",
         )}
       >
         <Plus
           className={cn("size-5 transition-transform", open && "rotate-45")}
         />
       </button>
+
+      {/* 隐藏的文件选择器 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={uploadAccept}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void handleFiles(e.target.files);
+        }}
+      />
+
+      {/* 主菜单 */}
       {open && (
         <div
           className={cn(
-            "absolute left-0 z-50 w-40 rounded-xl border border-line bg-card p-1.5 shadow-pop",
+            "absolute left-0 z-[120] w-52 rounded-2xl border border-line bg-card p-1 shadow-pop",
             placement === "down" ? "top-full mt-2" : "bottom-full mb-2",
           )}
         >
-          {[
-            { label: "插件", icon: Plug, action: () => setOpen(false) },
-            { label: "技能", icon: Scroll, action: () => setOpen(false) },
-            {
-              label: "联网搜索",
-              icon: Globe,
-              action: () => {
-                onWebSearchChange(!webSearch);
-                setOpen(false);
-              },
-            },
-          ].map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={item.action}
-              className={cn(
-                "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors hover:bg-chip",
-                item.label === "联网搜索" && webSearch
-                  ? "bg-primary-soft font-medium text-primary"
-                  : "text-ink-2",
-              )}
-            >
-              <item.icon className="size-4 text-muted" strokeWidth={1.8} />
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+          {/* 1. 模型切换 */}
+          <button
+            type="button"
+            onClick={() => setSubMenu(subMenu === "model" ? null : "model")}
+            className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-ink transition-colors hover:bg-chip"
+          >
+            <Sparkles className="size-4 text-muted" strokeWidth={1.8} />
+            <span className="flex-1 text-left">
+              模型
+              <span className="ml-1 text-xs text-muted">{currentModel?.label}</span>
+            </span>
+            <ChevronRight className={cn("size-3.5 text-faint transition-transform", subMenu === "model" && "rotate-90")} />
+          </button>
 
-function ModelSelect({
-  value,
-  onChange,
-  options,
-}: {
-  value: ChatModelId;
-  onChange: (v: ChatModelId) => void;
-  options: SearchConfig["models"];
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-7 cursor-pointer items-center gap-1 rounded-lg bg-chip px-2.5 text-xs text-ink-2 transition-colors hover:text-ink"
-      >
-        {MODEL_LABEL[value]}
-        <ChevronDown
-          className={cn("size-3 text-faint transition-transform", open && "rotate-180")}
-        />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-28 rounded-xl border border-line bg-card p-1 shadow-pop">
-          {options.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              disabled={!m.enabled}
-              title={m.enabled ? undefined : m.reason}
-              onClick={() => {
-                if (!m.enabled) return;
-                onChange(m.value);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-xs transition-colors",
-                !m.enabled && "cursor-not-allowed opacity-40",
-                m.value === value
-                  ? "bg-primary-soft font-medium text-primary"
-                  : "text-ink-2 hover:bg-chip",
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ModeSelect({
-  placement = "down",
-  value,
-  onChange,
-  modes,
-}: {
-  placement?: "up" | "down";
-  value: ChatReplyMode;
-  onChange: (v: ChatReplyMode) => void;
-  modes: ChatReplyMode[];
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useCloseOnOutside(open, () => setOpen(false));
-  const allowed = MODE_META.filter((m) => modes.includes(m.value));
-  const current = allowed.find((m) => m.value === value) ?? allowed[0] ?? MODE_META[0];
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary/90"
-      >
-        <current.icon className="size-4" strokeWidth={1.8} />
-        {current.label}
-        <ChevronDown
-          className={cn("size-3.5 transition-transform", open && "rotate-180")}
-        />
-      </button>
-      {open && (
-        <div
-          className={cn(
-            "absolute right-0 z-50 w-36 rounded-xl border border-line bg-card p-1.5 shadow-pop",
-            placement === "down" ? "top-full mt-2" : "bottom-full mb-2",
+          {subMenu === "model" && (
+            <div className="mx-1 my-1 space-y-0.5 rounded-xl bg-panel/60 p-1">
+              {models.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  disabled={!m.enabled}
+                  title={m.enabled ? undefined : m.reason}
+                  onClick={() => {
+                    if (!m.enabled) return;
+                    onModelChange(m.value);
+                    setSubMenu(null);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex h-8 w-full cursor-pointer items-center rounded-lg px-2 text-[13px] transition-colors",
+                    !m.enabled && "cursor-not-allowed opacity-40",
+                    m.value === model
+                      ? "bg-primary-soft font-medium text-primary"
+                      : "text-ink-2 hover:bg-chip",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           )}
-        >
-          {allowed.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => {
-                onChange(m.value);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
-                m.value === value
-                  ? "bg-primary-soft font-medium text-primary"
-                  : "text-ink-2 hover:bg-chip",
-              )}
-            >
-              <m.icon className="size-4 text-muted" strokeWidth={1.8} />
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
-function EntryModeSelect({
-  mode,
-  onChange,
-  placement = "down",
-}: {
-  mode: ComposerEntryMode;
-  onChange: (mode: ComposerEntryMode) => void;
-  placement?: "up" | "down";
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useCloseOnOutside(open, () => setOpen(false));
-  const current = ENTRY_MODES.find((m) => m.value === mode) ?? ENTRY_MODES[0];
+          <div className="mx-2 my-0.5 h-px bg-line/60" />
 
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-3 text-[13px] font-medium text-white transition-colors hover:bg-primary/90"
-      >
-        <current.icon className="size-4" strokeWidth={1.8} />
-        {current.label}
-        <ChevronDown
-          className={cn("size-3.5 transition-transform", open && "rotate-180")}
-        />
-      </button>
-      {open && (
-        <div
-          className={cn(
-            "absolute right-0 z-50 w-36 rounded-xl border border-line bg-card p-1.5 shadow-pop",
-            placement === "down" ? "top-full mt-2" : "bottom-full mb-2",
+          {/* 2. 添加附件 */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-ink transition-colors hover:bg-chip disabled:opacity-50"
+          >
+            <Paperclip className="size-4 text-muted" strokeWidth={1.8} />
+            <span className="flex-1 text-left">添加附件</span>
+          </button>
+
+          <div className="mx-2 my-0.5 h-px bg-line/60" />
+
+          {/* 3. 联网搜索 */}
+          <div
+            className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-ink transition-colors hover:bg-chip"
+            onClick={() => onWebSearchChange(!webSearch)}
+          >
+            <Globe className="size-4 text-muted" strokeWidth={1.8} />
+            <span className="flex-1 text-left">联网搜索</span>
+            <Toggle on={webSearch} onChange={onWebSearchChange} />
+          </div>
+
+          <div className="mx-2 my-0.5 h-px bg-line/60" />
+
+          {/* 4. 深度思考 / 回答模式 */}
+          <button
+            type="button"
+            onClick={() => setSubMenu(subMenu === "mode" ? null : "mode")}
+            className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-ink transition-colors hover:bg-chip"
+          >
+            <Lightbulb className="size-4 text-muted" strokeWidth={1.8} />
+            <span className="flex-1 text-left">
+              深度思考
+              <span className="ml-1 text-xs text-muted">{currentMode.label}</span>
+            </span>
+            <ChevronRight className={cn("size-3.5 text-faint transition-transform", subMenu === "mode" && "rotate-90")} />
+          </button>
+
+          {subMenu === "mode" && (
+            <div className="mx-1 my-1 space-y-0.5 rounded-xl bg-panel/60 p-1">
+              {allowedModes.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    onReplyModeChange(m.value);
+                    setSubMenu(null);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px] transition-colors",
+                    m.value === replyMode
+                      ? "bg-primary-soft font-medium text-primary"
+                      : "text-ink-2 hover:bg-chip",
+                  )}
+                >
+                  <m.icon className="size-3.5" strokeWidth={1.8} />
+                  {m.label}
+                </button>
+              ))}
+            </div>
           )}
-        >
-          {ENTRY_MODES.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => {
-                onChange(m.value);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
-                m.value === mode
-                  ? "bg-primary-soft font-medium text-primary"
-                  : "text-ink-2 hover:bg-chip",
-              )}
-            >
-              <m.icon className="size-4 text-muted" strokeWidth={1.8} />
-              {m.label}
-            </button>
-          ))}
         </div>
       )}
     </div>
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* ComposerShell 主组件                                                       */
+/* -------------------------------------------------------------------------- */
 export function ComposerShell({
   value,
   onChange,
   onSend,
   placeholder,
-  menuPlacement = "down",
+  menuPlacement = "up",
   variant = "agent",
   entryMode = "ai",
-  onEntryModeChange,
   replyMode: replyModeProp,
   onReplyModeChange,
   model: modelProp,
@@ -352,11 +399,10 @@ export function ComposerShell({
   menuPlacement?: "up" | "down";
   variant?: "home" | "agent";
   entryMode?: ComposerEntryMode;
-  onEntryModeChange?: (mode: ComposerEntryMode) => void;
   replyMode?: ChatReplyMode;
   onReplyModeChange?: (mode: ChatReplyMode) => void;
-  model?: ChatModelId;
-  onModelChange?: (model: ChatModelId) => void;
+  model?: ChatModelId | string;
+  onModelChange?: (model: ChatModelId | string) => void;
   webSearch?: boolean;
   onWebSearchChange?: (v: boolean) => void;
   attachments?: ChatAttachment[];
@@ -366,10 +412,11 @@ export function ComposerShell({
   onStop?: () => void;
 }) {
   const isHome = variant === "home";
+  const canSend = Boolean(value.trim());
   const showAiControls = !isHome || entryMode === "ai";
 
   const [innerMode, setInnerMode] = useState<ChatReplyMode>("fast");
-  const [innerModel, setInnerModel] = useState<ChatModelId>("default");
+  const [innerModel, setInnerModel] = useState<ChatModelId | string>("default");
   const [innerWeb, setInnerWeb] = useState(false);
   const [innerFiles, setInnerFiles] = useState<ChatAttachment[]>([]);
 
@@ -383,8 +430,8 @@ export function ComposerShell({
   const setWebSearch = onWebSearchChange ?? setInnerWeb;
   const setAttachments = onAttachmentsChange ?? setInnerFiles;
 
-  const buildPayload = (intent?: ComposerEntryMode): ComposerSubmitPayload => ({
-    entryMode: intent ?? entryMode,
+  const buildPayload = (): ComposerSubmitPayload => ({
+    entryMode,
     question: value.trim(),
     mode: replyMode,
     model,
@@ -392,16 +439,17 @@ export function ComposerShell({
     attachments,
   });
 
-  const submit = (intent?: ComposerEntryMode) => {
+  const submit = () => {
     const parsed = questionSchema.safeParse(value);
     if (!parsed.success) return;
-    onSend(buildPayload(intent));
+    onSend(buildPayload());
   };
 
   return (
-    <div className="rounded-2xl bg-card p-3 shadow-pop">
+    <div className="relative overflow-visible rounded-2xl border border-line/80 bg-card p-3 shadow-pop">
+      {/* 附件预览区 */}
       {attachments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+        <div className="mb-1.5 flex flex-wrap gap-1.5">
           {attachments.map((item, i) => (
             <button
               key={`${item.kind}-${item.file_id ?? item.ref_id ?? i}`}
@@ -417,83 +465,63 @@ export function ComposerShell({
           ))}
         </div>
       )}
-      <div className="relative">
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              if (busy) return;
-              if (isHome && e.altKey) {
-                submit("search");
-                return;
-              }
-              submit();
-            }
-          }}
-          placeholder={placeholder}
-          rows={2}
-          maxLength={2000}
-          className="h-[72px] w-full resize-none bg-transparent px-1.5 pt-1 text-sm leading-relaxed text-ink outline-none placeholder:text-faint"
-        />
-        {showAiControls && (
-          <div className="absolute right-1 top-0.5">
-            <ModelSelect
-              value={model}
-              onChange={setModel}
-              options={config.models}
-            />
-          </div>
-        )}
-      </div>
 
-      <div className="mt-1 flex items-center gap-1.5">
+      {/* 输入框 */}
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (
+            e.key === "Enter" &&
+            !e.shiftKey &&
+            !e.nativeEvent.isComposing
+          ) {
+            e.preventDefault();
+            if (busy) return;
+            submit();
+          }
+        }}
+        placeholder={placeholder}
+        rows={2}
+        maxLength={2000}
+        className="min-h-[3.25rem] w-full resize-none bg-transparent px-0.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-faint"
+      />
+
+      {/* 底部工具栏 — alphaxiv 极简风格：只保留 + 号 和 发送按钮 */}
+      <div className="mt-1.5 flex items-center justify-between gap-1.5">
+        {/* 左侧：+ 号菜单 */}
         {showAiControls && (
-          <>
-            <PlusMenu
-              placement={menuPlacement}
-              webSearch={webSearch}
-              onWebSearchChange={setWebSearch}
-            />
-            <AttachmentMenu
-              placement={menuPlacement}
-              accept={config.upload.accept.join(",")}
-              maxFiles={config.upload.max_files}
-              maxSizeMb={config.upload.max_size_mb}
-              onAdd={(item) => {
-                if (attachments.length >= config.upload.max_files) return;
-                setAttachments([...attachments, item]);
-              }}
-            />
-          </>
+          <PlusMenu
+            placement={menuPlacement}
+            model={model}
+            onModelChange={setModel}
+            models={config.models}
+            webSearch={webSearch}
+            onWebSearchChange={setWebSearch}
+            replyMode={replyMode}
+            onReplyModeChange={setReplyMode}
+            replyModes={config.modes}
+            onAddAttachment={(item) => {
+              if (attachments.length >= config.upload.max_files) return;
+              setAttachments([...attachments, item]);
+            }}
+            uploadAccept={config.upload.accept.join(",")}
+            uploadMaxFiles={config.upload.max_files}
+            uploadMaxSizeMb={config.upload.max_size_mb}
+          />
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          {isHome ? (
-            <EntryModeSelect
-              mode={entryMode}
-              onChange={onEntryModeChange ?? (() => {})}
-              placement={menuPlacement}
-            />
-          ) : (
-            <ModeSelect
-              placement={menuPlacement}
-              value={replyMode}
-              onChange={setReplyMode}
-              modes={config.modes}
-            />
-          )}
+        {/* 非 AI 模式下占位保持对齐 */}
+        {!showAiControls && <div className="w-9" />}
+
+        {/* 右侧：发送/停止按钮 */}
+        <div className="flex shrink-0 items-center gap-2">
           {busy && onStop ? (
             <button
               type="button"
               aria-label="停止生成"
               onClick={onStop}
-              className="flex size-9 cursor-pointer items-center justify-center rounded-xl bg-ink text-white hover:bg-ink/90"
+              className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-ink text-white transition-colors hover:bg-ink/90"
             >
               <Square className="size-3.5 fill-current" />
             </button>
@@ -502,14 +530,16 @@ export function ComposerShell({
               type="button"
               aria-label="发送"
               onClick={() => submit()}
+              disabled={!canSend}
               className={cn(
-                "flex size-9 cursor-pointer items-center justify-center rounded-xl transition-colors",
-                value.trim()
+                "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
+                canSend
                   ? "bg-primary text-white hover:bg-primary/90"
-                  : "bg-chip text-faint",
+                  : "border border-line bg-chip text-faint",
+                !canSend && "cursor-not-allowed",
               )}
             >
-              <ArrowUp className="size-4" />
+              <ArrowUp className="size-4" strokeWidth={2.5} />
             </button>
           )}
         </div>
