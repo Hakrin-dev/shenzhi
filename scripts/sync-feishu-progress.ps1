@@ -10,8 +10,8 @@ $SyncMd = Join-Path $Root "docs\dev\.feishu-sync-body.md"
 Set-Location $Root
 
 Write-Host "Checking lark-cli auth..." -ForegroundColor Cyan
-& npx '--yes' '@larksuite/cli@latest' auth status 2>&1 | Out-String
-if ($statusJson -notmatch '"user"[\s\S]*"status"\s*:\s*"ready"') {
+$statusJson = & npx '--yes' '@larksuite/cli@latest' auth status 2>&1 | Out-String
+if ($statusJson -notmatch '"tokenStatus"\s*:\s*"valid"') {
     Write-Host "Not logged in. Run: .\scripts\setup-feishu-cli.ps1" -ForegroundColor Yellow
     exit 1
 }
