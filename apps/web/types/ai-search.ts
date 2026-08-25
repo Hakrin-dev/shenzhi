@@ -12,6 +12,7 @@ export type ModelProvider =
   | "anthropic"
   | "google"
   | "deepseek"
+  | "qwen"
   | "zhipu"
   | "platform";
 

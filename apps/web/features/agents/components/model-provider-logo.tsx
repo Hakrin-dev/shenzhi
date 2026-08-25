@@ -78,6 +78,25 @@ function ZhipuLogo({ className }: { className?: string }) {
   );
 }
 
+function QwenLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <rect width="24" height="24" rx="6" fill="#624AFF" />
+      <text
+        x="12"
+        y="16"
+        textAnchor="middle"
+        fill="#fff"
+        fontSize="10"
+        fontWeight="700"
+        fontFamily="system-ui,sans-serif"
+      >
+        Q
+      </text>
+    </svg>
+  );
+}
+
 const LOGOS: Record<
   ModelProvider,
   ComponentType<{ className?: string }>
@@ -86,8 +105,9 @@ const LOGOS: Record<
   anthropic: AnthropicLogo,
   google: GoogleLogo,
   deepseek: DeepSeekLogo,
+  qwen: QwenLogo,
   zhipu: ZhipuLogo,
-  platform: DeepSeekLogo,
+  platform: QwenLogo,
 };
 
 export function ModelProviderLogo({

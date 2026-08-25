@@ -16,6 +16,11 @@
  */
 
 import { NextRequest } from "next/server";
+import {
+  MissingProviderError,
+  resolveFollowupLLM,
+  resolveLLM,
+} from "@b/lib/model-providers";
 import type {
   ChatMessage,
   ChatRequest,
@@ -27,25 +32,10 @@ import type {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* DeepSeek 官方 API（与百炼 DashScope 分离，各自独立 env） */
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY?.trim() || "";
-const DEEPSEEK_BASE_URL = (
-  process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com/v1"
-).replace(/\/+$/, "");
-const DEEPSEEK_DEFAULT_MODEL =
-  process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat";
-const A_PROTOCOL_FALLBACKS = new Set(["default", "subscription", "byok"]);
-
-function resolveDeepSeekModel(raw: string | undefined | null): string {
-  if (!raw) return DEEPSEEK_DEFAULT_MODEL;
-  return A_PROTOCOL_FALLBACKS.has(raw) ? DEEPSEEK_DEFAULT_MODEL : raw;
-}
-
-/** 从 DeepSeek 非 2xx 响应中提取结构化错误 */
-async function extractDeepSeekError(res: Response): Promise<{
-  code: string;
-  message: string;
-}> {
+async function extractUpstreamError(
+  res: Response,
+  providerLabel: string,
+): Promise<{ code: string; message: string }> {
   let raw = "";
   try {
     raw = await res.text();
@@ -54,7 +44,7 @@ async function extractDeepSeekError(res: Response): Promise<{
   }
   // eslint-disable-next-line no-console
   console.error(
-    `[DeepSeek] HTTP ${res.status} ${res.statusText} | raw body (前 2000 字):\n${raw.slice(0, 2000)}`,
+    `[${providerLabel}] HTTP ${res.status} ${res.statusText} | raw body (前 2000 字):\n${raw.slice(0, 2000)}`,
   );
   let code = String(res.status);
   let message = `模型服务返回 HTTP ${res.status} ${res.statusText}`;
@@ -77,7 +67,7 @@ async function extractDeepSeekError(res: Response): Promise<{
  *  - deepseek-reasoner 会额外在 delta 上写 reasoning_content（思考链，正文前先吐）。
  *  - 新增 yield { type: "thinking", token: string } 事件，createModelStream 透传 → SSE meta/delta 推前端。
  */
-async function* streamDeepSeekChunks(
+async function* streamOpenAIChunks(
   res: Response,
   signal: AbortSignal,
 ): AsyncGenerator<
@@ -209,18 +199,21 @@ async function* createModelStream(opts: {
 > {
   const { style, messages, signal } = opts;
 
-  if (!DEEPSEEK_API_KEY) {
-    yield {
-      type: "error",
-      code: "MISSING_DEEPSEEK_KEY",
-      message:
-        "未读取到 DEEPSEEK_API_KEY。请在 apps/web/.env.local 配置 DeepSeek 官方 API Key 并重启 dev。",
-    };
-    return;
+  let llm;
+  try {
+    llm = resolveLLM(opts.model);
+  } catch (e) {
+    if (e instanceof MissingProviderError) {
+      yield { type: "error", code: "MISSING_API_KEY", message: e.message };
+      return;
+    }
+    throw e;
   }
 
-  const model = resolveDeepSeekModel(opts.model);
-  const isReasoningModel = /reasoner|r1/i.test(model) || model.includes("R1");
+  const model = llm.model;
+  const isReasoningModel =
+    llm.provider === "deepseek" &&
+    (/reasoner|r1/i.test(model) || model.includes("R1"));
   // UPDATE: 2026-08-21 Task 4 · R1 推理模型推荐参数：
   //   - temperature：R1 官方文档说模型自己控制节奏，传 0 或 undefined 更稳；
   //     这里采用"如果是推理模型就不传 temperature"的策略，避免 400 风险。
@@ -229,7 +222,7 @@ async function* createModelStream(opts: {
     ? undefined
     : (STYLE_TEMPERATURE[style] ?? 0.7);
   const maxTokens = isReasoningModel ? 8192 : 4096;
-  const url = `${DEEPSEEK_BASE_URL}/chat/completions`;
+  const url = `${llm.baseUrl}/chat/completions`;
   const payload: Record<string, unknown> = {
     model,
     messages,
@@ -241,7 +234,7 @@ async function* createModelStream(opts: {
 
   // eslint-disable-next-line no-console
   console.log(
-    `[DeepSeek] → ${url} | model=${model} | t=${temperature} | messages=${messages.length} | time=${new Date().toISOString()}`,
+    `[LLM/${llm.provider}] → ${url} | model=${model} | t=${temperature} | messages=${messages.length}`,
   );
 
   // 2. 发请求（透传 signal：abort 时立即断开，防止继续计费）
@@ -251,7 +244,7 @@ async function* createModelStream(opts: {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        Authorization: `Bearer ${llm.apiKey}`,
         Accept: "text/event-stream",
       },
       body: JSON.stringify(payload),
@@ -266,14 +259,14 @@ async function* createModelStream(opts: {
     yield {
       type: "error",
       code: name && name !== "Error" ? name : "NETWORK_ERROR",
-      message: `无法连接到 ${DEEPSEEK_BASE_URL}：${msg}（请检查本机网络 / 代理 / DEEPSEEK_BASE_URL 是否正确）`,
+      message: `无法连接到 ${llm.baseUrl}：${msg}`,
     };
     return;
   }
 
   // 3. 非 2xx → 结构化转标准 error
   if (!res.ok) {
-    const err = await extractDeepSeekError(res);
+    const err = await extractUpstreamError(res, llm.provider);
     yield { type: "error", code: err.code, message: err.message };
     return;
   }
@@ -281,7 +274,7 @@ async function* createModelStream(opts: {
   // 4. 流式逐 token 产出（正文 token + 思考链 thinking token 并行）
   let fullContent = "";
   let fullThinking = "";
-  for await (const ev of streamDeepSeekChunks(res, signal)) {
+  for await (const ev of streamOpenAIChunks(res, signal)) {
     if (signal.aborted) return;
     if (ev.type === "token") {
       fullContent += ev.token;
@@ -298,14 +291,15 @@ async function* createModelStream(opts: {
 
   // eslint-disable-next-line no-console
   console.log(
-    `[DeepSeek] ✅ 生成结束 | model=${model} | 输出字符=${fullContent.length} | 思考链=${fullThinking.length}`,
+    `[LLM/${llm.provider}] ✅ 生成结束 | chars=${fullContent.length}`,
   );
 
   // —— 5. 动态生成 3 个追问建议（基于当前问答，不使用完整 system prompt，避免跑偏）
   let followupItems: string[] = [];
   if (!signal.aborted && fullContent.length > 20) {
     try {
-      const followupModel = "deepseek-chat";
+      const followupLlm = resolveFollowupLLM();
+      const followupModel = followupLlm.model;
       // 只取最后一条用户问题 + 助手回答，上下文最精准，追问不容易跑偏
       // （如果带了一堆 system prompt / 附件全文 / 历史消息，V3 容易被干扰）
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
@@ -332,11 +326,11 @@ async function* createModelStream(opts: {
             "5) 不要输出任何其他文字，只返回 JSON 数组。",
         },
       ];
-      const fRes = await fetch(url, {
+      const fRes = await fetch(`${followupLlm.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+          Authorization: `Bearer ${followupLlm.apiKey}`,
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
@@ -379,7 +373,7 @@ async function* createModelStream(opts: {
         }
         // eslint-disable-next-line no-console
         console.log(
-          `[DeepSeek] ✅ 追问生成 | model=${followupModel} | 数量=${followupItems.length}`,
+          `[LLM/${followupLlm.provider}] ✅ 追问 | model=${followupModel} | n=${followupItems.length}`,
         );
         if (followupItems.length === 0) {
           console.warn("[followups] 原始返回:", fText.slice(0, 200));

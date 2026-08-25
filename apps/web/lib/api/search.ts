@@ -116,7 +116,7 @@ export async function getSearchConfig(): Promise<SearchConfig> {
         return {
           ...known,
           ...m,
-          provider: m.provider ?? known?.provider ?? "deepseek",
+          provider: m.provider ?? known?.provider ?? "qwen",
         };
       }),
     };

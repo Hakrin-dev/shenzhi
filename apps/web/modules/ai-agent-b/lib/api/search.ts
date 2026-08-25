@@ -44,6 +44,10 @@ import type {
   ChatUIMessage,
 } from "@b/types";
 import { toAAttachment } from "@b/lib/ask/draft";
+import {
+  BAILIAN_MODEL_CATALOG,
+  DEEPSEEK_OFFICIAL_CATALOG,
+} from "@b/lib/bailian-models";
 
 /** 后端模式：默认 "B"，保持 B 模块现有行为不被破坏 */
 export const AI_BACKEND_MODE: "A" | "B" =
@@ -60,20 +64,16 @@ const V1_PREFIX = "/api/v1";
 /** A 模块标准 SearchConfig 兜底（当后端 /search/config 不可达时使用） */
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
   models: [
-    {
-      value: "deepseek-chat",
-      label: "DeepSeek V3",
-      provider: "deepseek",
-      enabled: true,
-      description: "DeepSeek 官方 API · 对话模型",
-    },
-    {
-      value: "deepseek-reasoner",
-      label: "DeepSeek R1",
-      provider: "deepseek",
-      enabled: true,
-      description: "DeepSeek 官方 API · 推理模型",
-    },
+    ...BAILIAN_MODEL_CATALOG.map((m) => ({
+      ...m,
+      enabled: false,
+      reason: "no_api_key" as const,
+    })),
+    ...DEEPSEEK_OFFICIAL_CATALOG.map((m) => ({
+      ...m,
+      enabled: false,
+      reason: "no_api_key" as const,
+    })),
   ],
   modes: ["fast", "deep", "idea", "doubt"],
   quota: { used: 0, limit: 20, deep_used: 0, deep_limit: 5 },
@@ -602,18 +602,19 @@ export async function getSearchConfig(): Promise<SearchConfig> {
       return FALLBACK_SEARCH_CONFIG;
     }
   }
-  // 模式 B：DeepSeek 官方 API，本地返回可用模型列表
-  return {
-    ...FALLBACK_SEARCH_CONFIG,
-    models: FALLBACK_SEARCH_CONFIG.models.map((m) => ({
-      ...m,
-      enabled: true,
-    })),
-    upload: {
-      ...FALLBACK_SEARCH_CONFIG.upload,
-      accept: [".pdf", ".txt", ".md"],
-    },
-  };
+  try {
+    const res = await fetch("/api/b/search/config", { cache: "no-store" });
+    const envelope = (await res.json()) as {
+      code: number;
+      data: SearchConfig;
+    };
+    if (envelope?.code === 0 && envelope.data?.models?.length) {
+      return envelope.data;
+    }
+  } catch {
+    /* 回落本地兜底 */
+  }
+  return FALLBACK_SEARCH_CONFIG;
 }
 
 /* =========================================================================

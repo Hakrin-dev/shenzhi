@@ -1,21 +1,13 @@
 import type { ChatModelId, SearchModelOption } from "@/types/ai-search";
+import {
+  BAILIAN_MODEL_CATALOG,
+  DEEPSEEK_OFFICIAL_CATALOG,
+} from "@b/lib/bailian-models";
 
-/** 前端可选的大模型目录（与 GET /search/config 对齐） */
+/** 前端兜底目录（运行时以 /api/b/search/config 为准） */
 export const CHAT_MODEL_CATALOG: SearchModelOption[] = [
-  {
-    value: "deepseek-chat",
-    label: "DeepSeek V3",
-    provider: "deepseek",
-    enabled: true,
-    description: "平台默认，平衡速度与回答质量",
-  },
-  {
-    value: "deepseek-reasoner",
-    label: "DeepSeek R1",
-    provider: "deepseek",
-    enabled: true,
-    description: "推理模型，适合复杂分析与证明",
-  },
+  ...BAILIAN_MODEL_CATALOG.map((m) => ({ ...m, enabled: true })),
+  ...DEEPSEEK_OFFICIAL_CATALOG.map((m) => ({ ...m, enabled: true })),
   {
     value: "gpt-4o",
     label: "GPT-4o",
@@ -54,16 +46,16 @@ export const CHAT_MODEL_CATALOG: SearchModelOption[] = [
     provider: "zhipu",
     enabled: false,
     reason: "not_subscribed",
-    description: "智谱 GLM，中文与代码表现好",
+    description: "智谱 GLM（非百炼通道）",
   },
 ];
 
-export const DEFAULT_CHAT_MODEL: ChatModelId = "deepseek-chat";
+export const DEFAULT_CHAT_MODEL: ChatModelId = "qwen-turbo";
 
 export const CHAT_MODEL_IDS = CHAT_MODEL_CATALOG.map((m) => m.value);
 
 const LEGACY_MODEL_MAP: Record<string, ChatModelId> = {
-  default: "deepseek-chat",
+  default: "qwen-turbo",
   subscription: "gpt-4o",
   byok: "gpt-4o-mini",
 };
