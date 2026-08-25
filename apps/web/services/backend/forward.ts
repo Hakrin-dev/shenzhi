@@ -28,7 +28,20 @@ export async function forwardToBusinessBackend(
     Object.assign(init, { body: req.body, duplex: "half" });
   }
 
-  const upstream = await fetch(dest, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(dest, init);
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "无法连接业务后端";
+    return NextResponse.json(
+      {
+        code: 20004,
+        message: `业务后端不可用（${msg}）。若仅测 B 模块 LLM，可忽略；联调 A 侧请先启动 FastAPI。`,
+      },
+      { status: 503 },
+    );
+  }
   const out = new Headers(upstream.headers);
   out.delete("content-encoding");
   out.delete("transfer-encoding");

@@ -14,3 +14,7 @@ export const NAV_SECTIONS = {
   research: "研究",
   explore: "探索",
 } as const;
+
+/** B 模块附件解析上限（与 feat/ai-agent-B lib/constants 一致） */
+export const MAX_PARSE_CHARS_PER_FILE = 30_000;
+export const MAX_PARSE_CHARS_TOTAL = 60_000;

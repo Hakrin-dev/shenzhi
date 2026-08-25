@@ -1,13 +1,31 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AI_BACKEND_MODE,
   createChatSession,
   resumeChatMessage,
   sendChatMessage,
   stopChatMessage,
   streamChatMessage,
+  type StreamModeBPayload,
 } from "@/lib/api/search";
+import {
+  getLocalAskSession,
+  listLocalAskSessions,
+  titleFromQuestion,
+  upsertLocalAskSession,
+  type LocalAskSession,
+} from "@/lib/ask/local-history";
+import {
+  appendSessionMessage,
+  createSession,
+  getSessionMessages,
+  listSessions,
+  type SessionListItem,
+} from "@b/lib/api/sessions";
+import { buildModelMessages } from "@b/lib/chat-prompt";
+import type { ChatMessage } from "@b/types";
 import { messageForApiError } from "@/lib/ask/errors";
 import { ApiError } from "@/lib/api/http";
 import type {
@@ -18,6 +36,14 @@ import type {
   ChatReplyMode,
   CreateChatSessionRequest,
 } from "@/types/ai-search";
+
+function mapToBStyle(
+  mode: ChatReplyMode,
+): "fast" | "deep" | "inspire" | "question" {
+  if (mode === "idea") return "inspire";
+  if (mode === "doubt") return "question";
+  return mode;
+}
 
 export interface AskTurn {
   localId: string;
@@ -38,6 +64,68 @@ function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function turnsToHistory(turns: AskTurn[]): ChatMessage[] {
+  return turns
+    .filter(
+      (t) =>
+        t.role === "user" ||
+        (t.role === "assistant" &&
+          t.content &&
+          t.status !== "streaming" &&
+          t.status !== "failed"),
+    )
+    .map((t) => ({
+      role: t.role,
+      content: t.role === "user" ? (t.question ?? t.content) : t.content,
+    }));
+}
+
+function buildModeBPayload(
+  request: CreateChatSessionRequest,
+  historyTurns: AskTurn[],
+): StreamModeBPayload {
+  const { messages } = buildModelMessages({
+    style: mapToBStyle(request.mode),
+    history: turnsToHistory(historyTurns),
+    attachments: request.attachments as never[],
+  });
+  return { request, messages };
+}
+
+export interface AskHistoryItem {
+  id: string;
+  title: string;
+  updatedAt: number;
+  source: "db" | "local";
+}
+
+function sessionMessagesToTurns(
+  msgs: Awaited<ReturnType<typeof getSessionMessages>>,
+): AskTurn[] {
+  return msgs.map((m) =>
+    m.role === "user"
+      ? {
+          localId: m.id,
+          role: "user" as const,
+          question: m.content,
+          content: m.content,
+          status: "done" as const,
+          thought: "",
+          references: [],
+          followups: [],
+        }
+      : {
+          localId: m.id,
+          role: "assistant" as const,
+          content: m.content,
+          status: "done" as const,
+          thought: "思考完成",
+          references: [],
+          followups: [],
+        },
+  );
+}
+
 export interface AskSendInput {
   question: string;
   mode: ChatReplyMode;
@@ -50,9 +138,73 @@ export function useAskSession() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<AskTurn[]>([]);
   const [busy, setBusy] = useState(false);
+  const [localHistoryId, setLocalHistoryId] = useState<string | null>(null);
+  const [localHistory, setLocalHistory] = useState<LocalAskSession[]>([]);
+  const [dbSessions, setDbSessions] = useState<SessionListItem[]>([]);
+  const [dbHistoryId, setDbHistoryId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentMessageId = useRef<string | null>(null);
   const lastEventId = useRef<string | undefined>(undefined);
+  const dbSessionIdRef = useRef<string | null>(null);
+  const lastInputRef = useRef<AskSendInput | null>(null);
+  const turnsRef = useRef<AskTurn[]>([]);
+
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
+
+  const refreshLocalHistory = useCallback(() => {
+    setLocalHistory(listLocalAskSessions());
+  }, []);
+
+  const refreshDbSessions = useCallback(() => {
+    listSessions()
+      .then(setDbSessions)
+      .catch(() => setDbSessions([]));
+  }, []);
+
+  useEffect(() => {
+    refreshLocalHistory();
+    refreshDbSessions();
+  }, [refreshLocalHistory, refreshDbSessions]);
+
+  const persistLocal = useCallback(
+    (input: AskSendInput, nextTurns: AskTurn[]) => {
+      const id = localHistoryId ?? `local_${Date.now().toString(36)}`;
+      if (!localHistoryId) setLocalHistoryId(id);
+      const firstUser = nextTurns.find((t) => t.role === "user");
+      upsertLocalAskSession({
+        id,
+        title: titleFromQuestion(firstUser?.question ?? firstUser?.content ?? "问 AI"),
+        updatedAt: Date.now(),
+        turns: nextTurns as LocalAskSession["turns"],
+        mode: input.mode,
+        model: input.model,
+        web_search: input.web_search,
+      });
+      refreshLocalHistory();
+    },
+    [localHistoryId, refreshLocalHistory],
+  );
+
+  const ensureDbSession = useCallback(async (title: string, input: AskSendInput) => {
+    if (dbSessionIdRef.current) return dbSessionIdRef.current;
+    try {
+      const { id } = await createSession({
+        title: title.slice(0, 30),
+        model: input.model,
+        style: mapToBStyle(input.mode),
+        webSearch: input.web_search,
+        attachments: input.attachments as never[],
+      });
+      dbSessionIdRef.current = id;
+      setDbHistoryId(id);
+      refreshDbSessions();
+      return id;
+    } catch {
+      return null;
+    }
+  }, [refreshDbSessions]);
 
   const patchAssistant = useCallback(
     (localId: string, patch: Partial<AskTurn>) => {
@@ -63,12 +215,35 @@ export function useAskSession() {
     [],
   );
 
+  const lastSendRef = useRef<{
+    request: CreateChatSessionRequest;
+    historyTurns: AskTurn[];
+  } | null>(null);
+
   const runStream = useCallback(
-    async (messageId: string, assistantLocalId: string, signal?: AbortSignal) => {
+    async (
+      messageId: string,
+      assistantLocalId: string,
+      signal?: AbortSignal,
+      streamCtx?: { request: CreateChatSessionRequest; historyTurns: AskTurn[] },
+    ) => {
       currentMessageId.current = messageId;
       lastEventId.current = undefined;
 
       try {
+        const streamOptions: {
+          signal?: AbortSignal;
+          lastEventId?: string;
+          modeBPayload?: StreamModeBPayload;
+        } = { signal, lastEventId: lastEventId.current };
+
+        if (AI_BACKEND_MODE === "B" && streamCtx) {
+          streamOptions.modeBPayload = buildModeBPayload(
+            streamCtx.request,
+            streamCtx.historyTurns,
+          );
+        }
+
         await streamChatMessage(
           messageId,
           {
@@ -103,11 +278,38 @@ export function useAskSession() {
               patchAssistant(assistantLocalId, { followups: followups.items });
             },
             onDone: (done) => {
+              const st = done.status || "done";
               patchAssistant(assistantLocalId, {
-                status: done.status || "done",
+                status: st,
                 durationMs: done.duration_ms,
                 thought: "思考完成",
               });
+              const input = lastInputRef.current;
+              const assistant = turnsRef.current.find(
+                (t) => t.localId === assistantLocalId,
+              );
+              if (input) {
+                const nextTurns = turnsRef.current.map((t) =>
+                  t.localId === assistantLocalId
+                    ? {
+                        ...t,
+                        status: st,
+                        durationMs: done.duration_ms,
+                        thought: "思考完成",
+                      }
+                    : t,
+                );
+                persistLocal(input, nextTurns);
+              }
+              const dbId = dbSessionIdRef.current;
+              if (dbId && st !== "failed" && assistant?.content) {
+                appendSessionMessage(dbId, {
+                  role: "assistant",
+                  content: assistant.content,
+                })
+                  .then(() => refreshDbSessions())
+                  .catch(() => {});
+              }
             },
             onError: (err) => {
               patchAssistant(assistantLocalId, {
@@ -116,7 +318,7 @@ export function useAskSession() {
               });
             },
           },
-          { signal, lastEventId: lastEventId.current },
+          streamOptions,
         );
       } catch (error) {
         if (signal?.aborted) return;
@@ -129,7 +331,7 @@ export function useAskSession() {
         currentMessageId.current = null;
       }
     },
-    [patchAssistant],
+    [patchAssistant, persistLocal, refreshDbSessions],
   );
 
   const send = useCallback(
@@ -180,6 +382,18 @@ export function useAskSession() {
         attachments: input.attachments,
       };
 
+      const historyTurns = isFollowup ? turns : [];
+      lastSendRef.current = { request, historyTurns };
+      lastInputRef.current = input;
+
+      void ensureDbSession(question.slice(0, 30), input).then((dbId) => {
+        if (dbId) {
+          appendSessionMessage(dbId, { role: "user", content: question }).catch(
+            () => {},
+          );
+        }
+      });
+
       try {
         const created = sessionId
           ? await sendChatMessage(
@@ -212,7 +426,10 @@ export function useAskSession() {
             messageId: created.message_id,
           });
         }
-        await runStream(created.message_id, assistantTurn.localId, runSignal);
+        await runStream(created.message_id, assistantTurn.localId, runSignal, {
+          request,
+          historyTurns,
+        });
       } catch (error) {
         if (runSignal.aborted) {
           setBusy(false);
@@ -237,7 +454,7 @@ export function useAskSession() {
         setBusy(false);
       }
     },
-    [busy, patchAssistant, runStream, sessionId],
+    [busy, ensureDbSession, patchAssistant, runStream, sessionId, persistLocal],
   );
 
   const stop = useCallback(async () => {
@@ -270,7 +487,13 @@ export function useAskSession() {
     try {
       const resumed = await resumeChatMessage(failed.messageId);
       patchAssistant(failed.localId, { messageId: resumed.message_id });
-      await runStream(resumed.message_id, failed.localId);
+      const ctx = lastSendRef.current;
+      await runStream(
+        resumed.message_id,
+        failed.localId,
+        undefined,
+        ctx ?? undefined,
+      );
     } catch (error) {
       patchAssistant(failed.localId, {
         status: "failed",
@@ -285,7 +508,79 @@ export function useAskSession() {
     setSessionId(null);
     setTurns([]);
     setBusy(false);
+    setLocalHistoryId(null);
+    setDbHistoryId(null);
+    dbSessionIdRef.current = null;
   }, []);
 
-  return { sessionId, turns, busy, send, stop, resumeLast, reset };
+  const loadLocalSession = useCallback((item: LocalAskSession) => {
+    abortRef.current?.abort();
+    setLocalHistoryId(item.id);
+    setDbHistoryId(null);
+    dbSessionIdRef.current = null;
+    setSessionId(null);
+    setTurns(item.turns as AskTurn[]);
+    setBusy(false);
+  }, []);
+
+  const loadDbSession = useCallback(async (id: string) => {
+    abortRef.current?.abort();
+    try {
+      const msgs = await getSessionMessages(id);
+      setDbHistoryId(id);
+      setLocalHistoryId(null);
+      dbSessionIdRef.current = id;
+      setSessionId(null);
+      setTurns(sessionMessagesToTurns(msgs));
+      setBusy(false);
+    } catch {
+      /* 加载失败保持当前视图 */
+    }
+  }, []);
+
+  const loadHistoryItem = useCallback(
+    (item: AskHistoryItem) => {
+      if (item.source === "db") {
+        void loadDbSession(item.id);
+        return;
+      }
+      const local = getLocalAskSession(item.id);
+      if (local) loadLocalSession(local);
+    },
+    [loadDbSession, loadLocalSession],
+  );
+
+  const historyItems: AskHistoryItem[] = [
+    ...dbSessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      updatedAt: new Date(s.updatedAt).getTime(),
+      source: "db" as const,
+    })),
+    ...localHistory.map((s) => ({
+      id: s.id,
+      title: s.title,
+      updatedAt: s.updatedAt,
+      source: "local" as const,
+    })),
+  ].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const activeHistoryId = dbHistoryId ?? localHistoryId;
+
+  return {
+    sessionId,
+    turns,
+    busy,
+    send,
+    stop,
+    resumeLast,
+    reset,
+    historyItems,
+    activeHistoryId,
+    loadLocalSession,
+    loadDbSession,
+    loadHistoryItem,
+    refreshLocalHistory,
+    refreshDbSessions,
+  };
 }

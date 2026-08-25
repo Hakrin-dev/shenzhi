@@ -14,6 +14,23 @@ import type {
   StreamRefsEvent,
 } from "@/types/ai-search";
 import { CHAT_MODEL_CATALOG } from "@/lib/data/chat-models";
+import {
+  AI_BACKEND_MODE,
+  createChatSession as bCreateChatSession,
+  getSearchConfig as bGetSearchConfig,
+  resumeChatMessage as bResumeChatMessage,
+  sendChatMessage as bSendChatMessage,
+  stopChatMessage as bStopChatMessage,
+  streamChatMessage as bStreamChatMessage,
+} from "@b/lib/api/search";
+
+export { AI_BACKEND_MODE };
+
+/** 模式 B 流式时传给 /api/b/ai/chat 的上下文 */
+export interface StreamModeBPayload {
+  request: CreateChatSessionRequest;
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
+}
 
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
   models: CHAT_MODEL_CATALOG,
@@ -33,10 +50,17 @@ export interface ExploreSearchResponse {
   total?: number;
 }
 
-export function createChatSession(
+export async function createChatSession(
   body: CreateChatSessionRequest,
   init?: RequestInit,
 ) {
+  if (AI_BACKEND_MODE === "B") {
+    const session = await bCreateChatSession(body, init);
+    return {
+      session_id: session.session_id,
+      message_id: session.message_id,
+    };
+  }
   return apiJson<CreateChatSessionResponse>("/search/sessions", {
     method: "POST",
     body: JSON.stringify(body),
@@ -44,24 +68,38 @@ export function createChatSession(
   });
 }
 
-export function sendChatMessage(
+export async function sendChatMessage(
   sessionId: string,
   body: SendChatMessageRequest,
   init?: RequestInit,
 ) {
+  if (AI_BACKEND_MODE === "B") {
+    const session = await bSendChatMessage(sessionId, body, init);
+    return {
+      session_id: session.session_id,
+      message_id: session.message_id,
+    };
+  }
   return apiJson<CreateChatSessionResponse>(
     `/search/sessions/${sessionId}/messages`,
     { method: "POST", body: JSON.stringify(body), ...init },
   );
 }
 
-export function stopChatMessage(messageId: string) {
+export async function stopChatMessage(messageId: string) {
+  if (AI_BACKEND_MODE === "B") {
+    await bStopChatMessage(messageId);
+    return { ok: true };
+  }
   return apiJson<{ ok: boolean }>(`/search/messages/${messageId}/stop`, {
     method: "POST",
   });
 }
 
-export function resumeChatMessage(messageId: string) {
+export async function resumeChatMessage(messageId: string) {
+  if (AI_BACKEND_MODE === "B") {
+    return bResumeChatMessage(messageId);
+  }
   return apiJson<CreateChatSessionResponse>(
     `/search/messages/${messageId}/resume`,
     { method: "POST" },
@@ -69,6 +107,20 @@ export function resumeChatMessage(messageId: string) {
 }
 
 export async function getSearchConfig(): Promise<SearchConfig> {
+  if (AI_BACKEND_MODE === "B") {
+    const bConfig = await bGetSearchConfig();
+    return {
+      ...bConfig,
+      models: bConfig.models.map((m) => {
+        const known = CHAT_MODEL_CATALOG.find((c) => c.value === m.value);
+        return {
+          ...known,
+          ...m,
+          provider: m.provider ?? known?.provider ?? "deepseek",
+        };
+      }),
+    };
+  }
   try {
     return await apiJson<SearchConfig>("/search/config");
   } catch {
@@ -108,8 +160,22 @@ function parseJson<T>(raw: string): T | null {
 export async function streamChatMessage(
   messageId: string,
   handlers: ChatStreamHandlers,
-  options: { signal?: AbortSignal; lastEventId?: string } = {},
+  options: {
+    signal?: AbortSignal;
+    lastEventId?: string;
+    modeBPayload?: StreamModeBPayload;
+  } = {},
 ) {
+  if (AI_BACKEND_MODE === "B") {
+    await bStreamChatMessage(
+      messageId,
+      handlers,
+      options.modeBPayload,
+      { signal: options.signal, lastEventId: options.lastEventId },
+    );
+    return options.lastEventId;
+  }
+
   let lastId = options.lastEventId;
 
   const dispatch = (event: SseEvent) => {

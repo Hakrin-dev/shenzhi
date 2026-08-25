@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -14,6 +14,7 @@ import { ComposerShell } from "@/features/agents/components/composer";
 import { getSearchConfig } from "@/lib/api/search";
 import { readAskDraft } from "@/lib/ask/draft";
 import { useAskSession } from "@/lib/ask/use-ask-session";
+import { MarkdownContent } from "@b/lib/markdown-content";
 import type {
   ChatAttachment,
   ChatModelId,
@@ -56,7 +57,25 @@ export function AskStage({
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  const { turns, busy, send, stop, resumeLast, reset } = useAskSession();
+  const {
+    turns,
+    busy,
+    send,
+    stop,
+    resumeLast,
+    reset,
+    historyItems,
+    activeHistoryId,
+    loadHistoryItem,
+  } = useAskSession();
+
+  const displayTitle = useMemo(() => {
+    const active = historyItems.find((h) => h.id === activeHistoryId);
+    if (active) return active.title;
+    const firstUser = turns.find((t) => t.role === "user");
+    if (firstUser) return titleOf(firstUser.question ?? firstUser.content);
+    return titleOf(q);
+  }, [activeHistoryId, historyItems, q, turns]);
 
   useEffect(() => {
     void getSearchConfig().then(setConfig);
@@ -133,18 +152,32 @@ export function AskStage({
         <p className="px-3 pb-1.5 pt-4 text-[11px] font-medium tracking-wide text-faint">
           今天
         </p>
-        <button
-          type="button"
-          className="flex h-9 w-full cursor-pointer items-center rounded-lg bg-card px-3 text-left text-sm font-medium text-primary shadow-sm"
-        >
-          <span className="truncate">{titleOf(q)}</span>
-        </button>
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          {historyItems.length === 0 ? (
+            <p className="px-3 py-2 text-[12px] text-faint">暂无历史对话</p>
+          ) : (
+            historyItems.map((item) => (
+              <button
+                key={`${item.source}-${item.id}`}
+                type="button"
+                onClick={() => loadHistoryItem(item)}
+                className={`flex h-9 w-full cursor-pointer items-center rounded-lg px-3 text-left text-sm transition-colors ${
+                  activeHistoryId === item.id
+                    ? "bg-card font-medium text-primary shadow-sm"
+                    : "text-muted hover:bg-chip hover:text-ink"
+                }`}
+              >
+                <span className="truncate">{item.title}</span>
+              </button>
+            ))
+          )}
+        </div>
       </aside>
 
       <div className="flex h-screen min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-6">
           <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-            {titleOf(q)}
+            {displayTitle}
           </h1>
           <button
             type="button"
@@ -221,8 +254,11 @@ export function AskStage({
                     </p>
                   )}
                   {turn.content ? (
-                    <div className="whitespace-pre-wrap text-sm leading-7 text-ink">
-                      {turn.content}
+                    <div className="rounded-xl bg-card px-1 py-1 text-sm text-ink">
+                      <MarkdownContent text={turn.content} />
+                      {turn.status === "streaming" && (
+                        <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-primary align-[-2px]" />
+                      )}
                     </div>
                   ) : null}
                   {turn.error ? (

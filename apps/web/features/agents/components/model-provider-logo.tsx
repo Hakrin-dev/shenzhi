@@ -99,7 +99,7 @@ export function ModelProviderLogo({
   size?: "sm" | "md";
   className?: string;
 }) {
-  const Logo = LOGOS[provider];
+  const Logo = LOGOS[provider] ?? DeepSeekLogo;
   return (
     <span
       className={cn(
