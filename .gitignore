@@ -1,0 +1,121 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# database (SQLite 本地库，含用户数据，绝不入库)
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/dev.db-wal
+/prisma/dev.db-shm
+
+# misc
+.DS_Store
+Thumbs.db
+desktop.ini
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files (所有环境变量文件均不入库，防止密钥泄露)
+.env
+.env.local
+.env.*
+!.env.example
+
+# 密钥 & 凭证（安全兜底，防止误提交）
+*.key
+*.pem
+*.crt
+*.cer
+secrets.json
+credentials.json
+service-account.json
+
+# 敏感数据导出
+*.sql
+*.dump
+*.backup
+export_*.json
+export_*.csv
+
+# —— 本地临时验证脚本的产物 & 私密调试文件 ——
+# 这些是开发过程中一次性生成的 E2E 脚本 / 截图 / 日志，不应该进入仓库
+tmp_*.mjs
+tmp_*.js
+tmp_*.ts
+test_deepseek_connectivity.output.json
+browser-logs/
+*.log.local
+shot_*.png
+shot_*.jpg
+shot_*.jpeg
+# —— C 模块新增(2026-08-20)：上传附件的本地临时缓存目录，解析后立即删除
+# 严禁进入 Git 仓库（可能包含用户涉密 PDF/MD/TXT）
+tmp_uploads/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# editor / ide
+.vscode/
+.idea/
+*.swp
+
+# python(截图验证 / 品牌资产处理脚本;本地 venv 不入库)
+__pycache__/
+*.py[cod]
+.venv/
+
+# vercel
+.vercel
+
+# docker
+*.tar
+.superpowers/
+docs/superpowers/
+
+/lib/generated/prisma
+
+# —— 测试 & 覆盖率 ——
+/coverage
+/.nyc_output
+playwright-report/
+test-results/
+/test-results
+
+# —— 构建缓存 ——
+.eslintcache
+.turbo/
+.cache/
+.parcel-cache/
+
+# —— pnpm ——
+.pnpm-store/
+
+# —— 本地临时脚本（含密钥的调试脚本） ——
+tmp_*
+local_*
+debug_*
+*.local.*
+
+# —— 操作系统 ——
+*.swp
+*.swo
+*~
+
+# —— 锁文件以外的本地配置 ——
+.pnpmfile.cjs.local
+

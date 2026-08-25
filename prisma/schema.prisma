@@ -1,0 +1,172 @@
+// ==============================================================
+// Prisma Schema · 深知 ShenZhi 第二阶段 P1 数据模型（6 张表）
+// 生成器：prisma-client → 输出到 ../lib/generated/prisma（保持既有约定）
+// 数据库：SQLite（本地零运维）；未来切换 PG 只需改 datasource.provider + DATABASE_URL
+// ==============================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// 注意：DATABASE_URL 不再写在 schema 中（Prisma 7 变更）
+// 在 prisma.config.ts 的 datasource.url 里读取 process.env.DATABASE_URL
+datasource db {
+  provider = "sqlite"
+}
+
+// --------------------------------------------------------------
+// 1. User 用户表（登录/注册/找回密码）
+// --------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  name         String   @unique // 用户名（唯一，登录用）
+  email        String?  @unique // 邮箱（可选，找回密码用；原型可不填但唯一）
+  passwordHash String           // bcrypt rounds=10 哈希值；永远不返回给前端
+  // 密码哈希版本（未来升级 Argon2id 用）：1=bcrypt10, 2=argon2id...
+  passwordHashVersion Int @default(1)
+
+  // 时间戳
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联
+  sessions             ChatSession[]
+  researchSessions     ResearchSession[]
+  favorites            Favorite[]
+  passwordResetTokens  PasswordResetToken[]
+}
+
+// --------------------------------------------------------------
+// 2. ChatSession AI 问答会话（一组连续对话 / 历史列表单元）
+// --------------------------------------------------------------
+model ChatSession {
+  id        String   @id @default(cuid())
+  title     String   @default("新的对话") // 默认取首条用户消息 30 字
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Composer 快照（回灌用）Json 类型：
+  // { model: string, style: StyleMode, webSearch: boolean, attachments: ChatAttachment[] }
+  model         String  @default("default")
+  style         String  @default("deep")
+  webSearch     Boolean @default(false)
+  // SQLite 对 Json 默认值支持不完整（无 JSONB），默认值在应用层代码中传入空数组
+  attachments   Json
+
+  // 软删（保留数据但不在列表显示，未来可恢复）
+  deletedAt DateTime?
+  // 会话收藏（⭐）：用户可在历史列表中置顶/筛选收藏的对话
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // 关联
+  messages  ChatMessage[]
+  // 注意：Favorite 仅收藏单条消息（连 ChatMessage，不连 ChatSession）
+  // 如需收藏整个会话，后续再加 chatSessionId 到 Favorite 表
+  shares    SharedSession[]
+
+  @@index([userId, createdAt]) // 历史列表按 userId + 创建时间倒序
+}
+
+// --------------------------------------------------------------
+// 3. ChatMessage 单条消息（用户 / AI）
+// --------------------------------------------------------------
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role             String   // 'user' | 'assistant'
+  content          String   // 正文 Markdown
+  thinkingContent  String?  // R1 推理模型的思考链（reasoning_content），兼容后续
+
+  // sources JSON：AI 回答引用的 8~15 条参考来源（来自 web search + 平台引用）
+  // 对应 ChatSource[]：{ id, origin: 'web'|'platform', title, url, snippet, domain, citedCount? }
+  // SQLite JSON 默认值不写 schema，应用层传入空数组
+  sources Json
+
+  createdAt DateTime @default(now())
+
+  // 关联
+  favorites Favorite[]
+
+  @@index([sessionId, createdAt]) // 按会话 + 时间顺序拉消息
+}
+
+// --------------------------------------------------------------
+// 4. ResearchSession Deep Research 研究报告会话（mock done 写一次）
+// --------------------------------------------------------------
+model ResearchSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title    String  // 研究题目（入口展示）
+  scope    String? // 可选范围描述（深度/广度）
+  status   String  @default("done") // 'running' | 'done' | 'failed'；当前 mock 模式仅 done
+
+  // 报告产物 JSON：sections + report + sources（与当前 mock 播放器结构一致，便于 live 模式复用）
+  // SQLite JSON 默认值不写 schema，应用层传入 [] / {}
+  sections Json // DRPlanSection[]：4 节大纲
+  sources  Json // 参考来源
+  report   Json // 报告正文 + 结构 + references
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+// --------------------------------------------------------------
+// 5. Favorite 用户收藏（⭐按钮写入）
+// --------------------------------------------------------------
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messageId String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  note String? // 用户备注（后续扩展）
+
+  createdAt DateTime @default(now())
+
+  // 联合唯一约束：同一人同一条消息只能收藏一次
+  @@unique([userId, messageId])
+  @@index([userId, createdAt])
+}
+
+// --------------------------------------------------------------
+// 6. SharedSession 只读分享链接（12 位 token）
+// --------------------------------------------------------------
+model SharedSession {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  token     String   @unique // 12 位 base62，/share/{token} 路由匹配
+  createdAt DateTime @default(now())
+  expiresAt DateTime? // 可选：30 天后过期（null = 永不过期，原型默认永不过期）
+
+  @@index([token])
+}
+
+// --------------------------------------------------------------
+// 7. PasswordResetToken 找回密码令牌
+//    （对比选型 §1.1 方案 A；JWT 方案可省一张表，但原型用表更直观）
+// --------------------------------------------------------------
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // JWT 或随机串；原型用 randomUUID
+  expiresAt DateTime // 一般 1 小时内有效
+  usedAt    DateTime? // 已使用标记
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+}
