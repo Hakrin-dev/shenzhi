@@ -59,7 +59,7 @@ export const projects: Project[] = [
       },
       {
         title: "部署上线",
-        detail: "阿里云 ECS + GitHub Actions CI/CD,push 即发布",
+        detail: "云服务器 + GitHub Actions CI/CD，push 即发布",
         status: "done",
       },
       {
