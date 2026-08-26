@@ -41,4 +41,3 @@ export function exploreSearch(query: string, mode: "fast" | "deep" = "fast") {
     }),
   });
 }
-

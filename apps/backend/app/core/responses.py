@@ -6,4 +6,3 @@ def ok(data: dict[str, Any]) -> JSONResponse:
 
 def fail(code: int, message: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"code": code, "message": message}, status_code=status)
-
