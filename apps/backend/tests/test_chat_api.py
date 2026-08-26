@@ -127,6 +127,16 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(repository.sessions[created['session_id']].messages), 1)
         self.assertIn({'role': 'assistant', 'content': '未完成'}, FakeProvider.calls[-1])
 
+    async def test_truncated_history_emits_visible_warning(self):
+        created = await self.create()
+        await self.client.get(f"/api/v1/search/messages/{created['message_id']}/stream")
+        follow = (await self.client.post(f"/api/v1/search/sessions/{created['session_id']}/messages", json={'question': 'next'})).json()['data']
+        with patch.object(chat, 'MAX_HISTORY_CHARS', 1):
+            response = await self.client.get(f"/api/v1/search/messages/{follow['message_id']}/stream")
+        metas = [data for kind, data in events(response.text) if kind == 'meta' and data.get('context_truncated')]
+        self.assertTrue(metas)
+        self.assertTrue(any('历史上下文' in warning for warning in metas[0]['warnings']))
+
     async def test_stop_before_stream_and_memory_capacity(self):
         created = await self.create(); mid = created['message_id']
         await self.client.post(f'/api/v1/search/messages/{mid}/stop')

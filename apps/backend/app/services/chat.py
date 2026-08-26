@@ -84,6 +84,8 @@ async def generate(message: Message) -> None:
         message.emit('refs', {'references': references})
         context = '\n<reference_data>\n' + json.dumps(sources, ensure_ascii=False) + '\n</reference_data>'
         messages, history_truncated = model_messages(session, message, context)
+        if history_truncated:
+            warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
         message.warnings = list(dict.fromkeys(warnings))
         message.emit('meta', {'phase': 'generating', 'read_count': len(references),
             'context_truncated': history_truncated or any('截断' in w for w in warnings),

@@ -40,30 +40,24 @@ function StyleSubmenuRow({
   value: string;
   onPick: (v: ChatReplyMode) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="group/style relative">
-      <div className="flex h-9 cursor-default items-center gap-2 rounded-xl px-2.5 text-sm transition-colors hover:bg-chip">
-        <span className="w-10 shrink-0 text-[11px] text-muted">风格</span>
-        <span className="min-w-0 flex-1 truncate font-medium text-ink">
-          {value}
-        </span>
-        <ChevronRight className="size-3.5 shrink-0 text-faint" />
-      </div>
-      <div className="invisible absolute bottom-0 left-full z-[130] pl-1 opacity-0 transition-opacity group-hover/style:visible group-hover/style:opacity-100">
-        <div className="w-52 rounded-xl border border-line bg-card p-1.5 shadow-pop">
-          {STYLE_OPTIONS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => onPick(s.value)}
-              className="flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-chip"
-            >
-              <span className="text-sm font-medium text-ink">{s.label}</span>
-              <span className="text-[11px] text-muted">{s.description}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+    <div>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
+        className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-sm hover:bg-chip">
+        <span className="w-10 shrink-0 text-left text-[11px] text-muted">风格</span>
+        <span className="min-w-0 flex-1 truncate text-left font-medium text-ink">{value}</span>
+        <ChevronRight className={cn("size-3.5 text-faint", open && "rotate-90")} />
+      </button>
+      {open && <div className="max-h-56 overflow-y-auto rounded-xl bg-panel p-1.5">
+        {STYLE_OPTIONS.map((style) => (
+          <button key={style.value} type="button" onClick={() => { onPick(style.value); setOpen(false); }}
+            className="flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-chip">
+            <span className="text-sm font-medium text-ink">{style.label}</span>
+            <span className="text-[11px] text-muted">{style.description}</span>
+          </button>
+        ))}
+      </div>}
     </div>
   );
 }
