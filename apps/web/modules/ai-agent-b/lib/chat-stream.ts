@@ -220,7 +220,7 @@ export function useAskSession(getCbs: () => AskStreamCallbacks): AskSessionHandl
               mode: mapToAMode(opts.style),
               model: opts.model ?? "default",
               web_search: opts.webSearch,
-              attachments: (await import("@/lib/ask/draft")).toAAttachment(opts.attachments),
+              attachments: (await import("@b/lib/ask/draft")).toAAttachment(opts.attachments),
             });
           })();
           backendMsgId = resp.message_id;

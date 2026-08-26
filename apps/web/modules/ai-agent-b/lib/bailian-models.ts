@@ -2,7 +2,7 @@
  * 百炼控制台「已开启免费额度」模型目录（与控制台截图一致，仅此 14 个）。
  * 配置 DASHSCOPE_API_KEY 后前端全部可选；不在此列表的模型不展示。
  */
-import type { SearchModelOption } from "@b/types/ai-search";
+import type { SearchModelOption } from "@/types/ai-search";
 
 type CatalogEntry = Omit<SearchModelOption, "enabled">;
 

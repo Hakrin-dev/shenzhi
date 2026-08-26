@@ -27,6 +27,7 @@ import { useSidebarStore } from "@/stores/sidebar";
 import { Logo } from "./logo";
 import { SettingsMenu } from "./settings-menu";
 import { LoginModal } from "@/components/auth/login-modal";
+import { SidebarChatHistory } from "./sidebar-chat-history";
 
 interface NavItem {
   href: string;
@@ -57,8 +58,35 @@ const KNOWLEDGE_SUB_NAV = [
   { href: "/knowledge/institutions", label: "研究机构" },
 ];
 
-/** 「AI 助手」的子栏目;AI 助手本身有独立对话页(/agents),不与子栏目共享 */
-const AGENT_SUB_NAV = [
+/** 副标题 band 项 */
+interface SubNavItem {
+  href: string;
+  label: string;
+  alsoActivePrefixes?: string[];
+}
+
+function isSubNavActive(sub: SubNavItem, pathname: string): boolean {
+  if (pathname === sub.href) return true;
+  if (
+    sub.alsoActivePrefixes?.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  ) {
+    return true;
+  }
+  if (sub.href !== "/agents" && pathname.startsWith(`${sub.href}/`)) {
+    return true;
+  }
+  return false;
+}
+
+/** 「AI 助手」子栏目 —— 对话 / Deep Research / Auto Research 同级 band */
+const AGENT_SUB_NAV: SubNavItem[] = [
+  {
+    href: "/agents",
+    label: "AI Assistant",
+    alsoActivePrefixes: ["/agents/ask"],
+  },
   { href: "/agents/deep-research", label: "Deep Research" },
   { href: "/agents/auto-research", label: "Auto Research" },
 ];
@@ -184,7 +212,7 @@ function ExpandableNav({
   href: string;
   label: string;
   icon: typeof Compass;
-  subNav: { href: string; label: string }[];
+  subNav: SubNavItem[];
   collapsed: boolean;
   /** 子栏目列表末尾的附加内容(如「新建项目」) */
   footer?: React.ReactNode;
@@ -196,7 +224,7 @@ function ExpandableNav({
   const setExpanded = useSidebarStore((s) => s.setExpanded);
   const setCollapsed = useSidebarStore((s) => s.setCollapsed);
   const open = stored ?? routeActive;
-  /** 主页是否独立于副标题(如 AI 助手:/agents 不是任何副标题页) */
+  /** 主标题页是否也在 subNav 中（如 AI 助手 → Chat 与 Deep Research 同级） */
   const hasOwnPage = !subNav.some((s) => s.href === href);
   /** 跳转目标:有主标题页跳主标题页,没有则跳第一个副标题页 */
   const dest = hasOwnPage ? href : subNav[0].href;
@@ -276,7 +304,7 @@ function ExpandableNav({
       {open && (
         <div className="mt-0.5 flex flex-col gap-0.5 pl-6">
           {subNav.map((sub) => {
-            const active = pathname === sub.href;
+            const active = isSubNavActive(sub, pathname);
             return (
               <Link
                 key={sub.href}
@@ -443,7 +471,15 @@ export function AppSidebar() {
           icon={Sparkles}
           subNav={AGENT_SUB_NAV}
           collapsed={collapsed}
+          footer={
+            !collapsed ? <SidebarChatHistory variant="embedded" /> : undefined
+          }
         />
+        {collapsed && (
+          <div className="flex justify-center">
+            <SidebarChatHistory collapsed />
+          </div>
+        )}
         <ExpandableNav
           href="/knowledge"
           label="知识库"

@@ -172,6 +172,32 @@ function RefPanel({
   );
 }
 
+function extToType(name: string): ChatAttachment["type"] {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".txt")) return "txt";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "md";
+  return "other";
+}
+
+function attachmentFromUpload(
+  upload: Awaited<ReturnType<typeof uploadFile>>,
+  file: File,
+): ChatAttachment {
+  return {
+    kind: "file",
+    file_id: upload.file_id,
+    title: upload.filename,
+    size: file.size,
+    type: extToType(upload.filename),
+    text: upload.parse_status === "ok" ? upload.text : undefined,
+    error:
+      upload.parse_status === "failed"
+        ? upload.warning || "解析失败（仅支持文字版 PDF / TXT / MD）"
+        : undefined,
+  };
+}
+
 export function AttachmentMenu({
   onAdd,
   accept = ".pdf,.docx,.md,.txt",
@@ -216,12 +242,31 @@ export function AttachmentMenu({
     setUploading(true);
     try {
       for (const file of list) {
-        if (file.size > maxSizeMb * 1024 * 1024) continue;
-        const { file_id } = await uploadFile(file);
-        onAdd({ kind: "file", file_id, title: file.name });
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          onAdd({
+            kind: "file",
+            file_id: `err_${Date.now().toString(36)}`,
+            title: file.name,
+            size: file.size,
+            type: extToType(file.name),
+            error: `文件过大（${(file.size / 1024 / 1024).toFixed(2)}MB，上限 ${maxSizeMb}MB）`,
+          });
+          continue;
+        }
+        try {
+          const upload = await uploadFile(file);
+          onAdd(attachmentFromUpload(upload, file));
+        } catch (e) {
+          onAdd({
+            kind: "file",
+            file_id: `err_${Date.now().toString(36)}`,
+            title: file.name,
+            size: file.size,
+            type: extToType(file.name),
+            error: (e as Error).message || "上传失败",
+          });
+        }
       }
-    } catch {
-      /* 上传接口未接入时不塞假 file_id */
     } finally {
       setUploading(false);
       setOpen(false);

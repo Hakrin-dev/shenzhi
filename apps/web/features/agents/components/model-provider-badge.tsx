@@ -21,6 +21,10 @@ const PROVIDER_META: Record<
     mark: "D",
     className: "bg-[#4d6bfe] text-white",
   },
+  qwen: {
+    mark: "Q",
+    className: "bg-[#615ced] text-white",
+  },
   zhipu: {
     mark: "Z",
     className: "bg-[#2454ff] text-white",

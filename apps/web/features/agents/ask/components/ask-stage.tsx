@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
   ChevronUp,
   LoaderCircle,
-  MessageSquarePlus,
   MoreHorizontal,
 } from "lucide-react";
 import { ComposerShell } from "@/features/agents/components/composer";
+import { ReasoningChainPanel } from "@/features/agents/components/reasoning-chain-panel";
 import { getSearchConfig } from "@/lib/api/search";
 import { readAskDraft } from "@/lib/ask/draft";
 import { useAskSession } from "@/lib/ask/use-ask-session";
@@ -40,6 +41,7 @@ export function AskStage({
   initialModel?: ChatModelId;
   initialWebSearch?: boolean;
 }) {
+  const router = useRouter();
   const q = question.trim() || "Diffusion Policy 有什么创新？";
 
   const [value, setValue] = useState("");
@@ -63,19 +65,13 @@ export function AskStage({
     send,
     stop,
     resumeLast,
-    reset,
-    historyItems,
-    activeHistoryId,
-    loadHistoryItem,
   } = useAskSession();
 
   const displayTitle = useMemo(() => {
-    const active = historyItems.find((h) => h.id === activeHistoryId);
-    if (active) return active.title;
     const firstUser = turns.find((t) => t.role === "user");
     if (firstUser) return titleOf(firstUser.question ?? firstUser.content);
     return titleOf(q);
-  }, [activeHistoryId, historyItems, q, turns]);
+  }, [q, turns]);
 
   useEffect(() => {
     void getSearchConfig().then(setConfig);
@@ -123,7 +119,10 @@ export function AskStage({
   };
 
   const onSend = (payload: ComposerSubmitPayload) => {
-    if (payload.entryMode === "search") return;
+    if (payload.entryMode === "search") {
+      router.push(`/search?q=${encodeURIComponent(payload.question)}`);
+      return;
+    }
     setValue("");
     setAttachments([]);
     void send({
@@ -136,46 +135,8 @@ export function AskStage({
   };
 
   return (
-    <div className="flex">
-      <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-line bg-sidebar p-3">
-        <button
-          type="button"
-          onClick={() => {
-            reset();
-            window.location.assign("/agents/ask");
-          }}
-          className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-full bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
-        >
-          <MessageSquarePlus className="size-4" strokeWidth={1.8} />
-          新对话
-        </button>
-        <p className="px-3 pb-1.5 pt-4 text-[11px] font-medium tracking-wide text-faint">
-          今天
-        </p>
-        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-          {historyItems.length === 0 ? (
-            <p className="px-3 py-2 text-[12px] text-faint">暂无历史对话</p>
-          ) : (
-            historyItems.map((item) => (
-              <button
-                key={`${item.source}-${item.id}`}
-                type="button"
-                onClick={() => loadHistoryItem(item)}
-                className={`flex h-9 w-full cursor-pointer items-center rounded-lg px-3 text-left text-sm transition-colors ${
-                  activeHistoryId === item.id
-                    ? "bg-card font-medium text-primary shadow-sm"
-                    : "text-muted hover:bg-chip hover:text-ink"
-                }`}
-              >
-                <span className="truncate">{item.title}</span>
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
-
-      <div className="flex h-screen min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-6">
+    <div className="flex h-screen min-w-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-6">
           <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
             {displayTitle}
           </h1>
@@ -248,11 +209,17 @@ export function AskStage({
                       <ChevronDown className="size-3.5 text-faint" />
                     )}
                   </button>
-                  {thoughtOpen[turn.localId] && (
+                  {thoughtOpen[turn.localId] && !turn.thinkingContent && (
                     <p className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-relaxed text-muted">
                       {turn.thought || "无思考摘要"}
                     </p>
                   )}
+                  {turn.thinkingContent ? (
+                    <ReasoningChainPanel
+                      content={turn.thinkingContent}
+                      streaming={turn.status === "streaming"}
+                    />
+                  ) : null}
                   {turn.content ? (
                     <div className="rounded-xl bg-card px-1 py-1 text-sm text-ink">
                       <MarkdownContent text={turn.content} />
@@ -348,7 +315,6 @@ export function AskStage({
             />
           </div>
         </div>
-      </div>
     </div>
   );
 }

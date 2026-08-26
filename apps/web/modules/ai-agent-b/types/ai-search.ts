@@ -255,6 +255,9 @@ export interface SearchModelOption {
   label: string;
   enabled: boolean;
   reason?: string; // disabled 时的原因："not_subscribed" | "no_api_key" 等
+  /** 由 A 侧 getSearchConfig 与 CHAT_MODEL_CATALOG 合并补齐 */
+  provider?: import("@/types/ai-search").ModelProvider;
+  description?: string;
 }
 
 export interface SearchConfig {

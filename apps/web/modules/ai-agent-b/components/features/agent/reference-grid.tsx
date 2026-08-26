@@ -42,11 +42,22 @@ const TONE_COLORS: Record<string, string> = {
 export function ReferenceGrid({
   sources,
   limit = 8,
+  /** 仅 deep-search 演示页使用 mock；对话页传 false */
+  fallbackToMock = false,
 }: {
   sources?: ChatSource[];
   limit?: number;
+  fallbackToMock?: boolean;
 }) {
-  const data = sources && sources.length > 0 ? sources : FALLBACK_SOURCES;
+  if (!sources || sources.length === 0) {
+    if (!fallbackToMock) return null;
+  }
+  const data =
+    sources && sources.length > 0
+      ? sources
+      : fallbackToMock
+        ? FALLBACK_SOURCES
+        : [];
   const [showAll, setShowAll] = useState(false);
 
   const {

@@ -199,6 +199,24 @@ function RefPanel({
   );
 }
 
+function attachmentFromUpload(
+  upload: Awaited<ReturnType<typeof uploadFile>>,
+  file: File,
+): ChatAttachment {
+  return {
+    kind: "file",
+    file_id: upload.file_id,
+    title: upload.filename,
+    size: file.size,
+    type: extToBType(upload.filename),
+    text: upload.parse_status === "ok" ? upload.text : undefined,
+    error:
+      upload.parse_status === "failed"
+        ? upload.warning || "解析失败（仅支持文字版 PDF / TXT / MD）"
+        : undefined,
+  };
+}
+
 export function AttachmentMenu({
   placement = "down",
   onAdd,
@@ -293,11 +311,7 @@ export function AttachmentMenu({
         // 兼容：仍然回调 onAdd（A 格式），ComposerShell 内部的 innerFiles/onAttachmentsChange 能渲染 chips。
         //     （agent-chat.tsx 下的 composer shell 是受控的，props.attachments 来自 zustand store，
         //      因此会优先用 store 的 B 格式；这里调 onAdd 是为了首页 search-hero 非受控场景也能显示 chips）
-        onAdd?.({
-          kind: "file",
-          file_id: upload.file_id,
-          title: upload.filename,
-        });
+        onAdd?.(attachmentFromUpload(upload, file));
 
         // 如果有「截断警告」，把 warning 拼到 error（但不标 parse_status=failed）——
         // 这样 buildAttachmentContext 里的 `a.error` 过滤会跳过，text 仍会注入 prompt；

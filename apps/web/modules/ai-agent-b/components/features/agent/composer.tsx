@@ -190,6 +190,13 @@ function PlusMenu({
             kind: "file",
             file_id: upload.file_id,
             title: upload.filename,
+            size: file.size,
+            type: extToBType(upload.filename),
+            text: upload.parse_status === "ok" ? upload.text : undefined,
+            error:
+              upload.parse_status === "failed"
+                ? upload.warning || "解析失败（仅支持文字版 PDF / TXT / MD）"
+                : undefined,
           });
         } catch (e) {
           addB({

@@ -1,18 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  ArrowUp,
-  ChevronRight,
-  Globe,
-  Plus,
-  Square,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Search, Sparkles, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { popoverPosition, usePopoverPlacement } from "@/lib/use-popover-placement";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { FALLBACK_SEARCH_CONFIG } from "@/lib/api/search";
-import { AttachmentMenu } from "./attachment-menu";
 import { ComposerControlPicker } from "./composer-control-picker";
 import { questionSchema } from "@/lib/validations";
 import type { ComposerEntryMode } from "@/types";
@@ -26,128 +18,46 @@ import type {
 
 export type { ComposerEntryMode, ComposerSubmitPayload } from "@/types";
 
-const PLAIN_BTN =
-  "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted transition-colors hover:bg-chip hover:text-ink";
+const MODE_PILL =
+  "flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors";
 
-function useCloseOnOutside(open: boolean, close: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open, close]);
-  return ref;
-}
-
-function RightSubmenuRow({
-  label,
-  value,
-  children,
+function SearchModeSwitch({
+  mode,
+  onChange,
 }: {
-  label: string;
-  value: string;
-  children: ReactNode;
+  mode: ComposerEntryMode;
+  onChange: (mode: ComposerEntryMode) => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
+    <div className="flex shrink-0 items-center gap-1">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
-      >
-        <span className="w-10 shrink-0 text-left text-[11px] text-muted">
-          {label}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left font-medium text-ink">
-          {value}
-        </span>
-        <ChevronRight
-          className={cn(
-            "size-3.5 shrink-0 text-faint transition-transform",
-            open && "rotate-90",
-          )}
-        />
-      </button>
-      {open && (
-        <div className="absolute bottom-0 left-full z-[130] pl-1">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PlusMenu({
-  webSearch,
-  onWebSearchChange,
-}: {
-  webSearch: boolean;
-  onWebSearchChange: (v: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useCloseOnOutside(open, () => setOpen(false));
-  const placement = usePopoverPlacement(open, ref, 200);
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        aria-label="更多选项"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        aria-pressed={mode === "search"}
+        onClick={() => onChange("search")}
         className={cn(
-          PLAIN_BTN,
-          (open || webSearch) && "bg-chip text-ink",
+          MODE_PILL,
+          mode === "search"
+            ? "bg-primary-soft text-primary"
+            : "text-muted hover:bg-chip hover:text-ink-2",
         )}
       >
-        <Plus
-          className={cn("size-5 transition-transform", open && "rotate-45")}
-        />
+        <Search className="size-4 shrink-0" strokeWidth={1.8} />
+        简单搜索
       </button>
-      {open && (
-        <div
-          className={cn(
-            "absolute left-0 z-[120] w-44 rounded-2xl border border-line bg-card p-1.5 shadow-pop",
-            popoverPosition(placement),
-          )}
-        >
-          <RightSubmenuRow label="插件" value="即将上线">
-            <div className="w-40 rounded-xl border border-line bg-card p-2 text-[11px] text-muted shadow-pop">
-              插件市场筹备中
-            </div>
-          </RightSubmenuRow>
-          <RightSubmenuRow label="技能" value="即将上线">
-            <div className="w-40 rounded-xl border border-line bg-card p-2 text-[11px] text-muted shadow-pop">
-              技能库筹备中
-            </div>
-          </RightSubmenuRow>
-          <button
-            type="button"
-            onClick={() => onWebSearchChange(!webSearch)}
-            className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm transition-colors hover:bg-chip"
-          >
-            <Globe className="size-4 text-muted" strokeWidth={1.8} />
-            <span className="flex-1 text-left text-ink-2">联网搜索</span>
-            <span
-              className={cn(
-                "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-                webSearch ? "bg-agent" : "bg-line",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
-                  webSearch ? "left-4" : "left-0.5",
-                )}
-              />
-            </span>
-          </button>
-        </div>
-      )}
+      <button
+        type="button"
+        aria-pressed={mode === "ai"}
+        onClick={() => onChange("ai")}
+        className={cn(
+          MODE_PILL,
+          mode === "ai"
+            ? "bg-violet-100 text-violet-800"
+            : "text-muted hover:bg-chip hover:text-ink-2",
+        )}
+      >
+        <Sparkles className="size-4 shrink-0" strokeWidth={1.8} />
+        智能搜索
+      </button>
     </div>
   );
 }
@@ -158,7 +68,8 @@ export function ComposerShell({
   onSend,
   placeholder,
   variant = "agent",
-  entryMode = "ai",
+  entryMode: entryModeProp,
+  onEntryModeChange,
   replyMode: replyModeProp,
   onReplyModeChange,
   model: modelProp,
@@ -177,6 +88,7 @@ export function ComposerShell({
   placeholder: string;
   variant?: "home" | "agent";
   entryMode?: ComposerEntryMode;
+  onEntryModeChange?: (mode: ComposerEntryMode) => void;
   replyMode?: ChatReplyMode;
   onReplyModeChange?: (mode: ChatReplyMode) => void;
   model?: ChatModelId;
@@ -192,6 +104,7 @@ export function ComposerShell({
   const isHome = variant === "home";
   const canSend = Boolean(value.trim());
 
+  const [innerEntryMode, setInnerEntryMode] = useState<ComposerEntryMode>("ai");
   const [innerMode, setInnerMode] = useState<ChatReplyMode>("fast");
   const [innerDepth, setInnerDepth] = useState<"fast" | "deep">("fast");
   const [innerModel, setInnerModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
@@ -201,6 +114,9 @@ export function ComposerShell({
   const controlRef = useRef<HTMLDivElement>(null);
 
   const replyMode = replyModeProp ?? innerMode;
+  const entryMode = entryModeProp ?? innerEntryMode;
+  const setEntryMode = onEntryModeChange ?? setInnerEntryMode;
+  const isSmartSearch = entryMode === "ai";
   const depthMode =
     replyMode === "deep" || replyMode === "fast"
       ? (replyMode as "fast" | "deep")
@@ -230,7 +146,7 @@ export function ComposerShell({
   }, [controlOpen]);
 
   const buildPayload = (intent?: ComposerEntryMode): ComposerSubmitPayload => ({
-    entryMode: intent ?? (isHome ? "ai" : entryMode),
+    entryMode: intent ?? entryMode,
     question: value.trim(),
     mode: replyMode,
     model,
@@ -244,12 +160,13 @@ export function ComposerShell({
     onSend(buildPayload(intent));
   };
 
-  const keyboardHint = isHome
-    ? "Enter 发送 · Shift+Enter 换行 · Alt+Enter 搜索论文"
-    : "Enter 发送 · Shift+Enter 换行";
-
   return (
-    <div className="relative overflow-visible rounded-2xl border border-line/80 bg-card p-3 shadow-pop">
+    <div
+      className={cn(
+        "relative overflow-visible rounded-2xl border border-line/80 bg-card shadow-pop",
+        isHome ? "p-5" : "p-3",
+      )}
+    >
       {attachments.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1.5">
           {attachments.map((item, i) => (
@@ -279,50 +196,42 @@ export function ComposerShell({
           ) {
             e.preventDefault();
             if (busy) return;
-            if (isHome && e.altKey) {
-              submit("search");
-              return;
-            }
             submit();
           }
         }}
         placeholder={placeholder}
-        rows={2}
+        rows={isHome ? 3 : 2}
         maxLength={2000}
-        className="min-h-[3.25rem] w-full resize-none bg-transparent px-0.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-faint"
+        className={cn(
+          "w-full resize-none bg-transparent px-0.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-faint",
+          isHome ? "min-h-[4.5rem]" : "min-h-[3.25rem]",
+        )}
       />
 
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <PlusMenu webSearch={webSearch} onWebSearchChange={setWebSearch} />
-        <AttachmentMenu
-          accept={config.upload.accept.join(",")}
-          maxFiles={config.upload.max_files}
-          maxSizeMb={config.upload.max_size_mb}
-          onAdd={(item) => {
-            if (attachments.length >= config.upload.max_files) return;
-            setAttachments([...attachments, item]);
-          }}
-        />
-        <div ref={controlRef} className="relative min-w-0 shrink">
-          <ComposerControlPicker
-            model={model}
-            onModelChange={setModel}
-            replyMode={replyMode}
-            onReplyModeChange={setReplyMode}
-            depthMode={depthMode}
-            onDepthModeChange={setDepthMode}
-            options={config.models}
-            quota={config.quota}
-            anchorRef={controlRef}
-            open={controlOpen}
-            onOpenChange={setControlOpen}
-          />
-        </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="hidden max-w-[14rem] truncate text-[11px] text-faint lg:inline">
-            {keyboardHint}
-          </span>
+          {isSmartSearch && (
+            <div ref={controlRef} className="relative min-w-0">
+              <ComposerControlPicker
+                model={model}
+                onModelChange={setModel}
+                replyMode={replyMode}
+                onReplyModeChange={setReplyMode}
+                depthMode={depthMode}
+                onDepthModeChange={setDepthMode}
+                webSearch={webSearch}
+                onWebSearchChange={setWebSearch}
+                options={config.models}
+                quota={config.quota}
+                anchorRef={controlRef}
+                open={controlOpen}
+                onOpenChange={setControlOpen}
+              />
+            </div>
+          )}
+
           {busy && onStop ? (
             <button
               type="button"
@@ -341,7 +250,9 @@ export function ComposerShell({
               className={cn(
                 "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
                 canSend
-                  ? "bg-primary text-white hover:bg-primary-dark"
+                  ? isSmartSearch
+                    ? "bg-primary text-white hover:bg-primary-dark"
+                    : "bg-agent text-white hover:bg-agent/90"
                   : "border border-line bg-chip text-faint",
                 !canSend && "cursor-not-allowed",
               )}

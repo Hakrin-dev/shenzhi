@@ -31,6 +31,11 @@ export interface ChatAttachment {
   file_id?: string;
   ref_id?: string;
   title?: string;
+  /** 上传解析后的正文（B 模式 /api/b/uploads 返回，发送时注入 prompt） */
+  text?: string;
+  error?: string;
+  size?: number;
+  type?: "pdf" | "txt" | "md" | "other";
 }
 
 export interface CreateChatSessionRequest {
@@ -84,6 +89,8 @@ export interface StreamMetaEvent {
   ephemeral?: boolean;
   arxiv_resolved?: number;
   context_truncated?: boolean;
+  /** R1 思考链增量 */
+  thinking_delta?: string;
 }
 
 export interface StreamDeltaEvent {
@@ -101,6 +108,7 @@ export interface StreamFollowupsEvent {
 export interface StreamDoneEvent {
   duration_ms: number;
   status: ChatMessageStatus;
+  thinkingContent?: string;
 }
 
 export interface StreamErrorEvent {

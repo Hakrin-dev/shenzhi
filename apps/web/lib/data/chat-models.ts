@@ -1,6 +1,7 @@
 import type { ChatModelId, SearchModelOption } from "@/types/ai-search";
 import {
   BAILIAN_MODEL_CATALOG,
+  DEFAULT_BAILIAN_MODEL,
   DEEPSEEK_OFFICIAL_CATALOG,
 } from "@b/lib/bailian-models";
 
@@ -50,12 +51,12 @@ export const CHAT_MODEL_CATALOG: SearchModelOption[] = [
   },
 ];
 
-export const DEFAULT_CHAT_MODEL: ChatModelId = "qwen-turbo";
+export const DEFAULT_CHAT_MODEL: ChatModelId = DEFAULT_BAILIAN_MODEL;
 
 export const CHAT_MODEL_IDS = CHAT_MODEL_CATALOG.map((m) => m.value);
 
 const LEGACY_MODEL_MAP: Record<string, ChatModelId> = {
-  default: "qwen-turbo",
+  default: DEFAULT_BAILIAN_MODEL,
   subscription: "gpt-4o",
   byok: "gpt-4o-mini",
 };

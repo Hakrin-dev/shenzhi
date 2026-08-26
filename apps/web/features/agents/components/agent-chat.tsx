@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
   ChevronUp,
   LoaderCircle,
-  MessageSquarePlus,
   Sparkles,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { ComposerShell } from "./composer";
+import { ReasoningChainPanel } from "./reasoning-chain-panel";
 import { getSearchConfig } from "@/lib/api/search";
 import { useAskSession } from "@/lib/ask/use-ask-session";
 import { MarkdownContent } from "@b/lib/markdown-content";
@@ -33,6 +33,7 @@ const SUGGESTIONS = [
 
 /** AI 助手对话页 —— 接入 DeepSeek 流式 + 本地/DB 历史 */
 export function AgentChat() {
+  const router = useRouter();
   const [value, setValue] = useState("");
   const [replyMode, setReplyMode] = useState<ChatReplyMode>("fast");
   const [model, setModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
@@ -48,10 +49,6 @@ export function AgentChat() {
     send,
     stop,
     resumeLast,
-    reset,
-    historyItems,
-    activeHistoryId,
-    loadHistoryItem,
   } = useAskSession();
 
   useEffect(() => {
@@ -63,11 +60,9 @@ export function AgentChat() {
   }, [turns]);
 
   const displayTitle = useMemo(() => {
-    const active = historyItems.find((h) => h.id === activeHistoryId);
-    if (active) return active.title;
     const firstUser = turns.find((t) => t.role === "user");
     return firstUser?.content ?? "新对话";
-  }, [activeHistoryId, historyItems, turns]);
+  }, [turns]);
 
   const submit = (question: string, files: ChatAttachment[] = []) => {
     const q = question.trim();
@@ -82,7 +77,10 @@ export function AgentChat() {
   };
 
   const onSend = (payload: ComposerSubmitPayload) => {
-    if (payload.entryMode === "search") return;
+    if (payload.entryMode === "search") {
+      router.push(`/search?q=${encodeURIComponent(payload.question)}`);
+      return;
+    }
     setValue("");
     setAttachments([]);
     void send({
@@ -94,53 +92,9 @@ export function AgentChat() {
     });
   };
 
-  const historyPanel = (
-    <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-line bg-sidebar p-3">
-      <button
-        type="button"
-        onClick={() => {
-          reset();
-          setValue("");
-          setAttachments([]);
-        }}
-        className="flex h-10 shrink-0 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
-      >
-        <MessageSquarePlus className="size-4" strokeWidth={1.8} />
-        新对话
-      </button>
-      <p className="shrink-0 px-3 pb-1.5 pt-4 text-[11px] font-medium tracking-wide text-faint">
-        历史对话
-      </p>
-      <div className="scrollbar-subtle flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-        {historyItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-faint">暂无历史，发送消息后将自动保存</p>
-        ) : (
-          historyItems.map((item) => (
-            <button
-              key={`${item.source}-${item.id}`}
-              type="button"
-              aria-current={activeHistoryId === item.id ? "page" : undefined}
-              onClick={() => loadHistoryItem(item)}
-              className={cn(
-                "flex h-9 shrink-0 cursor-pointer items-center rounded-lg px-3 text-left text-sm transition-colors",
-                activeHistoryId === item.id
-                  ? "bg-card font-medium text-primary shadow-sm"
-                  : "text-muted hover:bg-card hover:text-ink-2",
-              )}
-            >
-              <span className="truncate">{item.title}</span>
-            </button>
-          ))
-        )}
-      </div>
-    </aside>
-  );
-
   if (turns.length === 0 && !busy) {
     return (
-      <div className="flex">
-        {historyPanel}
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col items-center justify-center gap-6 px-6">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col items-center justify-center gap-6 px-6">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft">
             <Sparkles className="size-6 text-primary" />
           </span>
@@ -178,15 +132,12 @@ export function AgentChat() {
               </button>
             ))}
           </div>
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex">
-      {historyPanel}
-      <div className="flex h-screen min-w-0 flex-1 flex-col">
+    <div className="flex h-screen min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center border-b border-line px-6">
           <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
             {displayTitle}
@@ -243,10 +194,16 @@ export function AgentChat() {
                         <ChevronDown className="size-3.5 text-faint" />
                       )}
                     </button>
-                    {thoughtOpen[turn.localId] && turn.thought ? (
+                    {thoughtOpen[turn.localId] && turn.thought && !turn.thinkingContent ? (
                       <p className="rounded-xl bg-panel px-3 py-2 text-[12px] text-muted">
                         {turn.thought}
                       </p>
+                    ) : null}
+                    {turn.thinkingContent ? (
+                      <ReasoningChainPanel
+                        content={turn.thinkingContent}
+                        streaming={turn.status === "streaming"}
+                      />
                     ) : null}
                     {turn.content ? (
                       <div className="rounded-2xl rounded-tl-md bg-card px-4 py-3 text-sm text-ink shadow-card">
@@ -309,7 +266,6 @@ export function AgentChat() {
             />
           </div>
         </div>
-      </div>
     </div>
   );
 }

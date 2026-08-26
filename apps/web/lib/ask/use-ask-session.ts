@@ -11,6 +11,10 @@ import {
   type StreamModeBPayload,
 } from "@/lib/api/search";
 import {
+  fetchWebSearchSources,
+  webSourcesToReferences,
+} from "@/lib/api/web-search";
+import {
   getLocalAskSession,
   listLocalAskSessions,
   titleFromQuestion,
@@ -24,8 +28,9 @@ import {
   listSessions,
   type SessionListItem,
 } from "@b/lib/api/sessions";
+import { toBAttachment } from "@b/lib/ask/draft";
 import { buildModelMessages } from "@b/lib/chat-prompt";
-import type { ChatMessage } from "@b/types";
+import type { ChatMessage, ChatSource } from "@b/types";
 import { messageForApiError } from "@/lib/ask/errors";
 import { ApiError } from "@/lib/api/http";
 import type {
@@ -36,6 +41,7 @@ import type {
   ChatReplyMode,
   CreateChatSessionRequest,
 } from "@/types/ai-search";
+import { useAskSidebarBridge } from "@/stores/ask-sidebar-bridge";
 
 function mapToBStyle(
   mode: ChatReplyMode,
@@ -52,6 +58,8 @@ export interface AskTurn {
   content: string;
   status: ChatMessageStatus;
   thought: string;
+  /** R1 / reasoning 模型完整思考链（SSE thinking_delta 累加） */
+  thinkingContent?: string;
   references: ChatReference[];
   followups: string[];
   readCount?: number;
@@ -83,13 +91,16 @@ function turnsToHistory(turns: AskTurn[]): ChatMessage[] {
 function buildModeBPayload(
   request: CreateChatSessionRequest,
   historyTurns: AskTurn[],
+  webSearchSources: ChatSource[] = [],
 ): StreamModeBPayload {
   const { messages } = buildModelMessages({
     style: mapToBStyle(request.mode),
     history: turnsToHistory(historyTurns),
-    attachments: request.attachments as never[],
+    attachments: toBAttachment(request.attachments),
+    webSearchSources,
+    webSearchEnabled: request.web_search,
   });
-  return { request, messages };
+  return { request, messages, webSearchSources };
 }
 
 export interface AskHistoryItem {
@@ -120,6 +131,7 @@ function sessionMessagesToTurns(
           content: m.content,
           status: "done" as const,
           thought: "思考完成",
+          thinkingContent: m.thinkingContent ?? undefined,
           references: [],
           followups: [],
         },
@@ -148,6 +160,9 @@ export function useAskSession() {
   const dbSessionIdRef = useRef<string | null>(null);
   const lastInputRef = useRef<AskSendInput | null>(null);
   const turnsRef = useRef<AskTurn[]>([]);
+  const setSnapshot = useAskSidebarBridge((s) => s.setSnapshot);
+  const pendingAction = useAskSidebarBridge((s) => s.pendingAction);
+  const clearPending = useAskSidebarBridge((s) => s.clearPending);
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -238,9 +253,29 @@ export function useAskSession() {
         } = { signal, lastEventId: lastEventId.current };
 
         if (AI_BACKEND_MODE === "B" && streamCtx) {
+          let webSearchSources: ChatSource[] = [];
+          if (streamCtx.request.web_search) {
+            patchAssistant(assistantLocalId, { thought: "正在联网检索…" });
+            webSearchSources = await fetchWebSearchSources(
+              streamCtx.request.question,
+              signal,
+            );
+            if (signal?.aborted) return;
+            if (webSearchSources.length > 0) {
+              patchAssistant(assistantLocalId, {
+                thought: `已阅读 ${webSearchSources.length} 篇 · 正在生成`,
+                references: webSourcesToReferences(webSearchSources),
+              });
+            } else {
+              patchAssistant(assistantLocalId, {
+                thought: "联网搜索无结果 · 正在生成",
+              });
+            }
+          }
           streamOptions.modeBPayload = buildModeBPayload(
             streamCtx.request,
             streamCtx.historyTurns,
+            webSearchSources,
           );
         }
 
@@ -248,6 +283,20 @@ export function useAskSession() {
           messageId,
           {
             onMeta: (meta) => {
+              const patch: Partial<AskTurn> = {};
+              const td = (meta as { thinking_delta?: string }).thinking_delta;
+              if (typeof td === "string" && td) {
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.localId === assistantLocalId
+                      ? {
+                          ...t,
+                          thinkingContent: (t.thinkingContent ?? "") + td,
+                        }
+                      : t,
+                  ),
+                );
+              }
               const bits = [
                 meta.phase === "generating" ? "正在生成" : "正在检索",
                 typeof meta.read_count === "number"
@@ -255,10 +304,9 @@ export function useAskSession() {
                   : "",
                 meta.context_truncated ? "上下文已截断" : "",
               ].filter(Boolean);
-              patchAssistant(assistantLocalId, {
-                thought: bits.join(" · ") || "思考中",
-                readCount: meta.read_count,
-              });
+              patch.thought = bits.join(" · ") || "思考中";
+              patch.readCount = meta.read_count;
+              patchAssistant(assistantLocalId, patch);
             },
             onDelta: (delta) => {
               setTurns((prev) =>
@@ -279,10 +327,14 @@ export function useAskSession() {
             },
             onDone: (done) => {
               const st = done.status || "done";
+              const tc =
+                (done as { thinkingContent?: string }).thinkingContent ??
+                undefined;
               patchAssistant(assistantLocalId, {
                 status: st,
                 durationMs: done.duration_ms,
                 thought: "思考完成",
+                ...(tc ? { thinkingContent: tc } : {}),
               });
               const input = lastInputRef.current;
               const assistant = turnsRef.current.find(
@@ -296,6 +348,7 @@ export function useAskSession() {
                         status: st,
                         durationMs: done.duration_ms,
                         thought: "思考完成",
+                        ...(tc ? { thinkingContent: tc } : {}),
                       }
                     : t,
                 );
@@ -306,6 +359,8 @@ export function useAskSession() {
                 appendSessionMessage(dbId, {
                   role: "assistant",
                   content: assistant.content,
+                  thinkingContent:
+                    tc ?? assistant.thinkingContent ?? undefined,
                 })
                   .then(() => refreshDbSessions())
                   .catch(() => {});
@@ -550,6 +605,36 @@ export function useAskSession() {
     [loadDbSession, loadLocalSession],
   );
 
+  const activeHistoryId = dbHistoryId ?? localHistoryId;
+
+  useEffect(() => {
+    const items: AskHistoryItem[] = [
+      ...dbSessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        updatedAt: new Date(s.updatedAt).getTime(),
+        source: "db" as const,
+      })),
+      ...localHistory.map((s) => ({
+        id: s.id,
+        title: s.title,
+        updatedAt: s.updatedAt,
+        source: "local" as const,
+      })),
+    ].sort((a, b) => b.updatedAt - a.updatedAt);
+    setSnapshot(items, activeHistoryId);
+  }, [dbSessions, localHistory, activeHistoryId, setSnapshot]);
+
+  useEffect(() => {
+    if (!pendingAction) return;
+    if (pendingAction.type === "new") {
+      reset();
+    } else {
+      loadHistoryItem(pendingAction.item);
+    }
+    clearPending();
+  }, [pendingAction, reset, loadHistoryItem, clearPending]);
+
   const historyItems: AskHistoryItem[] = [
     ...dbSessions.map((s) => ({
       id: s.id,
@@ -564,8 +649,6 @@ export function useAskSession() {
       source: "local" as const,
     })),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
-
-  const activeHistoryId = dbHistoryId ?? localHistoryId;
 
   return {
     sessionId,

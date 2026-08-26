@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Globe,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,8 @@ export function ComposerControlPicker({
   onReplyModeChange,
   depthMode,
   onDepthModeChange,
+  webSearch,
+  onWebSearchChange,
   options,
   quota,
   anchorRef,
@@ -87,6 +90,8 @@ export function ComposerControlPicker({
   onReplyModeChange: (v: ChatReplyMode) => void;
   depthMode: "fast" | "deep";
   onDepthModeChange: (v: "fast" | "deep") => void;
+  webSearch: boolean;
+  onWebSearchChange: (v: boolean) => void;
   options: SearchModelOption[];
   quota: SearchConfig["quota"];
   anchorRef: RefObject<HTMLDivElement | null>;
@@ -189,6 +194,28 @@ export function ComposerControlPicker({
                 value={styleLabel(replyMode)}
                 onPick={pickStyle}
               />
+
+              <button
+                type="button"
+                onClick={() => onWebSearchChange(!webSearch)}
+                className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm transition-colors hover:bg-chip"
+              >
+                <Globe className="size-4 shrink-0 text-muted" strokeWidth={1.8} />
+                <span className="flex-1 text-left text-ink-2">联网搜索</span>
+                <span
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                    webSearch ? "bg-agent" : "bg-line",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+                      webSearch ? "left-4" : "left-0.5",
+                    )}
+                  />
+                </span>
+              </button>
 
               <button
                 type="button"
