@@ -14,7 +14,7 @@ pnpm install        # pnpm 11:构建脚本白名单见 pnpm-workspace.yaml(sharp
 pnpm dev            # 开发(--turbopack)
 pnpm typecheck      # TypeScript
 pnpm lint           # ESLint
-pnpm test           # 认证与配置单元测试
+pnpm test           # 认证、配置与 Chat 协议测试
 pnpm build          # 生产构建
 pnpm start          # 启动生产服务
 ```
@@ -24,7 +24,8 @@ AI 生成（可选，问 AI 需要）:
 ```bash
 cd apps/backend
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+cp .env.example .env  # 在 .env 配置模型和可选搜索 Key
+uvicorn app.main:app --env-file .env --reload --port 8000
 ```
 
 Web 环境变量 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`（仅服务端）。项目介绍见 [docs/dev/项目介绍.md](docs/dev/项目介绍.md)，进度见 [docs/dev/开发日志.md](docs/dev/开发日志.md)。
@@ -68,11 +69,14 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 | `/knowledge` | 知识库(文献库 + 在读表格) | 深知-知识库页面.svg | [KnowledgePage.tsx](apps/web/features/knowledge/KnowledgePage.tsx) |
 | `/papers/[id]/graph` | 公域知识图谱(引用关系三栏页) | 知识图谱样页.png | [PaperGraphPage.tsx](apps/web/features/papers/[id]/graph/PaperGraphPage.tsx) |
 | `/knowledge/graph` | 私域知识图谱(发表×收藏分层双色) | 知识图谱样页.png | [KnowledgeGraphPage.tsx](apps/web/features/knowledge/graph/KnowledgeGraphPage.tsx) |
-| `/agents` | AI 研究助手(深度研究对话) | 深知-AI研究助手.svg | [AgentsPage.tsx](apps/web/features/agents/AgentsPage.tsx) |
+| `/agents` | AI 研究助手(深度研究对话) | 深知-AI研究助手.svg | [ChatPage.tsx](apps/web/features/chat/ChatPage.tsx) |
 
 导航联动与 `prototype_v1.html` 热区一致:搜索提交 → `/agents`;论文卡片 → `/papers/[id]`;作者/学者 → `/scholars/[id]`。
 
 ---
+
+Chat 已统一为 `features/chat → clients/backend → /api/v1 BFF → FastAPI`；`/agents` 与 `/agents/ask` 共用实现。
+当前 Session 为单进程临时内存数据，不绑定新的账号体系。架构、SSE、配置与边界见 [docs/chat/README.md](docs/chat/README.md)。
 
 ## 技术栈(当前实际)
 
@@ -96,7 +100,7 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 shenzhi/
 ├── apps/
 │   ├── web/                  # Next.js Web；app 为薄路由，features 为页面实现
-│   └── backend/              # FastAPI：AI 会话 / 检索 / 生成（骨架）
+│   └── backend/              # FastAPI：Chat / 检索 / 模型流 / 搜索 / 附件解析
 ├── infra/                    # Dockerfile、Compose 与部署文档
 ├── tests/visual/             # 页面、主题与图谱截图验证脚本
 ├── tools/brand/              # 品牌资源处理工具
@@ -130,7 +134,7 @@ shenzhi/
 ### 状态管理分层
 
 ```
-服务端状态   TanStack Query   → 论文列表、检索结果、智能体对话(当前为 mock)
+服务端状态   TanStack Query   → 论文列表等；Chat 使用 Feature hook + Backend Client
 客户端全局   Zustand persist  → 点赞/收藏/关注等用户偏好
 组件局部     useState         → 输入值、Tab 切换、面板显隐
 URL 状态     useSearchParams  → 搜索关键词、筛选条件、?theme 调试参数
@@ -143,7 +147,7 @@ URL 状态     useSearchParams  → 搜索关键词、筛选条件、?theme 调�
 
 ### 数据约定
 
-- `apps/web/lib/data/*.ts` 的内容逐字提取自 SVG 原型,属展示用 mock;接真实后端时替换为 `apps/web/lib/api/` + Server Actions,组件接口保持不变。
+- `apps/web/lib/data/*.ts` 的内容逐字提取自 SVG 原型,属展示用 mock;接真实后端时替换为 `apps/web/clients/backend/` + FastAPI,组件接口保持不变。
 
 ---
 
