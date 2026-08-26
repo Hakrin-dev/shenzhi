@@ -7,50 +7,28 @@ import { createAuthMiddleware } from "better-auth/api";
 import { emailOTP } from "better-auth/plugins";
 
 import {
-  persistTurnstileVerificationCookie,
+  persistTurnstileClientCookie,
+  TURNSTILE_ANON_ID_COOKIE,
+  TURNSTILE_CLIENT_ID_CONTEXT_KEY,
   TURNSTILE_SEND_OTP_PATH,
-  TURNSTILE_VERIFIED_CONTEXT_KEY,
-  TURNSTILE_VERIFIED_COOKIE,
 } from "../../lib/auth/captcha/turnstile.js";
 
-const BASE_URL = "http://localhost:3000";
 const TEST_SECRET = "test-secret-that-is-at-least-thirty-two-characters";
 
-function sendOtpRequest(cookie?: string) {
-  return new Request(`${BASE_URL}/api/auth${TURNSTILE_SEND_OTP_PATH}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: BASE_URL,
-      ...(cookie
-        ? { cookie }
-        : { "x-captcha-response": "valid-test-token" }),
-    },
-    body: JSON.stringify({ email: "person@example.com", type: "sign-in" }),
-  });
-}
-
-test("a successful CAPTCHA is remembered for an OTP resend", async () => {
-  const database: Record<string, Array<Record<string, unknown>>> = {
-    user: [],
-    session: [],
-    account: [],
-    verification: [],
-  };
-  const auth = betterAuth({
+function createAuthWithBaseURL(baseURL: string) {
+  return betterAuth({
     secret: TEST_SECRET,
-    baseURL: BASE_URL,
-    database: memoryAdapter(database),
+    baseURL,
+    database: memoryAdapter({
+      user: [],
+      session: [],
+      account: [],
+      verification: [],
+    }),
     logger: { disabled: true },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== TURNSTILE_SEND_OTP_PATH) return;
-
-        const verified = await ctx.getSignedCookie(
-          TURNSTILE_VERIFIED_COOKIE,
-          ctx.context.secret,
-        );
-        if (verified === "1") return;
         if (ctx.getHeader("x-captcha-response") !== "valid-test-token") {
           return ctx.error("BAD_REQUEST", {
             code: "MISSING_RESPONSE",
@@ -59,10 +37,89 @@ test("a successful CAPTCHA is remembered for an OTP resend", async () => {
         }
 
         return {
-          context: { [TURNSTILE_VERIFIED_CONTEXT_KEY]: true },
+          context: { [TURNSTILE_CLIENT_ID_CONTEXT_KEY]: "test-client-id" },
         };
       }),
-      after: persistTurnstileVerificationCookie,
+      after: persistTurnstileClientCookie,
+    },
+    plugins: [
+      emailOTP({
+        disableSignUp: true,
+        async sendVerificationOTP() {},
+      }),
+    ],
+  });
+}
+
+function sendOtpRequest(baseURL: string) {
+  return new Request(`${baseURL}/api/auth${TURNSTILE_SEND_OTP_PATH}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: baseURL,
+      "x-captcha-response": "valid-test-token",
+    },
+    body: JSON.stringify({ email: "person@example.com", type: "sign-in" }),
+  });
+}
+
+test("a successful CAPTCHA persists the anonymous client id cookie", async () => {
+  const auth = createAuthWithBaseURL("http://localhost:3000");
+  const response = await auth.handler(sendOtpRequest("http://localhost:3000"));
+
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.equal(response.status, 200);
+  assert.match(setCookie, new RegExp(TURNSTILE_ANON_ID_COOKIE));
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Lax/i);
+  // http 基础地址不下发 Secure,避免在 http://localhost 下被浏览器丢弃。
+  assert.doesNotMatch(setCookie, /Secure/i);
+});
+
+test("the anonymous client id cookie is Secure for https base URLs", async () => {
+  const auth = createAuthWithBaseURL("https://example.com");
+  const response = await auth.handler(sendOtpRequest("https://example.com"));
+
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.equal(response.status, 200);
+  assert.match(setCookie, new RegExp(TURNSTILE_ANON_ID_COOKIE));
+  assert.match(setCookie, /Secure/i);
+});
+
+test("the before hook cookie survives when it returns an error afterwards", async () => {
+  const auth = betterAuth({
+    secret: TEST_SECRET,
+    baseURL: "http://localhost:3000",
+    database: memoryAdapter({
+      user: [],
+      session: [],
+      account: [],
+      verification: [],
+    }),
+    logger: { disabled: true },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== TURNSTILE_SEND_OTP_PATH) return;
+        if (ctx.getHeader("x-captcha-response") !== "valid-test-token") {
+          return ctx.error("BAD_REQUEST", {
+            code: "MISSING_RESPONSE",
+            message: "Missing CAPTCHA response",
+          });
+        }
+
+        ctx.setCookie(TURNSTILE_ANON_ID_COOKIE, "test-client-id", {
+          httpOnly: true,
+          sameSite: "Lax",
+          secure: false,
+          maxAge: 60 * 60 * 24 * 365,
+          path: "/",
+        });
+
+        return ctx.error("BAD_REQUEST", {
+          code: "EMAIL_PROVIDER_NOT_CONFIGURED",
+          message: "Email delivery is not configured.",
+        });
+      }),
     },
     plugins: [
       emailOTP({
@@ -72,15 +129,9 @@ test("a successful CAPTCHA is remembered for an OTP resend", async () => {
     ],
   });
 
-  const firstResponse = await auth.handler(sendOtpRequest());
-  const setCookie = firstResponse.headers.get("set-cookie") ?? "";
-  const verificationCookie = setCookie.split(";")[0];
-
-  assert.equal(firstResponse.status, 200);
-  assert.match(setCookie, new RegExp(TURNSTILE_VERIFIED_COOKIE));
-  assert.match(setCookie, /HttpOnly/i);
-  assert.match(setCookie, /SameSite=Lax/i);
-
-  const resendResponse = await auth.handler(sendOtpRequest(verificationCookie));
-  assert.equal(resendResponse.status, 200);
+  const response = await auth.handler(sendOtpRequest("http://localhost:3000"));
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.equal(response.status, 400);
+  assert.match(setCookie, new RegExp(TURNSTILE_ANON_ID_COOKIE));
+  assert.doesNotMatch(setCookie, /Secure/i);
 });

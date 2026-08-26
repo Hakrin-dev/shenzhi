@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { createAuthMiddleware } from "better-auth/api";
 
 import { REGISTRATION_EMAIL_SEND_OTP_PATH } from "../registration/constants";
@@ -5,12 +7,20 @@ import { REGISTRATION_EMAIL_SEND_OTP_PATH } from "../registration/constants";
 /** 需要人机验证的 Better Auth 端点(发送验证码)。 */
 export const TURNSTILE_SEND_OTP_PATH = "/email-otp/send-verification-otp";
 
-/** 验证成功后下发的签名 Cookie: 后续发送验证码不再重复人机验证。 */
-export const TURNSTILE_VERIFIED_COOKIE = "shenzhi_turnstile_verified";
+/** 需要人机验证的 Better Auth 端点(发送密码重置邮件)。 */
+export const TURNSTILE_RESET_PASSWORD_PATH = "/request-password-reset";
 
-/** 在 before/after hooks 之间传递“本次请求已通过验证”的服务端状态。 */
-export const TURNSTILE_VERIFIED_CONTEXT_KEY =
-  "shenzhiTurnstileVerifiedForRequest";
+/**
+ * 匿名客户端标识 Cookie。只承载一个随机 id,用于在后端查找“已通过验证”状态;
+ * “已验证”状态本身只保存在后端数据库,不写入前端 Cookie/localStorage。
+ */
+export const TURNSTILE_ANON_ID_COOKIE = "shenzhi_anon_id";
+
+/** 在 before/after hooks 之间传递需要写回 Cookie 的匿名客户端 id。 */
+export const TURNSTILE_CLIENT_ID_CONTEXT_KEY = "shenzhiTurnstileClientId";
+
+/** 一次人机验证通过后,其他功能可复用的共享有效期(秒)。 */
+export const TURNSTILE_VERIFIED_TTL_SECONDS = 15 * 60;
 
 const TURNSTILE_SITE_VERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -92,36 +102,45 @@ export function shouldEnforceTurnstile(
   return (
     enabled &&
     (path === TURNSTILE_SEND_OTP_PATH ||
+      path === TURNSTILE_RESET_PASSWORD_PATH ||
       path === REGISTRATION_EMAIL_SEND_OTP_PATH)
   );
 }
 
-/**
- * 必须在 after hook 写 Cookie。Better Auth 1.6.x 会用端点响应头替换 before
- * hook 的响应头；如果在 before hook 写入，浏览器收不到这枚 Cookie，重发验证码时
- * 服务端就会误判为没有通过人机验证。
- */
-export const persistTurnstileVerificationCookie = createAuthMiddleware(
-  async (ctx) => {
-    if (
-      (ctx as unknown as Record<string, unknown>)[
-        TURNSTILE_VERIFIED_CONTEXT_KEY
-      ] !== true
-    ) {
-      return;
-    }
+/** 生成一个随机匿名客户端 id。 */
+export function createTurnstileClientId(): string {
+  return randomBytes(16).toString("hex");
+}
 
-    await ctx.setSignedCookie(
-      TURNSTILE_VERIFIED_COOKIE,
-      "1",
-      ctx.context.secret,
-      {
-        httpOnly: true,
-        sameSite: "Lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 24,
-        path: "/",
-      },
-    );
+/**
+ * 依据部署的基础地址判断是否应下发 Secure Cookie。
+ * 与 Better Auth 自身 Cookie 的 secure 判定保持一致(以 BETTER_AUTH_URL 的
+ * 协议为准),避免 `next start`(production)下在 http://localhost 被浏览器拒绝。
+ */
+export function isSecureCookieBaseURL(baseURL: unknown): boolean {
+  return typeof baseURL === "string" && baseURL.startsWith("https://");
+}
+
+/**
+ * 在 after hook 写回匿名客户端 id Cookie。
+ *
+ * 必须在 after hook 写 Cookie:Better Auth 1.6.x 会用端点响应头替换 before
+ * hook 的响应头;如果在 before hook 写入,浏览器收不到这枚 Cookie。
+ * 这里只写匿名 id,不写任何“已验证”状态。
+ */
+export const persistTurnstileClientCookie = createAuthMiddleware(
+  async (ctx) => {
+    const clientId = (ctx as unknown as Record<string, unknown>)[
+      TURNSTILE_CLIENT_ID_CONTEXT_KEY
+    ];
+    if (typeof clientId !== "string" || !clientId) return;
+
+    ctx.setCookie(TURNSTILE_ANON_ID_COOKIE, clientId, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: isSecureCookieBaseURL(ctx.context.baseURL),
+      maxAge: 60 * 60 * 24 * 365,
+      path: "/",
+    });
   },
 );

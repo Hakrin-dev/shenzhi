@@ -68,12 +68,15 @@
 
 ### GitHub OAuth 与 Turnstile
 
-- GitHub OAuth 通过 Better Auth `socialProviders.github` 与
-  `authClient.signIn.social()` 接入；凭据不完整时应用仍可启动。
+- GitHub OAuth 通过 Better Auth `socialProviders.github` 接入；凭据不完整时应用仍可启动。
+- GitHub 登录采用跳转式人机验证：点击 GitHub 图标先跳转到 `/login/github` 独立验证页，
+  完成 Turnstile 后由 `POST /api/auth/github/verify` 校验 token 并生成授权 URL，再跳转
+  GitHub 授权页。
 - Email OTP 登录与注册验证码发送可启用 Cloudflare Turnstile；浏览器只接收公开 site
   key，secret 仅在服务端校验。
-- Turnstile token 由服务端向 Cloudflare 验证，并可约束 action/hostname；验证通过后使用
-  Better Auth 签名 Cookie 避免同一浏览器重复挑战。
+- Turnstile token 由服务端向 Cloudflare 验证，并可约束 action/hostname；验证状态保存在
+  后端 `turnstile_verification` 表(15 分钟有效)，邮箱验证码与 GitHub OAuth 共享，
+  任一入口通过后 15 分钟内不再重复挑战。
 
 ## 尚未完成
 

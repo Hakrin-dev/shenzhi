@@ -75,8 +75,15 @@ The server side does not import browser Client modules.
 - Settings uses the Better Auth session for profile display, `updateUser`,
   `changePassword`, `listSessions`, and `revokeOtherSessions`.
 - GitHub 登录使用 Better Auth `signIn.social()`；浏览器不读取 OAuth secret。
-- Email OTP 登录与注册发送验证码时，可先渲染 Cloudflare Turnstile 并把一次性 token
-  交给服务端验证。
+- OAuth 登录默认走跳转式人机验证：点击 Provider 图标后先进入 `/login/[provider]`
+  独立验证页，完成 Cloudflare Turnstile 后由 `POST /api/auth/oauth/verify` 校验 token
+  并生成授权 URL，浏览器再跳转到对应 Provider 授权页。
+- Email OTP 登录与注册发送验证码时，先不带 token 尝试发送；后端判定需要人机验证时
+  再渲染 Cloudflare Turnstile 并把一次性 token 交给服务端验证。
+- 找回密码发送重置邮件（`/request-password-reset`）同样在发送前校验人机验证，并与
+  邮箱验证码、OAuth 登录一致：先不带 token 尝试，需要验证时再弹出 Turnstile。
+- 邮箱验证码、发送重置邮件、OAuth 登录共享后端“已通过验证”状态：任一功能通过后
+  15 分钟内，触发另一功能不再弹验证。
 
 ## Better Auth backend boundary
 
@@ -100,7 +107,12 @@ The server side does not import browser Client modules.
   does not contain token, OTP, reset, verification, or Session logic.
 - GitHub OAuth provider 仅在 client ID/secret 同时存在时启用；未配置不会阻止应用启动。
 - `apps/web/lib/auth/captcha/turnstile.ts` 只在显式启用且存在 secret 时保护 Email OTP
-  发送端点，并在 Cloudflare 校验失败时 fail closed。
+  发送端点，并在 Cloudflare 校验失败时 fail closed；同时负责匿名客户端 id Cookie 的
+  下发(只承载随机 id,不承载验证状态)。
+- `apps/web/lib/auth/captcha/verification-store.ts` 把“已通过验证”状态写入 PostgreSQL
+  `turnstile_verification` 表，15 分钟有效；数据库不可用时按未通过处理(fail closed)。
+- GitHub 登录的跳转式验证入口是 `apps/web/app/api/auth/github/verify/route.ts`，它复用
+  `verifyCloudflareTurnstileToken` 并调用 `auth.api.signInSocial()` 生成授权 URL。
 
 Authentication model:
 
@@ -189,4 +201,6 @@ permission service.
 The current core schema remains the official Better Auth migration at
 `apps/web/db/migrations/001_better_auth.sql`. Email OTP reuses Better Auth's core
 `verification` storage and does not add a second OTP table. The current stage
-does not modify the migration or introduce a second authentication schema.
+adds one small non-authentication table for the shared Turnstile verification
+state: `apps/web/db/migrations/002_turnstile_verification.sql`(`turnstile_verification`,
+keyed by anonymous client id, 15 minute expiry).

@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, CheckCircle2, Circle, Github, X } from "lucide-react";
+import { Check, CheckCircle2, Circle, X } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
 import {
   sendRegistrationEmailOtp,
   verifyRegistrationEmailOtp,
 } from "@/components/auth/registration-client";
+import { listSocialProviders } from "@/components/auth/social-providers";
 import { CloudflareTurnstile } from "@/components/auth/turnstile";
 import {
   getAuthErrorMessage,
@@ -44,6 +45,8 @@ type Submission =
   | "register-verify"
   | "register"
   | null;
+
+type SendOtpResult = "sent" | "captcha-required" | "error";
 
 function Field({
   label,
@@ -141,11 +144,15 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export function LoginModal({ open, notice, onClose }: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
-  const turnstileVerifiedRef = React.useRef(false);
   const pendingEmailRef = React.useRef<string | null>(null);
-  const registerTurnstileVerifiedRef = React.useRef(false);
   const registerPendingEmailRef = React.useRef<string | null>(null);
   const registerPendingIntentRef = React.useRef<RegisterOtpIntent>("initial");
   const [showTurnstile, setShowTurnstile] = React.useState(false);
@@ -288,7 +295,10 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
   };
 
   const sendOtp = React.useCallback(
-    async (email: string, turnstileToken?: string) => {
+    async (
+      email: string,
+      turnstileToken?: string,
+    ): Promise<SendOtpResult> => {
       setSubmission("otp-send");
       try {
         const { error } = await authClient.emailOtp.sendVerificationOtp(
@@ -299,21 +309,28 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error) {
-          turnstileVerifiedRef.current = false;
+          if (
+            !turnstileToken &&
+            (errorCodeOf(error) === "MISSING_RESPONSE" ||
+              errorCodeOf(error) === "VERIFICATION_FAILED")
+          ) {
+            return "captcha-required";
+          }
+
           setCodeError(
             getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
           );
-          return;
+          return "error";
         }
 
-        if (turnstileToken) turnstileVerifiedRef.current = true;
         setCodeCooldown(60);
         setCodeNotice("验证码已发送，请查收邮件");
+        return "sent";
       } catch (error) {
-        turnstileVerifiedRef.current = false;
         setCodeError(
           getAuthErrorMessage(error, "验证码发送失败，请稍后重试", "otp"),
         );
+        return "error";
       } finally {
         setSubmission(null);
       }
@@ -350,15 +367,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
     }
     if (codeCooldown > 0) return;
 
-    // 首次发送需要先完成人机验证;通过后本地与服务端都会记住。
-    if (TURNSTILE_SITE_KEY && !turnstileVerifiedRef.current) {
+    // 先不带 token 尝试发送;后端若判定需要人机验证则弹出 Turnstile。
+    const result = await sendOtp(email);
+    if (result === "captcha-required") {
       pendingEmailRef.current = email;
       setShowTurnstile(true);
       setCodeNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendOtp(email);
   };
 
   const sendRegisterOtp = React.useCallback(
@@ -366,7 +381,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       email: string,
       intent: RegisterOtpIntent,
       turnstileToken?: string,
-    ) => {
+    ): Promise<SendOtpResult> => {
       setSubmission(intent === "initial" ? "register-send" : "register-resend");
       if (intent === "initial") {
         setRegisterEmailError(null);
@@ -383,7 +398,14 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
 
         if (error || !data?.challengeId) {
-          registerTurnstileVerifiedRef.current = false;
+          if (
+            !turnstileToken &&
+            (errorCodeOf(error) === "MISSING_RESPONSE" ||
+              errorCodeOf(error) === "VERIFICATION_FAILED")
+          ) {
+            return "captcha-required";
+          }
+
           const message = getAuthErrorMessage(
             error,
             "验证码发送失败，请稍后重试",
@@ -391,10 +413,9 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
           );
           if (intent === "initial") setRegisterEmailError(message);
           else setRegisterCodeError(message);
-          return;
+          return "error";
         }
 
-        if (turnstileToken) registerTurnstileVerifiedRef.current = true;
         setRegisterEmail(email);
         setRegisterChallengeId(data.challengeId);
         setRegisterCode("");
@@ -402,8 +423,8 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         setRegisterStage("verify-email");
         setRegisterEmailNotice(null);
         setRegisterCodeNotice("验证码已发送，请查收邮件");
+        return "sent";
       } catch (error) {
-        registerTurnstileVerifiedRef.current = false;
         const message = getAuthErrorMessage(
           error,
           "验证码发送失败，请稍后重试",
@@ -411,6 +432,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         );
         if (intent === "initial") setRegisterEmailError(message);
         else setRegisterCodeError(message);
+        return "error";
       } finally {
         setSubmission(null);
       }
@@ -455,15 +477,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       return;
     }
 
-    if (TURNSTILE_SITE_KEY && !registerTurnstileVerifiedRef.current) {
+    const result = await sendRegisterOtp(email, "initial");
+    if (result === "captcha-required") {
       registerPendingEmailRef.current = email;
       registerPendingIntentRef.current = "initial";
       setRegisterShowTurnstile(true);
       setRegisterEmailNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendRegisterOtp(email, "initial");
   };
 
   const handleResendRegisterOtp = async () => {
@@ -477,15 +497,13 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
       return;
     }
 
-    if (TURNSTILE_SITE_KEY && !registerTurnstileVerifiedRef.current) {
+    const result = await sendRegisterOtp(email, "resend");
+    if (result === "captcha-required") {
       registerPendingEmailRef.current = email;
       registerPendingIntentRef.current = "resend";
       setRegisterShowTurnstile(true);
       setRegisterCodeNotice("请先完成上方人机验证");
-      return;
     }
-
-    await sendRegisterOtp(email, "resend");
   };
 
   const handleOtpLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -690,26 +708,33 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
     }
   };
 
-  const handleGithubLogin = async () => {
+  const handleSocialLogin = async (providerId: string) => {
     if (submission || socialSubmitting) return;
+
+    // 跳转式人机验证:先进入独立验证页,完成 Turnstile 后由后端发起 OAuth。
+    if (TURNSTILE_SITE_KEY) {
+      window.location.assign(`/login/${providerId}`);
+      return;
+    }
+
     setSocialSubmitting(true);
     setSocialError(null);
 
     try {
       const { error } = await authClient.signIn.social({
-        provider: "github",
+        provider: providerId,
         callbackURL: "/",
       });
 
       if (error) {
         setSocialError(
-          getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+          getAuthErrorMessage(error, "登录失败，请稍后重试", "login"),
         );
         setSocialSubmitting(false);
       }
     } catch (error) {
       setSocialError(
-        getAuthErrorMessage(error, "GitHub 登录失败，请稍后重试", "login"),
+        getAuthErrorMessage(error, "登录失败，请稍后重试", "login"),
       );
       setSocialSubmitting(false);
     }
@@ -1207,16 +1232,19 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
               <div className="h-px flex-1 bg-line" />
             </div>
 
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                aria-label="使用 GitHub 登录"
-                disabled={Boolean(submission) || socialSubmitting}
-                onClick={handleGithubLogin}
-                className="flex size-11 items-center justify-center rounded-full border border-line text-ink-2 transition hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-50"
-              >
-                <Github className="size-5" />
-              </button>
+            <div className="mt-4 flex justify-center gap-3">
+              {listSocialProviders().map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  aria-label={`使用 ${provider.label} 登录`}
+                  disabled={Boolean(submission) || socialSubmitting}
+                  onClick={() => handleSocialLogin(provider.id)}
+                  className="flex size-11 items-center justify-center rounded-full border border-line text-ink-2 transition hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <provider.icon className="size-5" />
+                </button>
+              ))}
             </div>
 
             {socialError && (
