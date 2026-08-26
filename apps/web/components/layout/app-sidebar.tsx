@@ -22,11 +22,10 @@ import {
 import { cn } from "@/lib/utils";
 import { SITE } from "@/lib/constants";
 import { projects } from "@/lib/data/projects";
-import { authClient } from "@/components/auth/auth-client";
+import { useAuth } from "@/components/auth/auth-provider";
 import { useSidebarStore } from "@/stores/sidebar";
 import { Logo } from "./logo";
 import { SettingsMenu } from "./settings-menu";
-import { LoginModal } from "@/components/auth/login-modal";
 
 interface NavItem {
   href: string;
@@ -308,9 +307,11 @@ function ExpandableNav({
 function LogoutPopup({
   onClose,
   onLoggedOut,
+  signOut,
 }: {
   onClose: () => void;
   onLoggedOut: () => void;
+  signOut: ReturnType<typeof useAuth>["signOut"];
 }) {
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -337,7 +338,7 @@ function LogoutPopup({
     setError(null);
     setLoggingOut(true);
     try {
-      const { error: signOutError } = await authClient.signOut();
+      const { error: signOutError } = await signOut();
       if (signOutError) {
         setError("退出失败，请稍后重试");
         return;
@@ -378,25 +379,19 @@ function LogoutPopup({
 export function AppSidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
-  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const {
+    session,
+    isPending: sessionPending,
+    openLogin,
+    signOut,
+  } = useAuth();
   const userName = sessionPending
     ? null
     : session?.user.name?.trim() || session?.user.email || null;
-  const [loginOpen, setLoginOpen] = React.useState(false);
-  const [loginNotice, setLoginNotice] = React.useState<string | null>(null);
   const [logoutOpen, setLogoutOpen] = React.useState(false);
-  const openLogin = () => {
-    setLoginNotice(null);
-    setLoginOpen(true);
-  };
   const handleLoggedOut = () => {
     setLogoutOpen(false);
-    setLoginNotice("已退出登录，你可以重新登录或注册");
-    setLoginOpen(true);
-  };
-  const closeLogin = () => {
-    setLoginOpen(false);
-    setLoginNotice(null);
+    openLogin({ notice: "已退出登录，你可以重新登录或注册" });
   };
 
   return (
@@ -511,6 +506,7 @@ export function AppSidebar() {
             <LogoutPopup
               onClose={() => setLogoutOpen(false)}
               onLoggedOut={handleLoggedOut}
+              signOut={signOut}
             />
           )}
         </div>
@@ -539,6 +535,7 @@ export function AppSidebar() {
             <LogoutPopup
               onClose={() => setLogoutOpen(false)}
               onLoggedOut={handleLoggedOut}
+              signOut={signOut}
             />
           )}
         </div>
@@ -546,7 +543,7 @@ export function AppSidebar() {
         <button
           type="button"
           className="mt-2 flex cursor-pointer items-center gap-2.5 rounded-xl bg-card p-2.5 text-left shadow-card transition-colors hover:bg-chip"
-          onClick={openLogin}
+          onClick={() => openLogin()}
         >
           <span className="flex size-9 items-center justify-center rounded-full bg-primary-soft">
             <User className="size-4.5 text-primary" />
@@ -568,8 +565,6 @@ export function AppSidebar() {
           联系我们
         </p>
       )}
-
-      <LoginModal open={loginOpen} notice={loginNotice} onClose={closeLogin} />
     </aside>
   );
 }
