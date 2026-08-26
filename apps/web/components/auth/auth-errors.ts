@@ -9,6 +9,7 @@ type AuthErrorKind =
   | "register"
   | "reset"
   | "change-password"
+  | "delete-user"
   | "profile"
   | "session";
 
@@ -29,6 +30,10 @@ function getAuthErrorDetails(error: unknown) {
           ? details.statusCode
           : undefined,
   };
+}
+
+export function isAuthErrorCode(error: unknown, expectedCode: string) {
+  return getAuthErrorDetails(error).code === expectedCode;
 }
 
 export function getAuthErrorMessage(
@@ -100,6 +105,10 @@ export function getAuthErrorMessage(
 
   if (kind === "change-password" && code === "INVALID_PASSWORD") {
     return "当前密码错误";
+  }
+
+  if (kind === "delete-user" && code === "SESSION_EXPIRED") {
+    return "登录状态需要重新验证，请重新登录后再试";
   }
 
   if (code === "EMAIL_NOT_VERIFIED") {

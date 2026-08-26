@@ -26,10 +26,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-interface LoginModalProps {
+export interface LoginModalProps {
   open: boolean;
   notice?: string | null;
   onClose: () => void;
+  onSuccess?: () => void | Promise<void>;
 }
 
 type AuthTab = "login" | "register";
@@ -150,7 +151,12 @@ function errorCodeOf(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-export function LoginModal({ open, notice, onClose }: LoginModalProps) {
+export function LoginModal({
+  open,
+  notice,
+  onClose,
+  onSuccess,
+}: LoginModalProps) {
   const { refetch: refetchSession } = authClient.useSession();
   const pendingEmailRef = React.useRef<string | null>(null);
   const registerPendingEmailRef = React.useRef<string | null>(null);
@@ -245,6 +251,18 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
     resetForm();
     onClose();
   }, [onClose, resetForm]);
+
+  const handleAuthSuccess = React.useCallback(async () => {
+    await refetchSession();
+    if (onSuccess) {
+      try {
+        await onSuccess();
+      } catch (error) {
+        console.error("登录成功后的操作执行失败", error);
+      }
+    }
+    handleClose();
+  }, [handleClose, onSuccess, refetchSession]);
 
   React.useEffect(() => {
     if (codeCooldown <= 0) return;
@@ -533,8 +551,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         return;
       }
 
-      await refetchSession();
-      handleClose();
+      await handleAuthSuccess();
     } catch (error) {
       setCodeError(
         getAuthErrorMessage(error, "验证码登录失败，请稍后重试", "otp"),
@@ -574,8 +591,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         return;
       }
 
-      await refetchSession();
-      handleClose();
+      await handleAuthSuccess();
     } catch (error) {
       setLoginError(getAuthErrorMessage(error, "登录失败，请稍后重试", "login"));
     } finally {
@@ -697,8 +713,7 @@ export function LoginModal({ open, notice, onClose }: LoginModalProps) {
         }
       }
 
-      await refetchSession();
-      handleClose();
+      await handleAuthSuccess();
     } catch (error) {
       setRegisterError(
         getAuthErrorMessage(error, "注册失败，请稍后重试", "register"),

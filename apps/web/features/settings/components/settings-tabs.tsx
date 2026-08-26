@@ -23,14 +23,18 @@ import {
   Sparkles,
   Sun,
   Trophy,
+  Trash2,
   User,
   UserRound,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { authClient } from "@/components/auth/auth-client";
+import { useAuth } from "@/components/auth/auth-provider";
 import {
   getAuthErrorMessage,
+  isAuthErrorCode,
   PASSWORD_POLICY_MESSAGE,
 } from "@/components/auth/auth-errors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -302,7 +306,13 @@ function SessionSection({ currentToken }: { currentToken?: string }) {
 
 /** 账户:真实 Better Auth 用户信息、密码与会话 */
 function AccountSection() {
-  const { data: currentSession, isPending, refetch } = authClient.useSession();
+  const {
+    session: currentSession,
+    isPending,
+    refetchSession: refetch,
+    deleteAccount,
+    openLogin,
+  } = useAuth();
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileNotice, setProfileNotice] = useState<string | null>(null);
@@ -328,6 +338,23 @@ function AccountSection() {
 
     return () => window.clearInterval(timer);
   }, [otpCooldown]);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!deleteConfirmOpen || deleteSubmitting) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDeleteConfirmOpen(false);
+      setDeleteConfirmation("");
+      setDeleteError(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteConfirmOpen, deleteSubmitting]);
 
   const displayName = nameDraft ?? currentSession?.user.name ?? "";
 
@@ -511,6 +538,60 @@ function AccountSection() {
       setPasswordError("设置密码失败，请稍后重试");
     } finally {
       setPasswordSubmitting(false);
+    }
+  };
+
+  const closeDeleteConfirm = () => {
+    if (deleteSubmitting) return;
+    setDeleteConfirmOpen(false);
+    setDeleteConfirmation("");
+    setDeleteError(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteSubmitting) return;
+
+    setDeleteSubmitting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteAccount({});
+      if (result.error) {
+        if (
+          isAuthErrorCode(result.error, "SESSION_EXPIRED") ||
+          isAuthErrorCode(result.error, "UNAUTHORIZED")
+        ) {
+          setDeleteConfirmOpen(false);
+          openLogin({
+            notice: "为保障账户安全，请重新登录后继续注销账号",
+            onSuccess: handleDeleteAccount,
+          });
+          return;
+        }
+
+        setDeleteConfirmOpen(true);
+        setDeleteError(
+          getAuthErrorMessage(
+            result.error,
+            "账号注销失败，请稍后重试",
+            "delete-user",
+          ),
+        );
+        return;
+      }
+
+      setDeleteConfirmOpen(false);
+      setDeleteConfirmation("");
+    } catch (deleteAccountError) {
+      setDeleteConfirmOpen(true);
+      setDeleteError(
+        getAuthErrorMessage(
+          deleteAccountError,
+          "账号注销失败，请稍后重试",
+          "delete-user",
+        ),
+      );
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -713,6 +794,110 @@ function AccountSection() {
       )}
 
       <SessionSection currentToken={currentSession.session.token} />
+
+      <div className="border-t border-line pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-[13px] font-medium text-danger">注销账号</p>
+            <p className="mt-1 text-xs text-muted">
+              永久删除当前账号，操作完成后将退出登录且无法撤销。
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-danger/30 text-danger hover:bg-danger/10"
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteConfirmOpen(true);
+            }}
+          >
+            <Trash2 aria-hidden="true" />
+            注销账号
+          </Button>
+        </div>
+      </div>
+
+      {deleteConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDeleteConfirm();
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            aria-describedby="delete-account-description"
+            className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-card"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2
+                  id="delete-account-title"
+                  className="text-base font-semibold text-ink"
+                >
+                  确认注销账号？
+                </h2>
+                <p
+                  id="delete-account-description"
+                  className="mt-2 text-[13px] leading-5 text-muted"
+                >
+                  此操作不可撤销。请输入“注销账号”完成二次确认。
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭"
+                className="rounded-md p-1 text-faint hover:bg-chip hover:text-ink"
+                onClick={closeDeleteConfirm}
+                disabled={deleteSubmitting}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <Input
+              className="mt-4"
+              value={deleteConfirmation}
+              placeholder="请输入：注销账号"
+              autoComplete="off"
+              autoFocus
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              disabled={deleteSubmitting}
+            />
+
+            {deleteError && (
+              <p className="mt-3 text-[13px] text-danger" role="alert">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeDeleteConfirm}
+                disabled={deleteSubmitting}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={
+                  deleteSubmitting || deleteConfirmation !== "注销账号"
+                }
+                onClick={() => void handleDeleteAccount()}
+              >
+                {deleteSubmitting ? "注销中..." : "确认注销"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

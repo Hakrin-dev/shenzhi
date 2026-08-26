@@ -171,6 +171,11 @@ export const auth = betterAuth({
     sendResetPassword: emailCallbacks.sendResetPassword,
     revokeSessionsOnPasswordReset: true,
   },
+  user: {
+    deleteUser: {
+      enabled: true,
+    },
+  },
   databaseHooks: {
     user: {
       create: {
