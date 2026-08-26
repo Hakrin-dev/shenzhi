@@ -5,5 +5,6 @@ import { optionalEnv } from "./env";
  * 浏览器不得读取；兼容旧名 API_URL。不要使用 NEXT_PUBLIC_ 前缀。
  */
 export const backendConfig = {
+  secret: optionalEnv("BACKEND_BFF_SECRET"),
   url: optionalEnv("BUSINESS_BACKEND_URL") ?? optionalEnv("API_URL"),
 };

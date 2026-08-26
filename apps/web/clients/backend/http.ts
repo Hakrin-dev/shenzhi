@@ -1,4 +1,4 @@
-import type { ApiEnvelope } from "@/types/ai-search";
+import type { ApiEnvelope } from "../../types/ai-search";
 import { getAccessToken } from "./auth-token";
 
 /** 浏览器一律打同源 `/api/v1`，由 Next 微后端转发到 FastAPI（BUSINESS_BACKEND_URL） */
@@ -28,16 +28,28 @@ export function authHeaders(extra?: HeadersInit): Headers {
   return headers;
 }
 
+// Serialize first contact so parallel config/history/upload requests cannot issue
+// different anonymous cookies. This is transport bootstrap, not an account system.
+let identityReady: Promise<void> | undefined;
+async function ensureBackendIdentity() {
+  if (typeof window === "undefined") return;
+  identityReady ??= fetch(apiPath("/search/config"), { cache: "no-store", signal: AbortSignal.timeout(30000) }).then((response) => {
+    if (!response.ok) throw new ApiError(20004, "无法连接生成服务", response.status);
+  }).catch((error) => { identityReady = undefined; throw error; });
+  await identityReady;
+}
+
 export async function apiJson<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  await ensureBackendIdentity();
   const headers = authHeaders(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(apiPath(path), { ...init, headers });
+  const res = await fetch(apiPath(path), { ...init, headers, signal: init.signal ?? AbortSignal.timeout(30000) });
   let envelope: ApiEnvelope<T> | null = null;
   try {
     envelope = (await res.json()) as ApiEnvelope<T>;
@@ -49,7 +61,7 @@ export async function apiJson<T>(
     );
   }
 
-  if (!envelope || envelope.code !== 0 || envelope.data === undefined) {
+  if (!res.ok || !envelope || envelope.code !== 0 || envelope.data === undefined) {
     throw new ApiError(
       envelope?.code ?? 20004,
       envelope?.message || "生成服务暂不可用",

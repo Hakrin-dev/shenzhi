@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { backendConfig } from "@/config/backend";
 
 /**
  * Next.js 微后端 → FastAPI 转发。
@@ -15,6 +17,16 @@ export async function forwardToBusinessBackend(
   headers.delete("connection");
   headers.delete("cookie");
   headers.delete("content-length");
+  // Never trust client-supplied identity or internal credentials.
+  headers.delete("x-shenzhi-user-id");
+  headers.delete("x-shenzhi-user-email");
+  headers.delete("x-shenzhi-anonymous-id");
+  headers.delete("x-shenzhi-bff-secret");
+  const cookie = req.cookies.get("shenzhi-chat-anon")?.value;
+  const anonymousId = cookie && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cookie)
+    ? cookie : randomUUID();
+  headers.set("x-shenzhi-anonymous-id", anonymousId);
+  if (backendConfig.secret) headers.set("x-shenzhi-bff-secret", backendConfig.secret);
 
   await attachIdentity(req, headers);
 
@@ -22,21 +34,33 @@ export async function forwardToBusinessBackend(
     method: req.method,
     headers,
     redirect: "manual",
+    signal: req.signal,
+    cache: "no-store",
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     Object.assign(init, { body: req.body, duplex: "half" });
   }
 
-  const upstream = await fetch(dest, init);
+  let upstream: Response;
+  try { upstream = await fetch(dest, init); }
+  catch {
+    return NextResponse.json({ code: 20004, message: "无法连接生成服务，请稍后重试" }, { status: 503 });
+  }
   const out = new Headers(upstream.headers);
   out.delete("content-encoding");
   out.delete("transfer-encoding");
+  out.delete("set-cookie");
+  out.set("Cache-Control", "no-store, no-transform");
 
-  return new NextResponse(upstream.body, {
+  const response = new NextResponse(upstream.body, {
     status: upstream.status,
     headers: out,
   });
+  if (cookie !== anonymousId) response.cookies.set("shenzhi-chat-anon", anonymousId, {
+    httpOnly: true, sameSite: "lax", secure: req.nextUrl.protocol === "https:", path: "/", maxAge: 86400,
+  });
+  return response;
 }
 
 async function attachIdentity(req: NextRequest, headers: Headers) {

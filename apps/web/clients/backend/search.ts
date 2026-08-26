@@ -1,28 +1,17 @@
-import { apiJson, apiPath } from "@/clients/backend/http";
-import { readSseStream, type SseEvent } from "@/clients/backend/sse";
+import { apiJson } from "./http";
 import type { FeedPaper, Scholar } from "@/types";
-import type {
-  CreateChatSessionRequest,
-  CreateChatSessionResponse,
-  SearchConfig,
-  SendChatMessageRequest,
-  StreamDeltaEvent,
-  StreamDoneEvent,
-  StreamErrorEvent,
-  StreamFollowupsEvent,
-  StreamMetaEvent,
-  StreamRefsEvent,
-} from "@/types/ai-search";
+import type { SearchConfig } from "@/types/ai-search";
 import { CHAT_MODEL_CATALOG } from "@/lib/data/chat-models";
 
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {
-  models: CHAT_MODEL_CATALOG,
+  models: CHAT_MODEL_CATALOG.map((model) => ({ ...model, enabled: false })),
+  quota_enforced: false,
   modes: ["fast", "deep", "idea", "doubt"],
   quota: { used: 0, limit: 20, deep_used: 0, deep_limit: 5 },
   upload: {
     max_size_mb: 20,
     max_files: 5,
-    accept: [".pdf", ".docx", ".md", ".txt"],
+    accept: [".pdf", ".md", ".markdown", ".txt"],
   },
 };
 
@@ -31,41 +20,6 @@ export interface ExploreSearchResponse {
   scholars: Scholar[];
   source: "retrieval" | "retrieval_empty" | "local";
   total?: number;
-}
-
-export function createChatSession(
-  body: CreateChatSessionRequest,
-  init?: RequestInit,
-) {
-  return apiJson<CreateChatSessionResponse>("/search/sessions", {
-    method: "POST",
-    body: JSON.stringify(body),
-    ...init,
-  });
-}
-
-export function sendChatMessage(
-  sessionId: string,
-  body: SendChatMessageRequest,
-  init?: RequestInit,
-) {
-  return apiJson<CreateChatSessionResponse>(
-    `/search/sessions/${sessionId}/messages`,
-    { method: "POST", body: JSON.stringify(body), ...init },
-  );
-}
-
-export function stopChatMessage(messageId: string) {
-  return apiJson<{ ok: boolean }>(`/search/messages/${messageId}/stop`, {
-    method: "POST",
-  });
-}
-
-export function resumeChatMessage(messageId: string) {
-  return apiJson<CreateChatSessionResponse>(
-    `/search/messages/${messageId}/resume`,
-    { method: "POST" },
-  );
 }
 
 export async function getSearchConfig(): Promise<SearchConfig> {
@@ -86,82 +40,5 @@ export function exploreSearch(query: string, mode: "fast" | "deep" = "fast") {
       mode,
     }),
   });
-}
-
-export interface ChatStreamHandlers {
-  onMeta?: (data: StreamMetaEvent) => void;
-  onDelta?: (data: StreamDeltaEvent) => void;
-  onRefs?: (data: StreamRefsEvent) => void;
-  onFollowups?: (data: StreamFollowupsEvent) => void;
-  onDone?: (data: StreamDoneEvent) => void;
-  onError?: (data: StreamErrorEvent) => void;
-}
-
-function parseJson<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-export async function streamChatMessage(
-  messageId: string,
-  handlers: ChatStreamHandlers,
-  options: { signal?: AbortSignal; lastEventId?: string } = {},
-) {
-  let lastId = options.lastEventId;
-
-  const dispatch = (event: SseEvent) => {
-    if (event.id) lastId = event.id;
-    switch (event.event) {
-      case "meta": {
-        const data = parseJson<StreamMetaEvent>(event.data);
-        if (data) handlers.onMeta?.(data);
-        break;
-      }
-      case "delta": {
-        const data = parseJson<StreamDeltaEvent>(event.data);
-        if (data) handlers.onDelta?.(data);
-        break;
-      }
-      case "refs": {
-        const data = parseJson<StreamRefsEvent>(event.data);
-        if (data?.references) handlers.onRefs?.(data);
-        break;
-      }
-      case "followups": {
-        const data = parseJson<StreamFollowupsEvent>(event.data);
-        if (data?.items) handlers.onFollowups?.(data);
-        break;
-      }
-      case "done": {
-        const data = parseJson<StreamDoneEvent>(event.data) ?? {
-          duration_ms: 0,
-          status: "done",
-        };
-        handlers.onDone?.(data);
-        break;
-      }
-      case "error": {
-        const data = parseJson<StreamErrorEvent>(event.data) ?? {
-          code: 20004,
-          message: event.data,
-        };
-        handlers.onError?.(data);
-        break;
-      }
-      default:
-        break;
-    }
-  };
-
-  await readSseStream(apiPath(`/search/messages/${messageId}/stream`), {
-    signal: options.signal,
-    lastEventId: lastId,
-    onEvent: dispatch,
-  });
-
-  return lastId;
 }
 

@@ -3,8 +3,8 @@ import type {
   ChatModelId,
   ChatReplyMode,
   ComposerSubmitPayload,
-} from "@/types/ai-search";
-import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
+} from "../../../types/ai-search";
+import { DEFAULT_CHAT_MODEL } from "../../../lib/data/chat-models";
 
 const KEY = "shenzhi.chat.draft";
 
@@ -32,7 +32,7 @@ export function saveAskDraft(payload: ComposerSubmitPayload) {
     web_search: payload.web_search,
     attachments: payload.attachments,
   };
-  sessionStorage.setItem(KEY, JSON.stringify(draft));
+  try { sessionStorage.setItem(KEY, JSON.stringify(draft)); } catch { /* Storage may be disabled. */ }
 }
 
 export function readAskDraft(question: string): AskDraft {
@@ -64,7 +64,7 @@ export function readAskDraft(question: string): AskDraft {
 
 export function clearAskDraft() {
   if (typeof window === "undefined") return;
-  sessionStorage.removeItem(KEY);
+  try { sessionStorage.removeItem(KEY); } catch { /* Storage may be disabled. */ }
 }
 
 export function askQueryString(payload: ComposerSubmitPayload) {

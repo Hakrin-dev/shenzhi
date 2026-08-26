@@ -152,7 +152,7 @@ export function ComposerControlPicker({
           {!modelsOpen ? (
             <div className="relative p-1.5">
               <div className="absolute right-2.5 top-2.5">
-                <QuotaRing used={quota.used} limit={quota.limit} size={26} />
+                {quota.limit > 0 && <QuotaRing used={quota.used} limit={quota.limit} size={26} />}
               </div>
 
               <div className="flex h-9 items-center gap-1.5 px-2.5 pr-12">
@@ -273,7 +273,7 @@ export function ComposerControlPicker({
               <div className="shrink-0 border-t border-line px-3 py-2 text-[11px] text-muted">
                 <span className="inline-flex items-center gap-1.5">
                   <Sparkles className="size-3.5 text-agent" />
-                  订阅解锁 GPT、Claude、Gemini 等
+                  可用模型由后端管理员配置
                 </span>
               </div>
             </div>

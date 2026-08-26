@@ -174,17 +174,24 @@ function RefPanel({
 
 export function AttachmentMenu({
   onAdd,
-  accept = ".pdf,.docx,.md,.txt",
+  onUploadingChange,
+  disabled = false,
+  accept = ".pdf,.md,.markdown,.txt",
   maxFiles = 5,
   maxSizeMb = 20,
 }: {
-  onAdd?: (item: ChatAttachment) => void;
+  onAdd?: (items: ChatAttachment[]) => void;
+  onUploadingChange?: (uploading: boolean) => void;
+  disabled?: boolean;
   accept?: string;
   maxFiles?: number;
   maxSizeMb?: number;
 }) {
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const placement = usePopoverPlacement(open, rootRef, 320);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -212,24 +219,34 @@ export function AttachmentMenu({
 
   const pickFiles = async (files: FileList | null) => {
     if (!files || !onAdd) return;
+    if (uploading || disabled) return;
+    if (!maxFiles) { setUploadError("最多添加 5 个附件，请先移除已有附件"); return; }
     const list = Array.from(files).slice(0, maxFiles);
-    setUploading(true);
+    const added: ChatAttachment[] = [];
+    const errors: string[] = [];
+    if (files.length > maxFiles) errors.push(`仅上传前 ${maxFiles} 个文件`);
+    setUploading(true); onUploadingChange?.(true); setUploadError("");
     try {
       for (const file of list) {
-        if (file.size > maxSizeMb * 1024 * 1024) continue;
-        const { file_id } = await uploadFile(file);
-        onAdd({ kind: "file", file_id, title: file.name });
+        if (file.size > maxSizeMb * 1024 * 1024) { errors.push(`${file.name} 超过 ${maxSizeMb}MB`); continue; }
+        try {
+          const result = await uploadFile(file);
+          added.push({ kind: "file", file_id: result.file_id, title: file.name, warning: result.warning });
+        } catch (error) { errors.push(error instanceof Error ? error.message : "上传失败"); }
       }
-    } catch {
-      /* 上传接口未接入时不塞假 file_id */
+      if (added.length && live.current) onAdd(added);
     } finally {
+      setUploadError(errors.join("；"));
       setUploading(false);
-      setOpen(false);
+      if (live.current) onUploadingChange?.(false);
+      if (!errors.length) setOpen(false);
     }
   };
 
   const addRef = (item: RefItem) => {
-    onAdd?.({ kind: item.kind, ref_id: item.ref_id, title: item.title });
+    if (uploading || disabled) return;
+    if (!maxFiles) { setUploadError("附件数量已达上限"); return; }
+    onAdd?.([{ kind: item.kind, ref_id: item.ref_id, title: item.title }]);
     setOpen(false);
   };
 
@@ -262,8 +279,10 @@ export function AttachmentMenu({
           e.target.value = "";
         }}
       />
+      {uploadError && <p role="alert" className="absolute bottom-full left-0 z-[130] mb-2 w-72 rounded-xl border border-line bg-card p-3 text-xs text-muted shadow-pop">{uploadError}</p>}
       <button
         type="button"
+        disabled={disabled}
         aria-label="上传附件"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -284,6 +303,7 @@ export function AttachmentMenu({
         >
           <button
             type="button"
+            disabled={uploading}
             onClick={() => fileRef.current?.click()}
             className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
           >
@@ -292,6 +312,7 @@ export function AttachmentMenu({
           </button>
           <button
             type="button"
+            disabled={uploading}
             onClick={() => folderRef.current?.click()}
             className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors hover:bg-chip"
           >

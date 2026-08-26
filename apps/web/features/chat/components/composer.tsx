@@ -190,7 +190,8 @@ export function ComposerShell({
   onStop?: () => void;
 }) {
   const isHome = variant === "home";
-  const canSend = Boolean(value.trim());
+  const [uploading, setUploading] = useState(false);
+  const canSend = Boolean(value.trim()) && !busy && !uploading;
 
   const [innerMode, setInnerMode] = useState<ChatReplyMode>("fast");
   const [innerDepth, setInnerDepth] = useState<"fast" | "deep">("fast");
@@ -205,7 +206,9 @@ export function ComposerShell({
     replyMode === "deep" || replyMode === "fast"
       ? (replyMode as "fast" | "deep")
       : innerDepth;
-  const model = modelProp ?? innerModel;
+  const preferredModel = modelProp ?? innerModel;
+  const model = config.models.some((option) => option.value === preferredModel && option.enabled)
+    ? preferredModel : config.default_model ?? config.models.find((option) => option.enabled)?.value ?? preferredModel;
   const webSearch = webSearchProp ?? innerWeb;
   const attachments = attachmentsProp ?? innerFiles;
 
@@ -240,7 +243,7 @@ export function ComposerShell({
 
   const submit = (intent?: ComposerEntryMode) => {
     const parsed = questionSchema.safeParse(value);
-    if (!parsed.success) return;
+    if (!parsed.success || busy || uploading) return;
     onSend(buildPayload(intent));
   };
 
@@ -260,9 +263,10 @@ export function ComposerShell({
                 setAttachments(attachments.filter((_, idx) => idx !== i))
               }
               className="rounded-full bg-chip px-2.5 py-1 text-[11px] text-ink-2 hover:bg-panel"
-              title="移除"
+              disabled={uploading || busy}
+              title={item.warning ? `${item.warning} · 点击移除` : "移除"}
             >
-              {item.title ?? item.ref_id ?? item.file_id ?? item.kind}
+              {item.warning ? "⚠ " : ""}{item.title ?? item.ref_id ?? item.file_id ?? item.kind}
             </button>
           ))}
         </div>
@@ -295,13 +299,12 @@ export function ComposerShell({
       <div className="mt-1.5 flex items-center gap-1.5">
         <PlusMenu webSearch={webSearch} onWebSearchChange={setWebSearch} />
         <AttachmentMenu
+          disabled={busy}
+          onUploadingChange={setUploading}
           accept={config.upload.accept.join(",")}
-          maxFiles={config.upload.max_files}
+          maxFiles={Math.max(0, config.upload.max_files - attachments.length)}
           maxSizeMb={config.upload.max_size_mb}
-          onAdd={(item) => {
-            if (attachments.length >= config.upload.max_files) return;
-            setAttachments([...attachments, item]);
-          }}
+          onAdd={(items) => setAttachments([...attachments, ...items].slice(0, config.upload.max_files))}
         />
         <div ref={controlRef} className="relative min-w-0 shrink">
           <ComposerControlPicker

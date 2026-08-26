@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/common/layout/app-shell";
-import { AskStage } from "@/features/chat/ask/components/ask-stage";
+import { AgentChat } from "@/features/chat/components/agent-chat";
 import type { ChatModelId, ChatReplyMode } from "@/types/ai-search";
 
-/** 首页「问 AI」：按正式会话接口建会话并拉流，不改原 `/agents` */
+/** 首页问 AI 兼容入口，与 /agents 共用 Chat Feature。 */
 export function AskPage({
   question,
   initialMode,
@@ -12,11 +12,12 @@ export function AskPage({
   question: string;
   initialMode?: ChatReplyMode;
   initialModel?: ChatModelId;
-  initialWebSearch: boolean;
+  initialWebSearch?: boolean;
 }) {
   return (
     <AppShell>
-      <AskStage
+      <AgentChat
+        key={question}
         question={question}
         initialMode={initialMode}
         initialModel={initialModel}
