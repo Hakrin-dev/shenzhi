@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-RETRIEVAL_BASE_URL = os.getenv("RETRIEVAL_API_URL", "http://47.110.47.12").rstrip("/")
+RETRIEVAL_BASE_URL = os.getenv("RETRIEVAL_API_URL", "").rstrip("/")
 RETRIEVAL_TIMEOUT = float(os.getenv("RETRIEVAL_TIMEOUT_SEC", "30"))
 
 VENUE_TONES = ("violet", "amber", "green")
@@ -75,6 +75,8 @@ async def retrieval_search(
     mode: str = "fast",
 ) -> list[dict[str, Any]]:
     """调用外部论文检索 API，失败时返回空列表。"""
+    if not RETRIEVAL_BASE_URL:
+        return []
     limit = min(max(top_k, 1), 20)
     if mode == "fast":
         limit = min(limit, 5)
