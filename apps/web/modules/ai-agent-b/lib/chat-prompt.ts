@@ -134,18 +134,24 @@ export function buildModelMessages(options: {
   history: ChatMessage[];
   attachments?: ChatAttachment[];
   webSearchSources?: ChatSource[];
+  /** 用户已开联网开关但搜索无结果时为 true */
+  webSearchEnabled?: boolean;
 }): {
   messages: ChatMessage[];
   attachmentWarnings: AttachmentAggregationWarning[];
 } {
-  const { style, history, attachments = [], webSearchSources = [] } = options;
+  const { style, history, attachments = [], webSearchSources = [], webSearchEnabled = false } = options;
 
   let systemContent = STYLE_PROMPTS[style];
   const { context: attachmentCtx, warnings: attachmentWarnings } =
     buildAttachmentContext(attachments);
   const webCtx = buildWebSearchContext(webSearchSources);
-  if (attachmentCtx || webCtx) {
-    systemContent += attachmentCtx + webCtx;
+  const webMissNote =
+    webSearchEnabled && webSearchSources.length === 0
+      ? "\n\n注意：用户已开启联网搜索，但当前未获取到网页检索结果。请如实说明无法提供实时联网信息，不要假装已完成检索。\n"
+      : "";
+  if (attachmentCtx || webCtx || webMissNote) {
+    systemContent += attachmentCtx + webCtx + webMissNote;
   }
 
   const messages: ChatMessage[] = [{ role: "system", content: systemContent }];

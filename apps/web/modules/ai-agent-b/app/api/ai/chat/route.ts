@@ -15,12 +15,19 @@
  *     但请求头必须传对，否则前端 fetchSSE 会被拦截）。
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   MissingProviderError,
   resolveFollowupLLM,
   resolveLLM,
 } from "@b/lib/model-providers";
+import {
+  assertChatQuota,
+  jsonUnauthorized,
+  quotaErrorResponse,
+  rebuildTrustedModelMessages,
+  requireApiUser,
+} from "@b/lib/server/chat-security";
 import type {
   ChatMessage,
   ChatRequest,
@@ -399,6 +406,13 @@ async function* createModelStream(opts: {
 
 /* -------- 主路由 -------- */
 export async function POST(req: NextRequest) {
+  let user: { id: string };
+  try {
+    user = await requireApiUser();
+  } catch {
+    return jsonUnauthorized();
+  }
+
   const abortCtl = new AbortController();
   // 客户端断开时取消
   req.signal.addEventListener("abort", () => abortCtl.abort());
@@ -434,10 +448,13 @@ export async function POST(req: NextRequest) {
     ).toResponse(422);
   }
 
-  // —— 3. messages 直接采用前端构造好的 body.messages
-  //      前端 chat-stream.ts 已通过 buildModelMessages 拼好 system（风格 + 附件 + 联网上下文），
-  //      这里不再二次拼接，避免出现双 system prompt。
-  //      附件截断告警也由前端 chat-stream.ts 直接注入思考面板，后端不重复下发。
+  try {
+    await assertChatQuota(user.id, body.style);
+  } catch (e) {
+    return quotaErrorResponse(e);
+  }
+
+  const { messages: trustedMessages } = rebuildTrustedModelMessages(body);
 
   // —— 4. 写 SSE 流
   const sse = new NextResponseSSE();
@@ -448,8 +465,7 @@ export async function POST(req: NextRequest) {
       const gen = createModelStream({
         model: body.model,
         style: body.style,
-        // 直接使用前端拼好的 body.messages（已含 system + 附件 + 历史多轮）
-        messages: body.messages,
+        messages: trustedMessages,
         webSearch: body.webSearch,
         signal: abortCtl.signal,
       });

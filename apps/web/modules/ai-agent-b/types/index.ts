@@ -445,6 +445,8 @@ export interface ChatRequest {
   attachments: ChatAttachment[];
   /** 完整多轮上下文，B 模块负责追加与持久化 */
   messages: ChatMessage[];
+  /** 前置联网搜索结果（服务端重建 system 时使用，禁止客户端注入 system） */
+  webSearchSources?: ChatSource[];
 }
 
 /** SSE 流式事件 —— B 模块前后端协议（旧命名，/api/ai/chat 仍使用）

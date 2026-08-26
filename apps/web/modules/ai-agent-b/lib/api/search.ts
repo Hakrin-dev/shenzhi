@@ -412,6 +412,19 @@ async function streamB(
   // 这里只更新 meta 的「已阅读 N 篇」状态
   if (payload.webSearchSources && payload.webSearchSources.length > 0) {
     safe.onMeta!({ phase: "正在生成", read_count: payload.webSearchSources.length });
+    const refs: StreamRefsEvent["references"] = payload.webSearchSources.map((s) => ({
+      ordinal: s.id,
+      source_type: "web",
+      source_id: s.url ?? `src_${s.id}`,
+      title: s.title,
+      venue: s.venue ?? null,
+      org: null,
+      authors: s.author ?? "",
+      citation_count: Number((s.citations ?? "").replace(/\D/g, "")) || 0,
+      recommended: Boolean(s.recommended),
+      url: s.url ?? null,
+    }));
+    safe.onRefs?.({ references: refs });
   }
 
   // Task 4 · R1 思考链缓冲区：meta(phase=thinking) 逐 delta 累加 → done 时汇总写 thinkingContent
@@ -426,6 +439,7 @@ async function streamB(
     style: mapToBStyle(payload.request.mode),
     webSearch: payload.request.web_search,
     attachments: payload.request.attachments as any,
+    webSearchSources: payload.webSearchSources ?? [],
     messages: payload.messages,
   };
 
@@ -435,6 +449,7 @@ async function streamB(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        credentials: "include",
       }),
       {
         signal: options.signal,
@@ -533,9 +548,19 @@ async function streamB(
   } catch (e) {
     // AbortSignal 中断是正常行为，不抛错
     if (options.signal?.aborted) return;
+    const status = (e as Error & { status?: number }).status;
+    let message = String((e as Error)?.message || e);
+    if (status === 401) {
+      try {
+        const parsed = JSON.parse(message) as { message?: string };
+        message = parsed.message ?? "请先登录后再使用 AI 对话";
+      } catch {
+        message = "请先登录后再使用 AI 对话";
+      }
+    }
     safe.onError?.({
-      code: 20004,
-      message: String((e as Error)?.message || e),
+      code: status === 401 ? 401 : 20004,
+      message,
     });
   }
 }

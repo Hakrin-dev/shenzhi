@@ -1,6 +1,6 @@
 /**
- * 百炼控制台「已开启免费额度」模型目录（OpenAI 兼容 model Code）
- * 与 DeepSeek 官方 API（deepseek-chat / deepseek-reasoner）分离。
+ * 百炼控制台「已开启免费额度」模型目录（与控制台截图一致，仅此 14 个）。
+ * 配置 DASHSCOPE_API_KEY 后前端全部可选；不在此列表的模型不展示。
  */
 import type { SearchModelOption } from "@b/types/ai-search";
 
@@ -12,118 +12,94 @@ export const DEEPSEEK_OFFICIAL_MODEL_IDS = new Set([
   "deepseek-reasoner",
 ]);
 
+/** 百炼默认模型（.env DASHSCOPE_DEFAULT_MODEL / AI_DEFAULT_MODEL 应对齐此 id） */
+export const DEFAULT_BAILIAN_MODEL = "qwen3.8-max";
+
+/** 控制台截图中已开启免费额度的百炼模型（图 1 共 4 + 图 2 共 10 = 14） */
 export const BAILIAN_MODEL_CATALOG: CatalogEntry[] = [
-  // —— 截图高亮 / 新一代 ——
   {
-    value: "qwen3.8-max",
-    label: "Qwen 3.8 Max",
-    provider: "qwen",
-    description: "百炼免费额度 · 旗舰",
-  },
-  {
-    value: "qwen3.8-2.4t-a95b",
-    label: "Qwen 3.8 2.4T",
-    provider: "qwen",
-    description: "百炼免费额度 · 超大参数",
+    value: "deepseek-v4-pro-0813",
+    label: "DeepSeek V4 Pro",
+    provider: "deepseek",
+    description: "百炼免费额度 · 982,982 / 1,000,000",
   },
   {
     value: "qwen3.7-plus-2026-05-26",
-    label: "Qwen 3.7 Plus",
+    label: "通义千问 3.7 Plus",
     provider: "qwen",
-    description: "百炼免费额度 · 均衡",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
   },
   {
-    value: "qwen3.7-plus",
-    label: "Qwen 3.7 Plus",
+    value: "qwen3.8-2.4t-a95b",
+    label: "通义千问 3.8 2.4T",
     provider: "qwen",
-    description: "百炼免费额度",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
   },
   {
-    value: "qwen3.7-flash",
-    label: "Qwen 3.7 Flash",
+    value: "qwen3.8-max",
+    label: "通义千问 3.8 Max",
     provider: "qwen",
-    description: "百炼免费额度 · 低延迟",
+    description: "百炼免费额度 · 999,431 / 1,000,000",
   },
   {
-    value: "qwen3.7-max-2026-06-08",
-    label: "Qwen 3.7 Max",
+    value: "qwen3.8-27b",
+    label: "通义千问 3.8 27B",
     provider: "qwen",
-    description: "百炼免费额度 · 强推理",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
   },
-  // —— 经典通义 ——
   {
-    value: "qwen-max",
-    label: "通义千问 Max",
+    value: "qwen3.7-flash-2026-07-15",
+    label: "通义千问 3.7 Flash",
     provider: "qwen",
-    description: "百炼免费额度 · 旗舰",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
   },
-  {
-    value: "qwen-plus",
-    label: "通义千问 Plus",
-    provider: "qwen",
-    description: "百炼免费额度 · 均衡",
-  },
-  {
-    value: "qwen-turbo",
-    label: "通义千问 Turbo",
-    provider: "qwen",
-    description: "百炼免费额度 · 快速",
-  },
-  {
-    value: "qwen-flash",
-    label: "通义千问 Flash",
-    provider: "qwen",
-    description: "百炼免费额度 · 超低延迟",
-  },
-  {
-    value: "qwen-long",
-    label: "通义千问 Long",
-    provider: "qwen",
-    description: "百炼 · 长上下文",
-  },
-  {
-    value: "qwen-max-longcontext",
-    label: "通义 Max 长上下文",
-    provider: "qwen",
-    description: "百炼免费额度 · 长文档",
-  },
-  {
-    value: "qwen1.5-110b",
-    label: "Qwen 1.5 110B",
-    provider: "qwen",
-    description: "百炼免费额度 · 开源大参",
-  },
-  // —— 百炼托管 DeepSeek（非官方 API）——
-  {
-    value: "deepseek-v3",
-    label: "DeepSeek V3（百炼）",
-    provider: "deepseek",
-    description: "百炼免费额度 · 非 DeepSeek 官方 Key",
-  },
-  {
-    value: "deepseek-v4-flash-0731",
-    label: "DeepSeek V4 Flash（百炼）",
-    provider: "deepseek",
-    description: "百炼免费额度 · 低延迟",
-  },
-  // —— 第三方（百炼直供）——
   {
     value: "kimi-k3",
     label: "Kimi K3",
     provider: "platform",
-    description: "百炼免费额度 · Moonshot",
+    description: "百炼免费额度 · 997,194 / 1,000,000",
   },
   {
-    value: "kimi-k2.7-code",
-    label: "Kimi K2.7 Code",
-    provider: "platform",
-    description: "百炼免费额度 · 代码",
+    value: "qwen3.7-plus",
+    label: "通义千问 3.7 Plus（通用）",
+    provider: "qwen",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
+  },
+  {
+    value: "qwen3.5-ocr",
+    label: "通义千问 3.5 OCR",
+    provider: "qwen",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
+  },
+  {
+    value: "qwen3.7-flash",
+    label: "通义千问 3.7 Flash（通用）",
+    provider: "qwen",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
+  },
+  {
+    value: "qwen3.7-max-2026-06-08",
+    label: "通义千问 3.7 Max",
+    provider: "qwen",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
+  },
+  {
+    value: "deepseek-v4-flash-0731",
+    label: "DeepSeek V4 Flash",
+    provider: "deepseek",
+    description: "百炼免费额度 · 985,491 / 1,000,000",
   },
   {
     value: "glm-5.2",
     label: "GLM 5.2",
     provider: "zhipu",
-    description: "百炼免费额度 · 智谱",
+    description: "百炼免费额度 · 999,985 / 1,000,000",
+  },
+  {
+    value: "kimi-k2.7-code",
+    label: "Kimi K2.7 Code",
+    provider: "platform",
+    description: "百炼免费额度 · 1,000,000 / 1,000,000",
   },
 ];
 
@@ -146,16 +122,9 @@ const BAILIAN_MODEL_ID_SET = new Set(
   BAILIAN_MODEL_CATALOG.map((m) => m.value),
 );
 
-/** 是否应走百炼 DashScope（含 qwen/kimi 前缀及 catalog 内 id） */
+/** 是否应走百炼 DashScope（仅 catalog 内 id） */
 export function isBailianModel(model: string): boolean {
-  const id = model.trim();
-  if (BAILIAN_MODEL_ID_SET.has(id)) return true;
-  if (/^qwen/i.test(id)) return true;
-  if (/^kimi/i.test(id)) return true;
-  // 百炼版 DeepSeek：deepseek-v3、deepseek-v4-* 等，排除官方 chat/reasoner
-  if (/^deepseek-v/i.test(id)) return true;
-  if (id === "deepseek-v3") return true;
-  return false;
+  return BAILIAN_MODEL_ID_SET.has(model.trim());
 }
 
 export function isDeepSeekOfficialModel(model: string): boolean {

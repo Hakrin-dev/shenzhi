@@ -56,3 +56,6 @@ docs/dev/.feishu-auth-qr.png
 *.tar
 .superpowers/
 docs/superpowers/
+
+# local dev databases (do not commit)
+apps/web/modules/ai-agent-b/prisma/dev.db

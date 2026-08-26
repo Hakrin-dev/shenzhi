@@ -43,11 +43,7 @@ export type ChatSourceType =
 
 /**
  * A 模块的附件结构 —— 与 B 模块旧版 ChatAttachment 不同。
- * 关键差异：
- *   - A 用 kind 区分类型（B 旧版用 type: "pdf"/"txt"/...）
- *   - A 用 file_id（本地上传后服务端返回） 或 ref_id（平台实体ID）二选一
- *   - A 没有 text 字段（附件解析在服务端），也没有 error/ size 字段
- * B 模块在发送时做字段转换即可（见 lib/api/search.ts 的请求适配层）。
+ * 本地上传后可在前端携带解析结果 text（B 模式 /api/b/uploads 返回），发送时注入 prompt。
  */
 export interface ChatAttachment {
   kind: ChatAttachmentKind;
@@ -57,6 +53,11 @@ export interface ChatAttachment {
   ref_id?: string;
   /** 前端显示用的附件名称（如文件名、论文标题） */
   title?: string;
+  /** 上传解析后的正文（B 模式本地解析，发送前注入 system prompt） */
+  text?: string;
+  error?: string;
+  size?: number;
+  type?: "pdf" | "txt" | "md" | "other";
 }
 
 /* ---------- 创建会话请求（A → 后端 / B → 适配层） ---------- */

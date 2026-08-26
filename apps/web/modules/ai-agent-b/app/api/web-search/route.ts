@@ -17,6 +17,10 @@
 import { NextResponse } from "next/server";
 import type { ApiEnvelope } from "@b/types/ai-search";
 import { webSearch, type WebSearchItem } from "@b/lib/c-server/web-search-client";
+import {
+  jsonUnauthorized,
+  requireApiUser,
+} from "@b/lib/server/chat-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +58,12 @@ export function toChatSources(items: WebSearchItem[]): {
 export async function POST(
   req: Request,
 ): Promise<NextResponse<ApiEnvelope<WebSearchData>>> {
+  try {
+    await requireApiUser();
+  } catch {
+    return jsonUnauthorized();
+  }
+
   let body: WebSearchRequest;
   try {
     body = (await req.json()) as WebSearchRequest;

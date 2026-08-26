@@ -30,6 +30,8 @@ export { AI_BACKEND_MODE };
 export interface StreamModeBPayload {
   request: CreateChatSessionRequest;
   messages: { role: "system" | "user" | "assistant"; content: string }[];
+  /** 前置 Tavily 联网搜索结果（注入 system prompt + refs 事件） */
+  webSearchSources?: import("@b/types").ChatSource[];
 }
 
 export const FALLBACK_SEARCH_CONFIG: SearchConfig = {

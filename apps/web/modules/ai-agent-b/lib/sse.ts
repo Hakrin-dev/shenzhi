@@ -53,6 +53,7 @@ export async function readSSEStream(
   const base = input instanceof Request ? input : new Request(input);
   const req = new Request(base, {
     signal,
+    credentials: base.credentials,
     headers: {
       ...Object.fromEntries(base.headers.entries()),
       ...headers,

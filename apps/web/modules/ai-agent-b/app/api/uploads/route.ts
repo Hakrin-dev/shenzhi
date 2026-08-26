@@ -24,6 +24,10 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import type { ApiEnvelope } from "@b/types/ai-search";
 import {
+  jsonUnauthorized,
+  requireApiUser,
+} from "@b/lib/server/chat-security";
+import {
   parseDocument,
   ParseError,
 } from "@b/lib/c-server/parse-document";
@@ -67,6 +71,12 @@ function fail(code: number, message: string, status = 400) {
 }
 
 export async function POST(req: Request) {
+  try {
+    await requireApiUser();
+  } catch {
+    return jsonUnauthorized();
+  }
+
   let form: FormData;
   try {
     form = await req.formData();

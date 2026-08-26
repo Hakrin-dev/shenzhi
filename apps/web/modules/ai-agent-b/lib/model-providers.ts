@@ -6,6 +6,7 @@
  */
 import {
   BAILIAN_MODEL_CATALOG,
+  DEFAULT_BAILIAN_MODEL,
   DEEPSEEK_OFFICIAL_CATALOG,
   isBailianModel,
   isDeepSeekOfficialModel,
@@ -34,7 +35,7 @@ function dashscopeRuntime() {
     "https://dashscope.aliyuncs.com/compatible-mode/v1"
   ).replace(/\/+$/, "");
   const defaultModel =
-    process.env.DASHSCOPE_DEFAULT_MODEL?.trim() || "qwen-turbo";
+    process.env.DASHSCOPE_DEFAULT_MODEL?.trim() || DEFAULT_BAILIAN_MODEL;
   return { apiKey, baseUrl, defaultModel };
 }
 
@@ -67,11 +68,10 @@ export function resolveLLM(rawModel: string | undefined | null): ResolvedLLM {
     const preferred =
       process.env.AI_DEFAULT_MODEL?.trim() ||
       (dash ? dash.defaultModel : deep?.defaultModel) ||
-      "qwen-turbo";
+      DEFAULT_BAILIAN_MODEL;
     return resolveLLM(preferred);
   }
 
-  // 官方 DeepSeek 仅 chat / reasoner；deepseek-v3 等走百炼
   if (isDeepSeekOfficialModel(model)) {
     if (!deep) {
       throw new MissingProviderError(
@@ -133,12 +133,22 @@ export function resolveFollowupLLM(): ResolvedLLM {
       provider: "dashscope",
       apiKey: dash.apiKey,
       baseUrl: dash.baseUrl,
-      model: "qwen-turbo",
+      model: "qwen3.7-flash",
     };
   }
   return resolveLLM("deepseek-chat");
 }
 
+function sortModels(models: SearchModelOption[], defaultModel: string) {
+  models.sort((a, b) => {
+    if (a.value === defaultModel) return -1;
+    if (b.value === defaultModel) return 1;
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+    return 0;
+  });
+}
+
+/** 同步兜底（不探测 API，仅检查 Key 是否存在） */
 export function buildSearchConfig(): SearchConfig {
   const dash = dashscopeRuntime();
   const deep = deepseekRuntime();
@@ -147,26 +157,21 @@ export function buildSearchConfig(): SearchConfig {
     ...BAILIAN_MODEL_CATALOG.map((m) => ({
       ...m,
       enabled: Boolean(dash),
-      reason: dash ? undefined : ("no_api_key" as const),
+      reason: dash ? undefined : "no_api_key",
     })),
     ...DEEPSEEK_OFFICIAL_CATALOG.map((m) => ({
       ...m,
       enabled: Boolean(deep),
-      reason: deep ? undefined : ("no_api_key" as const),
+      reason: deep ? undefined : "no_api_key",
     })),
   ];
 
   const defaultModel =
     process.env.AI_DEFAULT_MODEL?.trim() ||
     (dash ? dash.defaultModel : deep?.defaultModel) ||
-    "qwen-turbo";
+    DEFAULT_BAILIAN_MODEL;
 
-  models.sort((a, b) => {
-    if (a.value === defaultModel) return -1;
-    if (b.value === defaultModel) return 1;
-    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-    return 0;
-  });
+  sortModels(models, defaultModel);
 
   return {
     models,
@@ -182,5 +187,5 @@ export function buildSearchConfig(): SearchConfig {
 
 export function defaultChatModelId(): string {
   const cfg = buildSearchConfig();
-  return cfg.models.find((m) => m.enabled)?.value ?? "qwen-turbo";
+  return cfg.models.find((m) => m.enabled)?.value ?? DEFAULT_BAILIAN_MODEL;
 }

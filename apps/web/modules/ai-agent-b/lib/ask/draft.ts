@@ -127,12 +127,20 @@ export function toAAttachment(
         file_id: legacy.kind === "file" ? a.id : undefined,
         ref_id: legacy.ref_id ?? (legacy.kind !== "file" ? a.id : undefined),
         title: a.name,
+        text: a.text,
+        error: a.error,
+        size: a.size,
+        type: a.type,
       };
     }
     return {
       kind: "file",
       file_id: a.id,
       title: a.name,
+      text: a.text,
+      error: a.error,
+      size: a.size,
+      type: a.type,
     };
   });
 }
