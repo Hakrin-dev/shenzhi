@@ -11,7 +11,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { getProject, type MilestoneStatus } from "@/lib/data/projects";
 

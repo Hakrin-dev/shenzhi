@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 import { answerBlocks, agentSession } from "@/lib/data/agent";
-import { withCitations } from "@/lib/citations";
+import { withCitations } from "@/components/common/citations";
 import { cn } from "@/lib/utils";
 /** AI 深度研究回答卡片 —— 对应 AI 研究助手 SVG 的回答区 */
 export function AnswerCard() {

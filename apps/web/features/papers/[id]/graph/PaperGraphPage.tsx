@@ -1,4 +1,4 @@
-import { GraphPageLayout } from "@/components/graph/graph-page-layout";
+import { GraphPageLayout } from "@/components/common/graph/graph-page-layout";
 import { publicGraph } from "@/lib/data/knowledge-graph";
 import { cn } from "@/lib/utils";
 

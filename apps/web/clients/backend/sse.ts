@@ -1,4 +1,4 @@
-import { authHeaders } from "@/lib/api/http";
+import { authHeaders } from "@/clients/backend/http";
 
 export interface SseEvent {
   id?: string;

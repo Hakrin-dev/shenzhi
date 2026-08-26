@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { backendConfig } from "@/config/backend";
-import { forwardToBusinessBackend } from "@/services/backend/forward";
+import { forwardToBusinessBackend } from "@/clients/backend/forward";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

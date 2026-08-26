@@ -7,7 +7,7 @@ import {
   MapPin,
   UserRoundCheck,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { FollowButton } from "@/features/scholars/components/follow-button";
 import { CitationChart } from "@/features/scholars/[id]/components/citation-chart";

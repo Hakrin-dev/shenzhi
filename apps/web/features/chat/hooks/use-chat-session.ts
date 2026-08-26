@@ -7,9 +7,9 @@ import {
   sendChatMessage,
   stopChatMessage,
   streamChatMessage,
-} from "@/lib/api/search";
-import { messageForApiError } from "@/lib/ask/errors";
-import { ApiError } from "@/lib/api/http";
+} from "@/clients/backend/search";
+import { messageForApiError } from "@/features/chat/services/errors";
+import { ApiError } from "@/clients/backend/http";
 import type {
   ChatAttachment,
   ChatMessageStatus,

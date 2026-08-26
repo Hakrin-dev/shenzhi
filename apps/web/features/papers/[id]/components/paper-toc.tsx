@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Logo } from "@/components/layout/logo";
+import { Logo } from "@/components/common/layout/logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { PaperDetail } from "@/types";

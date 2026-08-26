@@ -1,4 +1,4 @@
-import { apiJson, apiPath, authHeaders } from "@/lib/api/http";
+import { apiJson, apiPath, authHeaders } from "@/clients/backend/http";
 
 export interface UploadFileResult {
   file_id: string;

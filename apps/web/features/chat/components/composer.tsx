@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { popoverPosition, usePopoverPlacement } from "@/lib/use-popover-placement";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
-import { FALLBACK_SEARCH_CONFIG } from "@/lib/api/search";
+import { FALLBACK_SEARCH_CONFIG } from "@/clients/backend/search";
 import { AttachmentMenu } from "./attachment-menu";
 import { ComposerControlPicker } from "./composer-control-picker";
 import { questionSchema } from "@/lib/validations";

@@ -1,11 +1,11 @@
 import { Share, Star } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { Button } from "@/components/ui/button";
-import { ChatInput } from "@/features/agents/components/chat-input";
-import { ResearchNav } from "@/features/agents/deep-search/components/research-nav";
-import { AnswerCard } from "@/features/agents/deep-search/components/answer-card";
-import { ReferenceGrid } from "@/features/agents/deep-search/components/reference-grid";
-import { FollowUps } from "@/features/agents/deep-search/components/follow-ups";
+import { ChatInput } from "@/features/chat/components/chat-input";
+import { ResearchNav } from "@/features/search/deep-search/components/research-nav";
+import { AnswerCard } from "@/features/search/deep-search/components/answer-card";
+import { ReferenceGrid } from "@/features/search/deep-search/components/reference-grid";
+import { FollowUps } from "@/features/search/deep-search/components/follow-ups";
 import { agentSession } from "@/lib/data/agent";
 
 /**

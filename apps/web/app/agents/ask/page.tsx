@@ -1,4 +1,4 @@
-import { AskPage } from "@/features/agents/ask/AskPage";
+import { AskPage } from "@/features/chat/ask/AskPage";
 import { normalizeChatModelId } from "@/lib/data/chat-models";
 import type { ChatReplyMode } from "@/types/ai-search";
 

@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { ResearchBoard } from "@/features/agents/auto-research/components/research-board";
+import { AppShell } from "@/components/common/layout/app-shell";
+import { ResearchBoard } from "@/features/auto-research/components/research-board";
 
 /**
  * Auto Research `/agents/auto-research`

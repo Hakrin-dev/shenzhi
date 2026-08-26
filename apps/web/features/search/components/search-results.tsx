@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { PaperCard } from "./paper-card";
 import { ResearchersRail } from "./researchers-rail";
-import { exploreSearch } from "@/lib/api/search";
+import { exploreSearch } from "@/clients/backend/search";
 import { searchLocalPapers, searchLocalScholars } from "@/lib/data/search";
 import type { FeedPaper, Scholar } from "@/types";
 

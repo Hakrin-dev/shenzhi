@@ -1,5 +1,5 @@
-import { AgentsPage } from "@/features/agents/AgentsPage";
+import { ChatPage } from "@/features/chat/ChatPage";
 
 export default function Page() {
-  return <AgentsPage />;
+  return <ChatPage />;
 }

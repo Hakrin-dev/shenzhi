@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { DeepResearchPageClient } from "@/features/agents/deep-research/components/deep-research-page";
+import { AppShell } from "@/components/common/layout/app-shell";
+import { DeepResearchPageClient } from "@/features/deep-research/components/deep-research-page";
 
 /**
  * Deep Research 页 `/agents/deep-research` —— 研究报告型双栏工作台:

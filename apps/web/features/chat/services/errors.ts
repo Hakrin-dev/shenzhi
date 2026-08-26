@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api/http";
+import { ApiError } from "@/clients/backend/http";
 
 const MESSAGES: Record<number, string> = {
   20001: "请输入 2000 字以内的问题",

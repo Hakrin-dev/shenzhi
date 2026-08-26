@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { SearchHero } from "@/features/search/components/search-hero";
 import { FeedTabs } from "@/features/search/components/feed-tabs";
 import { FeedList } from "@/features/search/components/feed-list";

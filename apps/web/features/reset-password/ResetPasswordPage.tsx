@@ -18,7 +18,7 @@ import {
   PASSWORD_MIN_LENGTH,
   validatePasswordPolicy,
 } from "@/lib/auth/policies/password";
-import { Logo } from "@/components/layout/logo";
+import { Logo } from "@/components/common/layout/logo";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 

@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { withCitations } from "@/lib/citations";
+import { withCitations } from "@/components/common/citations";
 import { drReport } from "@/lib/data/deep-research";
 import { cn } from "@/lib/utils";
 import type { DRReportSection } from "@/types";

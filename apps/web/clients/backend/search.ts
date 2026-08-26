@@ -1,5 +1,5 @@
-import { apiJson, apiPath } from "@/lib/api/http";
-import { readSseStream, type SseEvent } from "@/lib/sse";
+import { apiJson, apiPath } from "@/clients/backend/http";
+import { readSseStream, type SseEvent } from "@/clients/backend/sse";
 import type { FeedPaper, Scholar } from "@/types";
 import type {
   CreateChatSessionRequest,

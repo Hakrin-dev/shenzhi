@@ -10,10 +10,10 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
 } from "lucide-react";
-import { ComposerShell } from "@/features/agents/components/composer";
-import { getSearchConfig } from "@/lib/api/search";
-import { readAskDraft } from "@/lib/ask/draft";
-import { useAskSession } from "@/lib/ask/use-ask-session";
+import { ComposerShell } from "@/features/chat/components/composer";
+import { getSearchConfig } from "@/clients/backend/search";
+import { readAskDraft } from "@/features/chat/services/draft";
+import { useAskSession } from "@/features/chat/hooks/use-chat-session";
 import type {
   ChatAttachment,
   ChatModelId,

@@ -9,7 +9,7 @@ import {
   Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ChatInput } from "@/features/agents/components/chat-input";
+import { ChatInput } from "@/features/chat/components/chat-input";
 import { cn } from "@/lib/utils";
 import { PlanCard } from "./plan-card";
 import { ReportViewer } from "./report-viewer";

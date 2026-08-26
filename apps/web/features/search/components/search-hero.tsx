@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ComposerShell } from "@/features/agents/components/composer";
+import { ComposerShell } from "@/features/chat/components/composer";
 import { SearchResults } from "@/features/search/components/search-results";
-import { getSearchConfig } from "@/lib/api/search";
-import { askQueryString, saveAskDraft } from "@/lib/ask/draft";
+import { getSearchConfig } from "@/clients/backend/search";
+import { askQueryString, saveAskDraft } from "@/features/chat/services/draft";
 import type { ComposerSubmitPayload, SearchConfig } from "@/types/ai-search";
 
 const PLACEHOLDER =

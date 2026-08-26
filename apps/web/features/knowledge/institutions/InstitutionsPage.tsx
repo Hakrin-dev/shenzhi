@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { InstitutionsBrowser } from "@/features/knowledge/institutions/components/institutions-browser";
 
 /** 研究机构 `/knowledge/institutions` —— 单列大卡片,参考学者关系页 */
