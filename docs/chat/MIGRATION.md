@@ -65,7 +65,7 @@ B 路径相对旧仓库根目录；没有将 B 同名组件覆盖 dev。
 
 Web 新增 `react-markdown`、`remark-gfm`、`remark-math`、`rehype-katex`、`katex`；Backend 新增 `pypdf`。没有升级既有直接依赖，没有引入 B ORM/Auth 包。pnpm 自动重算 peer dependency 快照并清理无引用锁条目，Better Auth / Next / React 等既有直接版本保持不变。
 
-新增 Backend `DASHSCOPE_*`、`DEEPSEEK_*`、`AI_ALLOWED_MODELS`、`AI_TIMEOUT_SEC`、`TAVILY_API_KEY`、`SEARXNG_BASE_URL`；两端增加 `BACKEND_BFF_SECRET`。检索地址改为显式配置，Key 全在 Backend。新增根 `.env.example` 作为两应用配置入口说明。
+新增 Backend `DASHSCOPE_*`、`DEEPSEEK_*`、`AI_ALLOWED_MODELS`、`AI_TIMEOUT_SEC`、`TAVILY_API_KEY`、`SEARXNG_BASE_URL`；两端增加 `BACKEND_BFF_SECRET` 和仅 loopback 本地开发可显式开启的 `BACKEND_ALLOW_INSECURE_LOCAL_BFF`。检索地址改为显式配置，Key 全在 Backend。新增根 `.env.example` 作为两应用配置入口说明。
 
 ## 静态验收
 

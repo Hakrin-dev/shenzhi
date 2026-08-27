@@ -8,8 +8,8 @@ import { ChatThread } from "./chat-thread";
 import { SessionList } from "./session-list";
 import { useChatSession } from "../hooks/use-chat-session";
 import { readAskDraft } from "../services/draft";
-import { getSearchConfig } from "@/clients/backend/search";
-import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, SearchConfig } from "@/types/ai-search";
+import { getChatConfig } from "@/clients/backend/chat";
+import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { useAuth } from "@/components/auth/auth-provider";
 
@@ -41,7 +41,7 @@ function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSea
   const [model, setModel] = useState(initialModel ?? DEFAULT_CHAT_MODEL);
   const [webSearch, setWebSearch] = useState(Boolean(initialWebSearch));
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [config, setConfig] = useState<SearchConfig>();
+  const [config, setConfig] = useState<ChatConfig>();
   const [composerVersion, setComposerVersion] = useState(0);
   const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -50,7 +50,7 @@ function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSea
 
   useEffect(() => {
     let live = true;
-    void getSearchConfig().then((loaded) => {
+    void getChatConfig().then((loaded) => {
       if (!live) return;
       setConfig(loaded);
       const draft = readAskDraft(question);

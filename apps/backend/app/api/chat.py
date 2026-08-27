@@ -1,14 +1,28 @@
-import time
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import StreamingResponse
+from app.core.config import MAX_FILES, UPLOAD_ACCEPT, model_config
 from app.core.errors import BusinessError
-from app.core.identity import request_owner
+from app.core.identity import request_owner, require_bff
 from app.core.responses import ok
 from app.schemas.chat import CreateSessionBody, FollowupBody, UpdateSessionBody
 from app.services.chat import prepare_message, stop_message, stream_events
 from app.services.sessions import repository
 
-router = APIRouter(prefix='/api/v1/search', tags=['chat'])
+router = APIRouter(prefix='/api/v1/chat', tags=['chat'])
+
+
+@router.get('/config')
+def chat_config(_credential: None = Depends(require_bff)):
+    config = model_config()
+    return ok({'models': [{'value': model, 'label': model, 'provider': config.provider,
+                          'enabled': bool(config.key),
+                          **({} if config.key else {'reason': 'provider_not_configured'})}
+                         for model in config.models],
+               'default_model': config.model,
+               'modes': ['fast', 'deep', 'idea', 'doubt'],
+               'quota': {'used': 0, 'limit': 0, 'deep_used': 0, 'deep_limit': 0},
+               'quota_enforced': False,
+               'upload': {'max_size_mb': 20, 'max_files': MAX_FILES, 'accept': UPLOAD_ACCEPT}})
 
 
 @router.get('/sessions')
@@ -29,14 +43,7 @@ async def get_session(session_id: str, owner: str = Depends(request_owner)):
 
 @router.patch('/sessions/{session_id}')
 async def update_session(session_id: str, body: UpdateSessionBody, owner: str = Depends(request_owner)):
-    session = repository.get(session_id, owner)
-    if body.title is not None:
-        if not body.title.strip():
-            raise BusinessError(20001, '会话名称不能为空')
-        session.title = body.title.strip()
-    if body.favorite is not None:
-        session.favorite = body.favorite
-    session.updated_at = time.time()
+    session = repository.update(session_id, owner, title=body.title, favorite=body.favorite)
     return ok(session.public())
 
 

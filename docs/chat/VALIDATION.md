@@ -10,12 +10,12 @@
 | `apps/web` | `pnpm install --frozen-lockfile` | 通过，必要新依赖已先安装并更新 lock |
 | `apps/web` | `pnpm typecheck` | 通过 |
 | `apps/web` | `pnpm lint` | 0 error；1 条 dev 已有 warning：`lib/use-popover-placement.ts:37` 的 `anchorRef` 依赖 |
-| `apps/web` | `pnpm test` | 44 通过，0 失败，0 跳过 |
+| `apps/web` | `pnpm test` | 47 通过，0 失败，0 跳过 |
 | `apps/web` | `pnpm build` | 通过，27 个静态页面；保留原 `/agents` 系列 URL |
 | `apps/web` | `pnpm why @prisma/client better-sqlite3` | 成功、无依赖关系输出 |
 | `apps/backend` | `python -m compileall app` | 通过 |
 | `apps/backend` | `python -c 'from app.main import app; print(app.title)'` | 成功导入 FastAPI 应用 |
-| `apps/backend` | `python -m unittest discover -s tests -v` | 15 通过 |
+| `apps/backend` | `python -m unittest discover -s tests -v` | 16 通过 |
 | 仓库根目录 | `git diff --check` | 通过 |
 
 Backend 使用 `/tmp/shenzhi-backend-venv` 的 Python 3.14.7，已安装 `requirements.txt`。Web 使用 pnpm 11.22.0。
@@ -28,6 +28,8 @@ Auth 负向测试预期打印 `delivery failed`，坏 PDF 负向测试预期打�
 - Backend：Provider streaming/reasoning、缺失 Key、供应商错误/提前 EOF、取消与 followups；Tavily 超时→SearXNG fallback 与 news/general。
 - Backend：PDF/TXT/Markdown、坏文件/不支持类型/大小限制、截断、附件归属；multipart 超过 1MiB 仍不使用磁盘 spool。
 - Backend：会话 CRUD/收藏/历史、owner 隔离、多轮、事件重放不重复生成、停止/续写/断连、容量限制、上下文截断告警。
+- BFF/Auth：生产默认要求内部 Secret；只有显式 loopback 本地模式可无 Secret；空 Better Auth Session 与鉴权异常分开处理。
+- API 边界：Chat 配置/会话/SSE 使用 `/api/v1/chat/*`，Search 仅保留 `/api/v1/search/explore`。
 
 ## 浏览器与实际 HTTP 链路
 

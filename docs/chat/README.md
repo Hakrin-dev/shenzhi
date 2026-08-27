@@ -31,14 +31,14 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 
 | 方法 | 路径（前缀 `/api/v1`） | 职责 |
 | --- | --- | --- |
-| GET | `/search/config` | 已配置模型、回答模式、附件限制；不含 Key |
+| GET | `/chat/config` | 已配置模型、回答模式、附件限制；不含 Key |
 | POST | `/search/explore` | 保留 dev 论文检索 |
-| GET / POST | `/search/sessions` | 列表 / 创建会话及首轮消息 |
-| GET / PATCH / DELETE | `/search/sessions/{id}` | 详情 / 标题与收藏 / 删除 |
-| POST | `/search/sessions/{id}/messages` | 续问（服务端构造多轮上下文） |
-| GET | `/search/messages/{id}/stream` | SSE，可携带 `Last-Event-ID` |
-| POST | `/search/messages/{id}/stop` | 取消生成和上游连接 |
-| POST | `/search/messages/{id}/resume` | 继续最近一条停止/失败的回答 |
+| GET / POST | `/chat/sessions` | 列表 / 创建会话及首轮消息 |
+| GET / PATCH / DELETE | `/chat/sessions/{id}` | 详情 / 标题与收藏 / 删除 |
+| POST | `/chat/sessions/{id}/messages` | 续问（服务端构造多轮上下文） |
+| GET | `/chat/messages/{id}/stream` | SSE，可携带 `Last-Event-ID` |
+| POST | `/chat/messages/{id}/stop` | 取消生成和上游连接 |
+| POST | `/chat/messages/{id}/resume` | 继续最近一条停止/失败的回答 |
 | POST / GET | `/uploads` / `/uploads/{id}` | 内存解析上传 / 状态 |
 
 创建入参：`{type, question, mode, model, web_search, attachments}`。问题 1–2000 字，`mode` 为 `fast/deep/idea/doubt`，附件最多 5 个。文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
@@ -73,13 +73,13 @@ data: {"text":"正文增量","reasoning":"可选推理增量"}
 
 - 有 `DASHSCOPE_API_KEY` 时使用 DashScope 的 URL / 默认模型；否则使用 `DEEPSEEK_*`。两套配置不交叉拼接。
 - `DASHSCOPE_MODEL` 默认 `qwen-plus`；`DEEPSEEK_MODEL` 默认 `deepseek-chat`。
-- `AI_ALLOWED_MODELS` 是同一选定 Provider 的额外模型白名单，默认模型自动加入。UI 读取 `/search/config`，不能任意请求未配置模型。
+- `AI_ALLOWED_MODELS` 是同一选定 Provider 的额外模型白名单，默认模型自动加入。UI 读取 `/chat/config`，不能任意请求未配置模型。
 - 普通模型 `max_tokens=4096`，temperature 按回答模式为 0.3 / 0.6 / 1.0 / 0.85。
 - `reasoner/r1/qwen3` 模型 `max_tokens=8192`，不传 temperature。
 - `AI_TIMEOUT_SEC` 默认 90 秒（连接超时 10 秒）；追问请求最多 10 秒。401/403/429、超时、异常流和提前 EOF 都标准化处理，不向前端返回密钥或原始供应商错误体。
 - 未配置 Key 明确报错，正式代码没有模拟回复。付费 Provider 的实际可用性需要部署环境另行联调。
 
-Web 仅配置 `BUSINESS_BACKEND_URL` 和可选的 `BACKEND_BFF_SECRET`。模型/搜索 Key 禁止写入 Web 或任何 `NEXT_PUBLIC_*`。
+Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Key 禁止写入 Web 或任何 `NEXT_PUBLIC_*`。
 
 ## 检索与联网搜索
 
@@ -103,6 +103,7 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和可选的 `BACKEND_BFF_SECRET`。模型/
 - BFF 清除浏览器伪造的用户/内部凭据头，再注入经 Better Auth 验证的用户 ID。匿名请求使用 HttpOnly、SameSite=Lax 随机会话 cookie，不按 IP 共用数据。
 - 所有会话/消息/上传操作校验临时 owner。不同用户、匿名与登录后数据不自动迁移，过期附件需要重传。
 - Backend 不读取 Better Auth 数据库，不引入 B 的 ORM/用户系统。
-- 非 loopback 部署必须给两端设置同一高熵 `BACKEND_BFF_SECRET` 并只允许 BFF 访问 FastAPI；空 secret 只用于可信本地开发。现有 infra/CI 不自动部署新后端，需按上述边界显式配置。
+- 未配置 `BACKEND_BFF_SECRET` 时 Web 与 Backend 均默认拒绝。仅 loopback 本地开发可在两端显式设置 `BACKEND_ALLOW_INSECURE_LOCAL_BFF=true`；非 loopback 部署必须设置同一高熵 Secret，并只允许 BFF 访问 FastAPI。现有 infra/CI 不自动部署新后端。
+- Better Auth 正常返回空 Session 时 BFF 按匿名会话转发；Better Auth 调用抛错时 BFF 返回 503，不会静默降级为匿名用户。
 
 **后续边界**：PostgreSQL 持久化、与 Better Auth 用户关联及匿名会话归属策略、跨 worker 分发、共享链接/权限/保留期限、限流与成本配额。这次没有设计或执行数据库 migration，没有迁移 B 的 `SharedSession` 数据库和公共分享功能。

@@ -14,8 +14,8 @@ import { QuotaRing } from "./quota-ring";
 import type {
   ChatModelId,
   ChatReplyMode,
-  SearchConfig,
-  SearchModelOption,
+  ChatConfig,
+  ChatModelOption,
 } from "@/types/ai-search";
 
 export const STYLE_OPTIONS: {
@@ -81,8 +81,8 @@ export function ComposerControlPicker({
   onReplyModeChange: (v: ChatReplyMode) => void;
   depthMode: "fast" | "deep";
   onDepthModeChange: (v: "fast" | "deep") => void;
-  options: SearchModelOption[];
-  quota: SearchConfig["quota"];
+  options: ChatModelOption[];
+  quota: ChatConfig["quota"];
   anchorRef: RefObject<HTMLDivElement | null>;
   open: boolean;
   onOpenChange: (v: boolean) => void;

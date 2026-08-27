@@ -1,16 +1,37 @@
 import { apiJson, apiPath } from "./http";
 import { readSseStream, type SseEvent } from "./sse";
+import { CHAT_MODEL_CATALOG } from "../../lib/data/chat-models";
 import type {
   CreateChatSessionRequest, CreateChatSessionResponse, SendChatMessageRequest,
   StreamDeltaEvent, StreamDoneEvent, StreamErrorEvent, StreamFollowupsEvent,
-  StreamMetaEvent, StreamRefsEvent, ChatSessionSummary, ChatSessionDetail,
+  StreamMetaEvent, StreamRefsEvent, ChatSessionSummary, ChatSessionDetail, ChatConfig,
 } from "../../types/ai-search";
+
+export const FALLBACK_CHAT_CONFIG: ChatConfig = {
+  models: CHAT_MODEL_CATALOG.map((model) => ({ ...model, enabled: false })),
+  quota_enforced: false,
+  modes: ["fast", "deep", "idea", "doubt"],
+  quota: { used: 0, limit: 20, deep_used: 0, deep_limit: 5 },
+  upload: {
+    max_size_mb: 20,
+    max_files: 5,
+    accept: [".pdf", ".md", ".markdown", ".txt"],
+  },
+};
+
+export async function getChatConfig(): Promise<ChatConfig> {
+  try {
+    return await apiJson<ChatConfig>("/chat/config");
+  } catch {
+    return FALLBACK_CHAT_CONFIG;
+  }
+}
 
 export function createChatSession(
   body: CreateChatSessionRequest,
   init?: RequestInit,
 ) {
-  return apiJson<CreateChatSessionResponse>("/search/sessions", {
+  return apiJson<CreateChatSessionResponse>("/chat/sessions", {
     method: "POST",
     body: JSON.stringify(body),
     ...init,
@@ -23,20 +44,20 @@ export function sendChatMessage(
   init?: RequestInit,
 ) {
   return apiJson<CreateChatSessionResponse>(
-    `/search/sessions/${sessionId}/messages`,
+    `/chat/sessions/${sessionId}/messages`,
     { method: "POST", body: JSON.stringify(body), ...init },
   );
 }
 
 export function stopChatMessage(messageId: string) {
-  return apiJson<{ ok: boolean }>(`/search/messages/${messageId}/stop`, {
+  return apiJson<{ ok: boolean }>(`/chat/messages/${messageId}/stop`, {
     method: "POST",
   });
 }
 
 export function resumeChatMessage(messageId: string) {
   return apiJson<CreateChatSessionResponse>(
-    `/search/messages/${messageId}/resume`,
+    `/chat/messages/${messageId}/resume`,
     { method: "POST" },
   );
 }
@@ -112,7 +133,7 @@ export async function streamChatMessage(
     }
   };
 
-  await readSseStream(apiPath(`/search/messages/${messageId}/stream`), {
+  await readSseStream(apiPath(`/chat/messages/${messageId}/stream`), {
     signal: options.signal,
     lastEventId: lastId,
     onEvent: dispatch,
@@ -124,19 +145,19 @@ export async function streamChatMessage(
 
 
 export function listChatSessions() {
-  return apiJson<{ sessions: ChatSessionSummary[]; ephemeral: boolean }>("/search/sessions");
+  return apiJson<{ sessions: ChatSessionSummary[]; ephemeral: boolean }>("/chat/sessions");
 }
 
 export function getChatSession(id: string) {
-  return apiJson<ChatSessionDetail>(`/search/sessions/${encodeURIComponent(id)}`);
+  return apiJson<ChatSessionDetail>(`/chat/sessions/${encodeURIComponent(id)}`);
 }
 
 export function updateChatSession(id: string, patch: { title?: string; favorite?: boolean }) {
-  return apiJson<ChatSessionSummary>(`/search/sessions/${encodeURIComponent(id)}`, {
+  return apiJson<ChatSessionSummary>(`/chat/sessions/${encodeURIComponent(id)}`, {
     method: "PATCH", body: JSON.stringify(patch),
   });
 }
 
 export function deleteChatSession(id: string) {
-  return apiJson<{ ok: boolean }>(`/search/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return apiJson<{ ok: boolean }>(`/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

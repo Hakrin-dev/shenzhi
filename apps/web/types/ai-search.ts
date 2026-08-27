@@ -111,7 +111,7 @@ export interface StreamErrorEvent {
   message: string;
 }
 
-export interface SearchModelOption {
+export interface ChatModelOption {
   value: ChatModelId;
   /** 列表与 pill 上显示的模型名 */
   label: string;
@@ -121,10 +121,10 @@ export interface SearchModelOption {
   description?: string;
 }
 
-export interface SearchConfig {
+export interface ChatConfig {
   default_model?: string;
   quota_enforced?: boolean;
-  models: SearchModelOption[];
+  models: ChatModelOption[];
   modes: ChatReplyMode[];
   quota: {
     used: number;

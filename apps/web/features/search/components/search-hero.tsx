@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ComposerShell } from "@/features/chat/components/composer";
 import { SearchResults } from "@/features/search/components/search-results";
-import { getSearchConfig } from "@/clients/backend/search";
+import { getChatConfig } from "@/clients/backend/chat";
 import { askQueryString, saveAskDraft } from "@/features/chat/services/draft";
-import type { ComposerSubmitPayload, SearchConfig } from "@/types/ai-search";
+import type { ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
 
 const PLACEHOLDER =
   "用自然语言提问，例如 Diffusion Policy 有什么创新？";
@@ -22,10 +22,10 @@ export function SearchHero({
   const router = useRouter();
   const [value, setValue] = useState(initialQuery);
   const [inlineSearch, setInlineSearch] = useState<string | null>(null);
-  const [config, setConfig] = useState<SearchConfig | undefined>();
+  const [config, setConfig] = useState<ChatConfig | undefined>();
 
   useEffect(() => {
-    void getSearchConfig().then(setConfig);
+    void getChatConfig().then(setConfig);
   }, []);
 
   useEffect(() => {

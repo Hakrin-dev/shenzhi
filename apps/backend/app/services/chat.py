@@ -58,7 +58,7 @@ def model_messages(session: Session, message: Message, source_context: str) -> t
 async def generate(message: Message) -> None:
     started = time.monotonic()
     try:
-        session = repository.sessions[message.session_id]
+        session = repository.session_for_message(message)
         message.emit('meta', {'phase': 'retrieving', 'ephemeral': True, 'warnings': message.warnings})
         hits = await retrieval_search(message.question, top_k=10, mode=message.settings['mode'])
         references = [map_hit_to_reference(hit, i + 1) for i, hit in enumerate(hits)]
@@ -114,8 +114,7 @@ async def generate(message: Message) -> None:
     finally:
         message.duration_ms += int((time.monotonic() - started) * 1000)
         message.emit('done', {'duration_ms': message.duration_ms, 'status': message.status})
-        if message.session_id in repository.sessions:
-            repository.sessions[message.session_id].updated_at = time.time()
+        repository.touch(message.session_id)
 
 
 async def stop_message(message: Message) -> None:

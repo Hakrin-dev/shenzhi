@@ -28,7 +28,10 @@ test("SSE parses CRLF, comments, multiline data and a final unterminated event",
 });
 
 test("product stream dispatches reasoning and detects a truncated connection", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => responseFor('event: delta\ndata: {"reasoning":"分析","text":"正文"}\n\nevent: done\ndata: {"status":"done","duration_ms":20}\n\n'));
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    assert.equal(url, "/api/v1/chat/messages/id/stream");
+    return responseFor('event: delta\ndata: {"reasoning":"分析","text":"正文"}\n\nevent: done\ndata: {"status":"done","duration_ms":20}\n\n');
+  });
   let reasoning = ""; let content = ""; let done = false;
   await streamChatMessage("id", { onDelta: (delta) => { reasoning += delta.reasoning; content += delta.text; }, onDone: () => { done = true; } });
   assert.deepEqual([reasoning, content, done], ["分析", "正文", true]);

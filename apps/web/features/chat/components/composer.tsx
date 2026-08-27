@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { popoverPosition, usePopoverPlacement } from "@/lib/use-popover-placement";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
-import { FALLBACK_SEARCH_CONFIG } from "@/clients/backend/search";
+import { FALLBACK_CHAT_CONFIG } from "@/clients/backend/chat";
 import { AttachmentMenu } from "./attachment-menu";
 import { ComposerControlPicker } from "./composer-control-picker";
 import { questionSchema } from "@/lib/validations";
@@ -21,7 +21,7 @@ import type {
   ChatModelId,
   ChatReplyMode,
   ComposerSubmitPayload,
-  SearchConfig,
+  ChatConfig,
 } from "@/types/ai-search";
 
 export type { ComposerEntryMode, ComposerSubmitPayload } from "@/types";
@@ -167,7 +167,7 @@ export function ComposerShell({
   onWebSearchChange,
   attachments: attachmentsProp,
   onAttachmentsChange,
-  config = FALLBACK_SEARCH_CONFIG,
+  config = FALLBACK_CHAT_CONFIG,
   busy = false,
   onStop,
 }: {
@@ -185,7 +185,7 @@ export function ComposerShell({
   onWebSearchChange?: (v: boolean) => void;
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (items: ChatAttachment[]) => void;
-  config?: SearchConfig;
+  config?: ChatConfig;
   busy?: boolean;
   onStop?: () => void;
 }) {

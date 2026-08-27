@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { backendConfig } from "@/config/backend";
+import { backendConfig, backendConnectionIsAllowed } from "@/config/backend";
 import { forwardToBusinessBackend } from "@/clients/backend/forward";
 
 export const runtime = "nodejs";
@@ -16,6 +16,15 @@ async function handle(req: NextRequest, ctx: Ctx) {
         code: 20004,
         message:
           "生成服务未配置。请在服务端设置 BUSINESS_BACKEND_URL（FastAPI 根地址，勿使用 NEXT_PUBLIC_）。",
+      },
+      { status: 503 },
+    );
+  }
+  if (!backendConnectionIsAllowed(backendConfig)) {
+    return NextResponse.json(
+      {
+        code: 10001,
+        message: "后端调用凭据未配置。请配置 BACKEND_BFF_SECRET；仅 loopback 本地开发可显式设置 BACKEND_ALLOW_INSECURE_LOCAL_BFF=true。",
       },
       { status: 503 },
     );

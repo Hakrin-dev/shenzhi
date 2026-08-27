@@ -9,6 +9,7 @@ from app.services.sessions import repository
 
 OWNER = {'x-shenzhi-anonymous-id': '00000000-0000-4000-8000-000000000001'}
 OTHER = {'x-shenzhi-anonymous-id': '00000000-0000-4000-8000-000000000002'}
+OWNER_KEY = 'anon:00000000-0000-4000-8000-000000000001'
 
 
 def events(text):
@@ -34,9 +35,9 @@ class FakeProvider:
 
 class ChatApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.env = patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'test', 'DEEPSEEK_MODEL': 'deepseek-chat', 'DASHSCOPE_API_KEY': '', 'BACKEND_BFF_SECRET': ''})
+        self.env = patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'test', 'DEEPSEEK_MODEL': 'deepseek-chat', 'DASHSCOPE_API_KEY': '', 'BACKEND_BFF_SECRET': '', 'BACKEND_ALLOW_INSECURE_LOCAL_BFF': 'true'})
         self.env.start()
-        repository.sessions.clear(); repository.messages.clear(); repository.uploads.clear()
+        repository.clear()
         FakeProvider.calls = []
         self.provider = patch.object(chat, 'ModelProvider', FakeProvider); self.provider.start()
         self.retrieval = patch.object(chat, 'retrieval_search', return_value=[{'id': 'p1', 'title': 'Paper', 'abstract': 'Evidence'}]); self.retrieval.start()
@@ -47,39 +48,52 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.provider.stop(); self.retrieval.stop(); self.env.stop()
 
     async def create(self, **kwargs):
-        response = await self.client.post('/api/v1/search/sessions', json={'question': '首问', **kwargs})
+        response = await self.client.post('/api/v1/chat/sessions', json={'question': '首问', **kwargs})
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()['data']
 
     async def test_multiturn_history_favorite_and_delete(self):
         created = await self.create(); sid, mid = created['session_id'], created['message_id']
-        response = await self.client.get(f'/api/v1/search/messages/{mid}/stream')
+        response = await self.client.get(f'/api/v1/chat/messages/{mid}/stream')
         stream = events(response.text)
         self.assertEqual(set(kind for kind, data in stream), {'meta', 'delta', 'refs', 'followups', 'done'})
         self.assertEqual(stream[-1][1]['status'], 'done')
-        detail = (await self.client.get(f'/api/v1/search/sessions/{sid}')).json()['data']
+        detail = (await self.client.get(f'/api/v1/chat/sessions/{sid}')).json()['data']
         self.assertIn('公式', detail['messages'][0]['content'])
         self.assertEqual(detail['messages'][0]['reasoning'], '分析过程')
         self.assertEqual(detail['messages'][0]['references'][0]['title'], 'Paper')
-        follow = (await self.client.post(f'/api/v1/search/sessions/{sid}/messages', json={'question': '续问'})).json()['data']
-        await self.client.get(f"/api/v1/search/messages/{follow['message_id']}/stream")
+        follow = (await self.client.post(f'/api/v1/chat/sessions/{sid}/messages', json={'question': '续问'})).json()['data']
+        await self.client.get(f"/api/v1/chat/messages/{follow['message_id']}/stream")
         self.assertTrue(any(m['role'] == 'assistant' and '公式' in m['content'] for m in FakeProvider.calls[-1]))
-        await self.client.patch(f'/api/v1/search/sessions/{sid}', json={'favorite': True, 'title': '重命名'})
-        listing = (await self.client.get('/api/v1/search/sessions')).json()['data']['sessions']
+        await self.client.patch(f'/api/v1/chat/sessions/{sid}', json={'favorite': True, 'title': '重命名'})
+        listing = (await self.client.get('/api/v1/chat/sessions')).json()['data']['sessions']
         self.assertEqual((listing[0]['favorite'], listing[0]['title']), (True, '重命名'))
-        await self.client.delete(f'/api/v1/search/sessions/{sid}')
-        self.assertEqual((await self.client.get(f'/api/v1/search/messages/{mid}/stream')).status_code, 404)
+        await self.client.delete(f'/api/v1/chat/sessions/{sid}')
+        self.assertEqual((await self.client.get(f'/api/v1/chat/messages/{mid}/stream')).status_code, 404)
 
     async def test_owner_checks_all_operations(self):
         data = await self.create(); sid, mid = data['session_id'], data['message_id']
         for method, path, body in [('GET', f'/sessions/{sid}', None), ('PATCH', f'/sessions/{sid}', {'favorite': True}),
             ('DELETE', f'/sessions/{sid}', None), ('POST', f'/sessions/{sid}/messages', {'question': 'q'}),
             ('GET', f'/messages/{mid}/stream', None), ('POST', f'/messages/{mid}/stop', None), ('POST', f'/messages/{mid}/resume', None)]:
-            response = await self.client.request(method, '/api/v1/search' + path, headers=OTHER, json=body)
+            response = await self.client.request(method, '/api/v1/chat' + path, headers=OTHER, json=body)
             self.assertEqual(response.status_code, 404, path)
-        self.assertEqual((await self.client.get('/api/v1/search/sessions', headers=OTHER)).json()['data']['sessions'], [])
+        self.assertEqual((await self.client.get('/api/v1/chat/sessions', headers=OTHER)).json()['data']['sessions'], [])
         with patch.dict('os.environ', {'BACKEND_BFF_SECRET': 'required'}):
-            self.assertEqual((await self.client.get('/api/v1/search/sessions')).status_code, 401)
+            self.assertEqual((await self.client.get('/api/v1/chat/sessions')).status_code, 401)
+
+    async def test_bff_secret_is_fail_closed_with_explicit_loopback_escape_hatch(self):
+        with patch.dict('os.environ', {'BACKEND_BFF_SECRET': '', 'BACKEND_ALLOW_INSECURE_LOCAL_BFF': ''}):
+            self.assertEqual((await self.client.get('/api/v1/chat/config')).status_code, 503)
+            self.assertEqual((await self.client.post('/api/v1/search/explore', json={'query': 'test'})).status_code, 503)
+        self.assertEqual((await self.client.get('/api/v1/chat/config')).status_code, 200)
+        self.assertEqual((await self.client.get('/api/v1/search/config')).status_code, 404)
+        remote = httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=('203.0.113.10', 123)),
+                                   base_url='http://test', headers=OWNER)
+        try:
+            self.assertEqual((await remote.get('/api/v1/chat/config')).status_code, 503)
+        finally:
+            await remote.aclose()
 
     async def test_upload_roundtrip_and_no_disk_spooling(self):
         with patch('tempfile.SpooledTemporaryFile', side_effect=AssertionError('must stay in memory')):
@@ -89,16 +103,16 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(upload['truncated']); self.assertNotIn('text', upload)
         self.assertEqual((await self.client.get(f'/api/v1/uploads/{file_id}', headers=OTHER)).status_code, 404)
         created = await self.create(attachments=[{'kind': 'file', 'file_id': file_id}])
-        await self.client.get(f"/api/v1/search/messages/{created['message_id']}/stream")
+        await self.client.get(f"/api/v1/chat/messages/{created['message_id']}/stream")
         self.assertIn('AAAA', FakeProvider.calls[-1][-1]['content'])
         for name, data, status in [('x.docx', b'a', 415), ('x.txt', b'', 422), ('x.txt', b'A' * (20 * 1024 * 1024 + 1), 413)]:
             response = await self.client.post('/api/v1/uploads', files={'file': (name, data)})
             self.assertEqual(response.status_code, status)
 
     async def test_validation_replay_and_duplicate_stream_is_not_regeneration(self):
-        self.assertEqual((await self.client.post('/api/v1/search/sessions', json={'question': '  '})).status_code, 422)
-        self.assertEqual((await self.client.post('/api/v1/search/sessions', json={'question': 'q', 'model': 'unknown'})).status_code, 400)
-        created = await self.create(); path = f"/api/v1/search/messages/{created['message_id']}/stream"
+        self.assertEqual((await self.client.post('/api/v1/chat/sessions', json={'question': '  '})).status_code, 422)
+        self.assertEqual((await self.client.post('/api/v1/chat/sessions', json={'question': 'q', 'model': 'unknown'})).status_code, 400)
+        created = await self.create(); path = f"/api/v1/chat/messages/{created['message_id']}/stream"
         first = await self.client.get(path)
         replay = await self.client.get(path, headers={'Last-Event-ID': '1'})
         self.assertNotEqual(first.text, replay.text)
@@ -114,41 +128,41 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
                     yielded.set()
                     await asyncio.Event().wait()
                 finally: cancelled.set()
-        created = await self.create(); mid = created['message_id']; message = repository.messages[mid]
+        created = await self.create(); mid = created['message_id']; message = repository.message(mid, OWNER_KEY)
         with patch.object(chat, 'ModelProvider', SlowProvider):
             message.task = asyncio.create_task(chat.generate(message))
             await asyncio.wait_for(yielded.wait(), 2)
-            await self.client.post(f'/api/v1/search/messages/{mid}/stop')
+            await self.client.post(f'/api/v1/chat/messages/{mid}/stop')
         self.assertTrue(cancelled.is_set()); self.assertEqual(message.status, 'stopped')
-        resumed = (await self.client.post(f'/api/v1/search/messages/{mid}/resume')).json()['data']
-        response = await self.client.get(f'/api/v1/search/messages/{mid}/stream', headers={'Last-Event-ID': resumed['last_event_id']})
+        resumed = (await self.client.post(f'/api/v1/chat/messages/{mid}/resume')).json()['data']
+        response = await self.client.get(f'/api/v1/chat/messages/{mid}/stream', headers={'Last-Event-ID': resumed['last_event_id']})
         self.assertNotIn('"text": "未完成"', response.text)
         self.assertTrue(message.content.startswith('未完成'))
-        self.assertEqual(len(repository.sessions[created['session_id']].messages), 1)
+        self.assertEqual(len(repository.get(created['session_id'], OWNER_KEY).messages), 1)
         self.assertIn({'role': 'assistant', 'content': '未完成'}, FakeProvider.calls[-1])
 
     async def test_truncated_history_emits_visible_warning(self):
         created = await self.create()
-        await self.client.get(f"/api/v1/search/messages/{created['message_id']}/stream")
-        follow = (await self.client.post(f"/api/v1/search/sessions/{created['session_id']}/messages", json={'question': 'next'})).json()['data']
+        await self.client.get(f"/api/v1/chat/messages/{created['message_id']}/stream")
+        follow = (await self.client.post(f"/api/v1/chat/sessions/{created['session_id']}/messages", json={'question': 'next'})).json()['data']
         with patch.object(chat, 'MAX_HISTORY_CHARS', 1):
-            response = await self.client.get(f"/api/v1/search/messages/{follow['message_id']}/stream")
+            response = await self.client.get(f"/api/v1/chat/messages/{follow['message_id']}/stream")
         metas = [data for kind, data in events(response.text) if kind == 'meta' and data.get('context_truncated')]
         self.assertTrue(metas)
         self.assertTrue(any('历史上下文' in warning for warning in metas[0]['warnings']))
 
     async def test_stop_before_stream_and_memory_capacity(self):
         created = await self.create(); mid = created['message_id']
-        await self.client.post(f'/api/v1/search/messages/{mid}/stop')
-        self.assertEqual(repository.messages[mid].status, 'stopped')
+        await self.client.post(f'/api/v1/chat/messages/{mid}/stop')
+        self.assertEqual(repository.message(mid, OWNER_KEY).status, 'stopped')
         self.assertEqual(FakeProvider.calls, [])
-        self.assertEqual((await self.client.post(f'/api/v1/search/messages/{mid}/resume')).status_code, 200)
+        self.assertEqual((await self.client.post(f'/api/v1/chat/messages/{mid}/resume')).status_code, 200)
         with patch.object(repository, 'max_sessions', 1):
-            response = await self.client.post('/api/v1/search/sessions', json={'question': 'capacity'})
+            response = await self.client.post('/api/v1/chat/sessions', json={'question': 'capacity'})
         self.assertEqual(response.status_code, 429)
 
     async def test_disconnect_and_product_error(self):
-        created = await self.create(); message = repository.messages[created['message_id']]
+        created = await self.create(); message = repository.message(created['message_id'], OWNER_KEY)
         class WaitingProvider(FakeProvider):
             async def stream(self, *args):
                 yield {'text': 'partial'}
@@ -165,7 +179,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
                 yield
         other = await self.create()
         with patch.object(chat, 'ModelProvider', BrokenProvider):
-            response = await self.client.get(f"/api/v1/search/messages/{other['message_id']}/stream")
+            response = await self.client.get(f"/api/v1/chat/messages/{other['message_id']}/stream")
         stream = events(response.text)
         self.assertIn(('error', {'code': 20004, 'message': 'model unavailable'}), stream)
         self.assertEqual(stream[-1][1]['status'], 'failed')

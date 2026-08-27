@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { backendConfig } from "@/config/backend";
+import { attachIdentity } from "./identity";
 
 /**
  * Next.js 微后端 → FastAPI 转发。
@@ -28,7 +29,14 @@ export async function forwardToBusinessBackend(
   headers.set("x-shenzhi-anonymous-id", anonymousId);
   if (backendConfig.secret) headers.set("x-shenzhi-bff-secret", backendConfig.secret);
 
-  await attachIdentity(req, headers);
+  try {
+    await attachIdentity(req.headers, headers);
+  } catch {
+    return NextResponse.json(
+      { code: 10001, message: "鉴权服务异常，请稍后重试" },
+      { status: 503 },
+    );
+  }
 
   const init: RequestInit = {
     method: req.method,
@@ -61,17 +69,4 @@ export async function forwardToBusinessBackend(
     httpOnly: true, sameSite: "lax", secure: req.nextUrl.protocol === "https:", path: "/", maxAge: 86400,
   });
   return response;
-}
-
-async function attachIdentity(req: NextRequest, headers: Headers) {
-  try {
-    const { auth } = await import("@/lib/auth/server");
-    const session = await auth.api.getSession({ headers: req.headers });
-    const user = session?.user;
-    if (!user?.id) return;
-    headers.set("X-ShenZhi-User-Id", user.id);
-    if (user.email) headers.set("X-ShenZhi-User-Email", user.email);
-  } catch {
-    /* 未登录或鉴权库未配置：按匿名配额转发 */
-  }
 }

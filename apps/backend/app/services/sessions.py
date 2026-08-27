@@ -89,6 +89,12 @@ class MemorySessionRepository:
             raise BusinessError(20004, '会话不存在或已过期', 404)
         return session
 
+    def session_for_message(self, message: Message) -> Session:
+        session = self.sessions.get(message.session_id)
+        if not session or not any(item is message for item in session.messages):
+            raise BusinessError(20004, '会话不存在或已过期', 404)
+        return session
+
     def message(self, message_id: str, owner: str) -> Message:
         message = self.messages.get(message_id)
         if not message:
@@ -113,6 +119,28 @@ class MemorySessionRepository:
         self.prune()
         return [s.public() for s in sorted(self.sessions.values(),
                 key=lambda s: (s.favorite, s.updated_at), reverse=True) if s.owner == owner]
+
+    def update(self, session_id: str, owner: str, *, title: str | None = None,
+               favorite: bool | None = None) -> Session:
+        session = self.get(session_id, owner)
+        if title is not None:
+            if not title.strip():
+                raise BusinessError(20001, '会话名称不能为空')
+            session.title = title.strip()
+        if favorite is not None:
+            session.favorite = favorite
+        session.updated_at = time.time()
+        return session
+
+    def touch(self, session_id: str) -> None:
+        session = self.sessions.get(session_id)
+        if session:
+            session.updated_at = time.time()
+
+    def clear(self) -> None:
+        self.sessions.clear()
+        self.messages.clear()
+        self.uploads.clear()
 
     def delete(self, session_id: str, owner: str) -> None:
         session = self.get(session_id, owner)

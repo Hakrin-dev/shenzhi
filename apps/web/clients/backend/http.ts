@@ -33,7 +33,7 @@ export function authHeaders(extra?: HeadersInit): Headers {
 let identityReady: Promise<void> | undefined;
 async function ensureBackendIdentity() {
   if (typeof window === "undefined") return;
-  identityReady ??= fetch(apiPath("/search/config"), { cache: "no-store", signal: AbortSignal.timeout(30000) }).then((response) => {
+  identityReady ??= fetch(apiPath("/chat/config"), { cache: "no-store", signal: AbortSignal.timeout(30000) }).then((response) => {
     if (!response.ok) throw new ApiError(20004, "无法连接生成服务", response.status);
   }).catch((error) => { identityReady = undefined; throw error; });
   await identityReady;
