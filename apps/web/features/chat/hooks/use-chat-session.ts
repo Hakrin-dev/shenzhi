@@ -1,0 +1,202 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getChatSession, resumeChatMessage, stopChatMessage, streamChatMessage } from "@/clients/backend/chat";
+import { beginTurn, restoreTurns } from "../services/conversation";
+import { clearAskDraft } from "../services/draft";
+import { messageForApiError } from "../services/errors";
+import type { ChatSendInput, ChatTurn } from "../types";
+
+const newTurn = (role: ChatTurn["role"], content = ""): ChatTurn => ({
+  localId: crypto.randomUUID(), role, content, reasoning: "", thought: "正在连接生成服务…",
+  status: role === "user" ? "done" : "streaming", references: [], followups: [], warnings: [],
+});
+const PHASES: Record<string, string> = {
+  retrieving: "正在检索", web_search: "正在联网搜索", generating: "正在生成", followups: "正在生成追问",
+};
+
+/** A's session hook extended with B's reasoning, history and resume behavior.
+ * A revision guard prevents an old stream from writing into a switched session.
+ */
+export function useChatSession() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const sessionRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
+  const revision = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const currentMessageId = useRef<string | null>(null);
+  const lastInput = useRef<ChatSendInput | null>(null);
+  const pendingCreate = useRef<{ request: ReturnType<typeof beginTurn>; localId: string } | null>(null);
+
+  const lock = useCallback((value: boolean) => { busyRef.current = value; setBusy(value); }, []);
+  const patch = useCallback((id: string, data: Partial<ChatTurn>) => {
+    setTurns((prev) => prev.map((turn) => turn.localId === id ? { ...turn, ...data } : turn));
+  }, []);
+
+  useEffect(() => () => {
+    revision.current++;
+    abortRef.current?.abort();
+    if (currentMessageId.current) void stopChatMessage(currentMessageId.current).catch(() => {});
+  }, []);
+
+  const runStream = useCallback(async (messageId: string, localId: string, run: number,
+    controller: AbortController, cursor?: string) => {
+    currentMessageId.current = messageId;
+    const active = () => run === revision.current && !controller.signal.aborted;
+    try {
+      await streamChatMessage(messageId, {
+        onMeta: (meta) => {
+          if (!active()) return;
+          patch(localId, {
+            ...(meta.phase ? { thought: PHASES[meta.phase] ?? meta.phase } : {}),
+            ...(meta.read_count !== undefined ? { readCount: meta.read_count } : {}),
+            ...(meta.warnings ? { warnings: meta.warnings } : {}),
+          });
+        },
+        onDelta: (delta) => {
+          if (!active()) return;
+          setTurns((prev) => prev.map((turn) => turn.localId === localId ? {
+            ...turn, content: turn.content + (delta.text ?? ""),
+            reasoning: turn.reasoning + (delta.reasoning ?? ""),
+          } : turn));
+        },
+        onRefs: ({ references }) => { if (active()) patch(localId, { references }); },
+        onFollowups: ({ items }) => { if (active()) patch(localId, { followups: items }); },
+        onDone: (done) => { if (active()) patch(localId, { status: done.status, durationMs: done.duration_ms, thought: "生成结束" }); },
+        onError: (error) => { if (active()) patch(localId, { status: "failed", error: error.message }); },
+      }, { signal: controller.signal, lastEventId: cursor });
+    } catch (error) {
+      if (active()) patch(localId, { status: "failed", error: messageForApiError(error) });
+    }
+  }, [patch]);
+
+  const finish = useCallback((run: number) => {
+    if (run !== revision.current) return;
+    currentMessageId.current = null;
+    lock(false);
+    setHistoryVersion((value) => value + 1);
+  }, [lock]);
+
+  const send = useCallback(async (input: ChatSendInput) => {
+    const question = input.question.trim();
+    if (!question || busyRef.current) return;
+    lock(true);
+    const run = ++revision.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    lastInput.current = { ...input, question };
+    const assistant = newTurn("assistant");
+    setTurns((prev) => [...prev, newTurn("user", question), assistant]);
+    try {
+      // Do not abort the create POST: obtain its id even if Stop is clicked before it resolves,
+      // so the newly created server message can be stopped instead of left streaming forever.
+      const request = beginTurn(sessionRef.current, { ...input, question });
+      pendingCreate.current = { request, localId: assistant.localId };
+      const created = await request;
+      if (pendingCreate.current?.request === request) pendingCreate.current = null;
+      if (controller.signal.aborted || run !== revision.current) {
+        await stopChatMessage(created.message_id);
+        return;
+      }
+      sessionRef.current = created.session_id;
+      setSessionId(created.session_id);
+      patch(assistant.localId, { messageId: created.message_id });
+      clearAskDraft();
+      await runStream(created.message_id, assistant.localId, run, controller);
+    } catch (error) {
+      if (run === revision.current) patch(assistant.localId, { status: "failed", error: messageForApiError(error) });
+    } finally {
+      if (run === revision.current) pendingCreate.current = null;
+      finish(run);
+    }
+  }, [finish, lock, patch, runStream]);
+
+  const stop = useCallback(async () => {
+    const run = ++revision.current;
+    abortRef.current?.abort();
+    let messageId = currentMessageId.current;
+    const pending = pendingCreate.current;
+    currentMessageId.current = null;
+    lock(true);
+    setTurns((prev) => prev.map((turn) => turn.status === "streaming" ? { ...turn, status: "stopped", thought: "已停止" } : turn));
+    try {
+      if (pending) {
+        const created = await pending.request;
+        messageId = created.message_id;
+        if (run === revision.current) {
+          sessionRef.current = created.session_id;
+          setSessionId(created.session_id);
+          patch(pending.localId, { messageId, status: "stopped" });
+          pendingCreate.current = null;
+        }
+      }
+      if (messageId) await stopChatMessage(messageId);
+    }
+    catch (error) {
+      if (run === revision.current) setTurns((prev) => prev.map((turn) => turn.messageId === messageId
+        ? { ...turn, error: `停止请求未确认：${messageForApiError(error)}` } : turn));
+    } finally { finish(run); }
+  }, [finish, lock, patch]);
+
+  const resumeLast = useCallback(async () => {
+    if (busyRef.current) return;
+    const last = turns.at(-1);
+    if (!last || !["stopped", "failed"].includes(last.status)) return;
+    if (!last.messageId) {
+      if (lastInput.current) {
+        setTurns((prev) => prev.slice(0, -2));
+        await send(lastInput.current);
+      }
+      return;
+    }
+    lock(true);
+    const run = ++revision.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    patch(last.localId, { status: "streaming", error: undefined, thought: "继续生成…" });
+    try {
+      const resumed = await resumeChatMessage(last.messageId);
+      if (run !== revision.current || controller.signal.aborted) {
+        await stopChatMessage(resumed.message_id);
+        return;
+      }
+      await runStream(resumed.message_id, last.localId, run, controller, resumed.last_event_id);
+    } catch (error) {
+      if (run === revision.current) patch(last.localId, { status: "failed", error: messageForApiError(error) });
+    } finally { finish(run); }
+  }, [finish, lock, patch, runStream, send, turns]);
+
+  const reset = useCallback(async () => {
+    await stop();
+    sessionRef.current = null;
+    setSessionId(null);
+    setTurns([]);
+    lastInput.current = null;
+  }, [stop]);
+
+  const openSession = useCallback(async (id: string) => {
+    await stop();
+    const run = ++revision.current;
+    lock(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const session = await getChatSession(id);
+      if (run !== revision.current) return undefined;
+      sessionRef.current = id;
+      setSessionId(id);
+      const restored = restoreTurns(session);
+      setTurns(restored);
+      const latest = session.messages.at(-1);
+      if (latest?.status === "streaming") {
+        void runStream(latest.id, latest.id, run, controller, latest.last_event_id).finally(() => finish(run));
+      } else finish(run);
+      return session;
+    } catch (error) { finish(run); throw error; }
+  }, [finish, lock, runStream, stop]);
+
+  return { sessionId, turns, busy, historyVersion, send, stop, resumeLast, reset, openSession };
+}

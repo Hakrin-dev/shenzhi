@@ -1,27 +1,21 @@
-# 深知后端 · FastAPI
+# ShenZhi FastAPI
 
-AI 检索 / 会话 / 生成服务。浏览器 **不直连** 本服务；由 Next.js 微后端同源 `/api/v1` 转发，并带上 `X-ShenZhi-User-Id`。
-
-本地：
+Chat、论文检索、模型流、联网搜索及附件解析。浏览器只访问 Next.js 的 `/api/v1` BFF。
 
 ```bash
 cd apps/backend
 python -m venv .venv
-# Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+cp .env.example .env
+# Configure provider/search keys before starting. Missing keys produce explicit errors, never mock answers.
+uvicorn app.main:app --env-file .env --host 127.0.0.1 --port 8000
+python -m compileall app
+python -m unittest discover -s tests -v
 ```
 
-Web 侧设置（仅服务端，不要 `NEXT_PUBLIC_`）：
+Web 设置 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`。
+两端配置相同 `BACKEND_BFF_SECRET`；后端只允许私网/BFF访问，不能直接暴露公网。未配置 Secret 时默认拒绝；仅 loopback 本地开发可在两端显式设置 `BACKEND_ALLOW_INSECURE_LOCAL_BFF=true`。
+当前仅支持 **单进程 / 单 worker**，Session 与解析后的附件为临时内存数据，重启清空。
 
-```
-BUSINESS_BACKEND_URL=http://127.0.0.1:8000
-```
-
-当前 `app/main.py` 提供会话契约、**论文检索代理**（`POST /api/v1/search/explore` → 外部 `RETRIEVAL_API_URL`）与 SSE 占位回复（检索结果经 `refs` 事件返回）。真实大模型生成待 B 分支合入。
-
-检索环境变量见 `.env.example`：
-
-```
-RETRIEVAL_API_URL=http://47.110.47.12
-```
+维护说明：[Chat 架构、协议与配置](../../docs/chat/README.md)。

@@ -181,7 +181,7 @@ its independent callback.
 ```text
 Authenticated identity
   ↓
-Next.js /api/v1 BFF  (apps/web/services/backend/forward.ts)
+Next.js /api/v1 BFF  (apps/web/clients/backend/forward.ts)
   ↓
 X-ShenZhi-User-Id / X-ShenZhi-User-Email
   ↓
@@ -191,6 +191,12 @@ Python FastAPI  (apps/backend)
 ```
 
 The browser must not call FastAPI directly. FastAPI must not read Better Auth `user`, `account`, `session`, or `verification` tables, and must not depend on `pg.Pool` or `apps/web/lib/auth/server.ts`. See `docs/dev/项目介绍.md`.
+
+The BFF and FastAPI use the same `BACKEND_BFF_SECRET` and fail closed when it is
+missing. Secretless development requires `BACKEND_ALLOW_INSECURE_LOCAL_BFF=true`
+on both sides and is restricted to loopback. A normal empty Better Auth session
+uses the anonymous Chat identity; a Better Auth exception returns 503 and is not
+silently downgraded to anonymous access.
 
 Authentication and Authorization/RBAC remain separate concerns. RBAC is a
 future product decision; this stage adds no role table, admin plugin, or

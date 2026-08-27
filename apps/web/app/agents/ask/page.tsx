@@ -1,5 +1,4 @@
-import { AskPage } from "@/features/agents/ask/AskPage";
-import { normalizeChatModelId } from "@/lib/data/chat-models";
+import { AskPage } from "@/features/chat/ask/AskPage";
 import type { ChatReplyMode } from "@/types/ai-search";
 
 const MODES: ChatReplyMode[] = ["fast", "deep", "idea", "doubt"];
@@ -24,8 +23,8 @@ export default async function Page({
     <AskPage
       question={q}
       initialMode={asMode(mode)}
-      initialModel={normalizeChatModelId(model)}
-      initialWebSearch={web_search === "1"}
+      initialModel={model}
+      initialWebSearch={web_search === undefined ? undefined : web_search === "1"}
     />
   );
 }

@@ -27,7 +27,9 @@ repository.
 | `BETTER_AUTH_URL` | `apps/web/config/auth.ts` | Better Auth 应用基础地址 | 当前必须；生产使用实际 HTTPS 地址 |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | `apps/web/config/auth.ts` | 可选的逗号分隔 trusted origins | 正式跨域部署前配置；空值不产生 `['']` |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | `apps/web/config/auth.ts` | 是否强制 Email/Password 注册完成邮箱验证 | 默认 `false`；真实邮件 readiness 通过后生产设置为 `true` |
-| `BUSINESS_BACKEND_URL` | `apps/web/config/backend.ts` | 未来业务后端的服务端地址 | 未来业务后端实现时再填写 |
+| `BUSINESS_BACKEND_URL` | `apps/web/config/backend.ts` | FastAPI 业务后端的服务端地址 | 使用 Chat / Search 时必须；不暴露给浏览器 |
+| `BACKEND_BFF_SECRET` | `apps/web/config/backend.ts` | Next.js BFF 调用 FastAPI 的内部凭据 | 默认必须；两端配置相同高熵值 |
+| `BACKEND_ALLOW_INSECURE_LOCAL_BFF` | `apps/web/config/backend.ts` / Backend | 无 Secret 的本地开发逃生开关 | 默认 `false`；仅两端显式为 `true` 且 loopback 时生效 |
 | `EMAIL_PROVIDER` | `apps/web/config/email.ts` | 当前 Provider 选择；使用 `aliyun-directmail` | 配置 DirectMail 发送前填写 |
 | `ALIBABA_CLOUD_ACCESS_KEY_ID` | `apps/web/config/email.ts` | DirectMail API AccessKey ID | 仅由 Deployment Secrets 注入 |
 | `ALIBABA_CLOUD_ACCESS_KEY_SECRET` | `apps/web/config/email.ts` | DirectMail API AccessKey Secret | 仅由 Deployment Secrets 注入，不提交 Git |
@@ -50,9 +52,10 @@ https://example.com, https://admin.example.com
 ```
 
 会规范化为两个 origin。未配置时不显式传入 Better Auth，以保持当前默认
-行为。`API_URL`（兼容回退 `NEXT_PUBLIC_API_URL`）由现有
-`apps/web/app/api/v1/[...path]/route.ts` 用于生成/用户服务的同源代理；它与未来认证后的
-业务后端边界 `BUSINESS_BACKEND_URL` 不同，浏览器不会直接请求内部服务地址。
+行为。`BUSINESS_BACKEND_URL`（兼容旧名 `API_URL`）由
+`apps/web/app/api/v1/[...path]/route.ts` 作为 Chat / Search 的同源 BFF 使用，浏览器不会直接请求
+`BUSINESS_BACKEND_URL`。未配置 `BACKEND_BFF_SECRET` 时默认拒绝转发；只有显式开启本地逃生开关且地址为
+loopback 时才允许无 Secret 运行。
 
 `AUTH_REQUIRE_EMAIL_VERIFICATION` 由通用 boolean parser 严格解析：未设置为 `false`，
 首尾空格会被忽略，`true`/`false` 不区分大小写；空字符串及其他值会产生明确配置错误，

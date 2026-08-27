@@ -1,7 +1,7 @@
-import type { ChatModelId, SearchModelOption } from "@/types/ai-search";
+import type { ChatModelId, ChatModelOption } from "../../types/ai-search";
 
-/** 前端可选的大模型目录（与 GET /search/config 对齐） */
-export const CHAT_MODEL_CATALOG: SearchModelOption[] = [
+/** 前端可选的大模型目录（与 GET /chat/config 对齐） */
+export const CHAT_MODEL_CATALOG: ChatModelOption[] = [
   {
     value: "deepseek-chat",
     label: "DeepSeek V3",

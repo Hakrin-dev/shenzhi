@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { FundingBrowser } from "@/features/knowledge/funding/components/funding-browser";
 
 /** 项目基金库 `/knowledge/funding` —— 两栏布局,对齐 `/knowledge` 论文库 */

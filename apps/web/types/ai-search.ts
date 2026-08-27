@@ -30,6 +30,7 @@ export interface ChatAttachment {
   file_id?: string;
   ref_id?: string;
   title?: string;
+  warning?: string;
 }
 
 export interface CreateChatSessionRequest {
@@ -52,6 +53,7 @@ export interface SendChatMessageRequest {
 export interface CreateChatSessionResponse {
   session_id: string;
   message_id: string;
+  last_event_id?: string;
 }
 
 export type ChatMessageStatus = "streaming" | "done" | "failed" | "stopped";
@@ -83,10 +85,12 @@ export interface StreamMetaEvent {
   ephemeral?: boolean;
   arxiv_resolved?: number;
   context_truncated?: boolean;
+  warnings?: string[];
 }
 
 export interface StreamDeltaEvent {
-  text: string;
+  text?: string;
+  reasoning?: string;
 }
 
 export interface StreamRefsEvent {
@@ -107,7 +111,7 @@ export interface StreamErrorEvent {
   message: string;
 }
 
-export interface SearchModelOption {
+export interface ChatModelOption {
   value: ChatModelId;
   /** 列表与 pill 上显示的模型名 */
   label: string;
@@ -117,8 +121,10 @@ export interface SearchModelOption {
   description?: string;
 }
 
-export interface SearchConfig {
-  models: SearchModelOption[];
+export interface ChatConfig {
+  default_model?: string;
+  quota_enforced?: boolean;
+  models: ChatModelOption[];
   modes: ChatReplyMode[];
   quota: {
     used: number;
@@ -147,4 +153,33 @@ export interface ComposerSubmitPayload {
   model: ChatModelId;
   web_search: boolean;
   attachments: ChatAttachment[];
+}
+
+/** Backend protocol types shared by Chat and the search/home composer. */
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  favorite: boolean;
+  updated_at: number;
+  mode: ChatReplyMode;
+  model: ChatModelId;
+  web_search: boolean;
+}
+
+export interface ChatStoredMessage {
+  last_event_id: string;
+  id: string;
+  question: string;
+  content: string;
+  reasoning: string;
+  status: ChatMessageStatus;
+  references: ChatReference[];
+  followups: string[];
+  duration_ms: number;
+  error: string | null;
+  warnings: string[];
+}
+
+export interface ChatSessionDetail extends ChatSessionSummary {
+  messages: ChatStoredMessage[];
 }

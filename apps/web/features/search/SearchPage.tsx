@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { SearchHero } from "@/features/search/components/search-hero";
 import { SearchResults } from "@/features/search/components/search-results";
 

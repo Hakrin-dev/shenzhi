@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 
 /** 知识库子栏目占位页 —— 内容建设中 */
 export function KnowledgeStub({ title }: { title: string }) {

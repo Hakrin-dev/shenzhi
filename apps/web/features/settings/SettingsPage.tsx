@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { SettingsTabs } from "./components/settings-tabs";
 
 /** 设置页 `/settings` —— Tab 受控于 ?tab= 参数(如 /settings?tab=api) */

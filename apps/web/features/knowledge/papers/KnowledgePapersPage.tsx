@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/components/common/layout/app-shell";
 import { LibraryPanel } from "@/features/knowledge/papers/components/library-panel";
 import { LibraryTable } from "@/features/knowledge/papers/components/library-table";
 
