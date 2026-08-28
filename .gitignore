@@ -36,7 +36,8 @@ pnpm-debug.log*
 next-env.d.ts
 
 # editor / ide
-.vscode/
+.vscode/*
+!.vscode/tasks.example.json
 .idea/
 *.swp
 
