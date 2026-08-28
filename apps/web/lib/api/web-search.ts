@@ -1,4 +1,4 @@
-import type { ChatSource } from "@b/types";
+import type { ChatSource } from "@/types/ai-search";
 import type { ChatReference } from "@/types/ai-search";
 
 /** 调用 Next.js 路由 POST /api/b/web-search（服务端走 Tavily REST） */

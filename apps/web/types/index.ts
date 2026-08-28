@@ -306,12 +306,11 @@ export interface DRHistoryItem {
   time: string;
 }
 
-/** 首页统一搜索框入口：普通搜索 / 问 AI */
-export type ComposerEntryMode = "search" | "ai";
-
 export type {
   ChatAttachment,
   ChatModelId,
   ChatReplyMode,
+  ComposerEntryMode,
   ComposerSubmitPayload,
+  EntryMode,
 } from "./ai-search";

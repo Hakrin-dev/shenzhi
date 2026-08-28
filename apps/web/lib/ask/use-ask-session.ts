@@ -27,8 +27,8 @@ import {
   getSessionMessages,
   listSessions,
   type SessionListItem,
-} from "@b/lib/api/sessions";
-import { toBAttachment } from "@b/lib/ask/draft";
+} from "@/lib/api/sessions";
+import { toBAttachment } from "@/lib/ask/draft";
 import { buildModelMessages } from "@b/lib/chat-prompt";
 import type { ChatMessage, ChatSource } from "@b/types";
 import { messageForApiError } from "@/lib/ask/errors";

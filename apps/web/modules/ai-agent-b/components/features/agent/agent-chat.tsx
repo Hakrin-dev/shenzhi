@@ -481,7 +481,7 @@ export function AgentChat() {
           model: storeModel,
           style: storeStyle,
           webSearch: storeWebSearch,
-          attachments: storeAttachments,
+          attachments: toAAttachment(storeAttachments),
         });
         dbSessionIdRef.current = id;
         return id;

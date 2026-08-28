@@ -13,7 +13,7 @@ import { ComposerShell } from "./composer";
 import { ReasoningChainPanel } from "./reasoning-chain-panel";
 import { getSearchConfig } from "@/lib/api/search";
 import { useAskSession } from "@/lib/ask/use-ask-session";
-import { MarkdownContent } from "@b/lib/markdown-content";
+import { MarkdownContent } from "@/lib/markdown-content";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import type {
   ChatAttachment,

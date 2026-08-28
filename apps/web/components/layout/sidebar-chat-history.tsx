@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listLocalAskSessions } from "@/lib/ask/local-history";
-import { listSessions } from "@b/lib/api/sessions";
+import { listSessions } from "@/lib/api/sessions";
 import {
   useAskSidebarBridge,
   type SidebarChatHistoryItem,

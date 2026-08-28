@@ -1,11 +1,26 @@
-/** 与 docs/dev/项目介绍.md 及 PRD 对齐的会话 / 流式契约 */
+/** 前后端 AI 搜索 / 会话契约 — 单一来源（features + B 模块共用） */
 
-export type ChatSessionType = "research" | "chat";
+/* ---------- 枚举 & 联合类型 ---------- */
+
+export type EntryMode = "search" | "ai";
+
+/** @deprecated 使用 EntryMode；保留别名兼容 B composer */
+export type ComposerEntryMode = EntryMode;
 
 export type ChatReplyMode = "fast" | "deep" | "idea" | "doubt";
 
-/** 具体大模型 ID，如 deepseek-chat、gpt-4o */
+/** 具体大模型 ID；兼容旧三档 default/subscription/byok */
 export type ChatModelId = string;
+
+export const LEGACY_CHAT_MODEL_IDS = [
+  "default",
+  "subscription",
+  "byok",
+] as const;
+
+export type LegacyChatModelId = (typeof LEGACY_CHAT_MODEL_IDS)[number];
+
+export type ChatSessionType = "research" | "chat";
 
 export type ModelProvider =
   | "openai"
@@ -26,17 +41,43 @@ export type ChatAttachmentKind =
   | "session"
   | "project";
 
+export type ChatSourceType =
+  | "paper"
+  | "patent"
+  | "funding"
+  | "scholar"
+  | "institution"
+  | "web";
+
+/* ---------- 附件 ---------- */
+
 export interface ChatAttachment {
   kind: ChatAttachmentKind;
   file_id?: string;
   ref_id?: string;
   title?: string;
-  /** 上传解析后的正文（B 模式 /api/b/uploads 返回，发送时注入 prompt） */
   text?: string;
   error?: string;
   size?: number;
   type?: "pdf" | "txt" | "md" | "other";
 }
+
+/** 联网搜索 / 引用卡片（UI 层） */
+export interface ChatSource {
+  id: number;
+  short?: string;
+  title: string;
+  venue?: string;
+  author?: string;
+  citations?: string;
+  url?: string;
+  tone?: "violet" | "green" | "amber" | "gray";
+  recommended?: boolean;
+  type?: ChatSourceType;
+  snippet?: string;
+}
+
+/* ---------- 会话请求 / 响应 ---------- */
 
 export interface CreateChatSessionRequest {
   type: ChatSessionType;
@@ -60,15 +101,27 @@ export interface CreateChatSessionResponse {
   message_id: string;
 }
 
+export interface ChatSession {
+  id: string;
+  type: ChatSessionType;
+  first_message_id: string;
+  created_at: string;
+}
+
 export type ChatMessageStatus = "streaming" | "done" | "failed" | "stopped";
 
-export type ChatSourceType =
-  | "paper"
-  | "patent"
-  | "funding"
-  | "scholar"
-  | "institution"
-  | "web";
+export interface ChatMessageMeta {
+  read_count?: number;
+  phase?: string;
+  context_truncated?: boolean;
+}
+
+export interface ChatMessageDone {
+  duration_ms?: number;
+  status: "completed" | "stopped" | "interrupted";
+}
+
+/* ---------- 引用（A 协议 refs 事件） ---------- */
 
 export interface ChatReference {
   ordinal: number;
@@ -83,14 +136,25 @@ export interface ChatReference {
   url: string | null;
 }
 
+/* ---------- SSE 事件（A 协议） ---------- */
+
+export type AISSEEventName =
+  | "meta"
+  | "delta"
+  | "refs"
+  | "followups"
+  | "done"
+  | "error";
+
 export interface StreamMetaEvent {
   read_count?: number;
   phase?: string;
   ephemeral?: boolean;
   arxiv_resolved?: number;
   context_truncated?: boolean;
-  /** R1 思考链增量 */
   thinking_delta?: string;
+  thinkingContent?: string;
+  warning?: unknown;
 }
 
 export interface StreamDeltaEvent {
@@ -116,9 +180,35 @@ export interface StreamErrorEvent {
   message: string;
 }
 
+export interface AIEventMeta extends StreamMetaEvent {}
+export interface AIEventDelta extends StreamDeltaEvent {}
+export interface AIEventRefs extends StreamRefsEvent {}
+export interface AIEventFollowups extends StreamFollowupsEvent {}
+
+export interface AIEventDone {
+  duration_ms?: number;
+  status: "completed" | "stopped" | "interrupted" | ChatMessageStatus;
+  thinkingContent?: string;
+}
+
+export interface AIEventError {
+  code: string | number;
+  message: string;
+}
+
+/* ---------- Composer / SearchConfig ---------- */
+
+export interface ComposerSubmitPayload {
+  question: string;
+  entryMode: EntryMode;
+  mode: ChatReplyMode;
+  model: ChatModelId;
+  web_search: boolean;
+  attachments: ChatAttachment[];
+}
+
 export interface SearchModelOption {
   value: ChatModelId;
-  /** 列表与 pill 上显示的模型名 */
   label: string;
   provider: ModelProvider;
   enabled: boolean;
@@ -148,12 +238,7 @@ export interface ApiEnvelope<T> {
   message?: string;
 }
 
-/** 首页分流仍用 entryMode；发给生成接口的是 question / mode / model / web_search / attachments */
-export interface ComposerSubmitPayload {
-  entryMode: "search" | "ai";
-  question: string;
-  mode: ChatReplyMode;
-  model: ChatModelId;
-  web_search: boolean;
-  attachments: ChatAttachment[];
+export interface SearchAPIError {
+  code: string;
+  message: string;
 }

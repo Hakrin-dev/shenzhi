@@ -15,7 +15,7 @@ import { ReasoningChainPanel } from "@/features/agents/components/reasoning-chai
 import { getSearchConfig } from "@/lib/api/search";
 import { readAskDraft } from "@/lib/ask/draft";
 import { useAskSession } from "@/lib/ask/use-ask-session";
-import { MarkdownContent } from "@b/lib/markdown-content";
+import { MarkdownContent } from "@/lib/markdown-content";
 import type {
   ChatAttachment,
   ChatModelId,
