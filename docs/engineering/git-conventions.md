@@ -226,7 +226,7 @@ Git 协作规范负责：
 进行较大修改前，应同时参考：
 
 ```text
-docs/engineering/architecture.md
+docs/engineering/architecture-confirmation.md
 docs/engineering/git-conventions.md
 ```
 

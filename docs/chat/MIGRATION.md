@@ -40,7 +40,7 @@ B 路径相对旧仓库根目录；没有将 B 同名组件覆盖 dev。
 | --- | --- | --- |
 | `components/features/agent/agent-chat.tsx` | `features/chat/components/{agent-chat,chat-thread}.tsx` + hook | 多轮、状态、错误、耗时、推理、复制、继续生成、追问 |
 | `components/features/agent/composer.tsx`、`attachment-menu.tsx` | dev Composer 与 AttachmentMenu | 保留 dev 样式和模型选择器，补齐真实上传、批量添加、错误/截断显示 |
-| `components/features/agent/session-list.tsx` | `features/chat/components/session-list.tsx` | 真实列表、切换、删除、收藏；不调用 B session routes |
+| `components/features/agent/session-list.tsx` | `components/common/layout/sidebar-chat-history.tsx` | 侧栏历史列表、切换、删除；DB 走 FastAPI，本地降级见 `local-history` |
 | `components/features/agent/reference-grid.tsx`、`lib/citations.tsx` | Chat `reference-grid.tsx`、`citations.tsx` | 真实来源、展开、双向定位；去掉空结果 mock fallback |
 | `lib/markdown-content.tsx` | Chat `markdown-content.tsx` | Markdown、表格、代码、KaTeX；不移植会误改代码块的裸 LaTeX 猜测 |
 | `lib/chat-stream.ts`、`lib/api/search.ts` | `clients/backend/{chat,sse}` + Feature hook/service | 吸收 streaming/reasoning/恢复逻辑，只保留 dev 产品协议 |

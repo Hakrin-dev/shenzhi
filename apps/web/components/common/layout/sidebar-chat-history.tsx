@@ -56,7 +56,7 @@ function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString("zh-CN");
 }
 
-/** 主侧栏：可折叠「对话历史」下拉（唯一入口，替代页内 SessionList） */
+/** 主侧栏：可折叠「对话历史」下拉（Chat 唯一历史入口） */
 export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();

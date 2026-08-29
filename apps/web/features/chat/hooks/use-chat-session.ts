@@ -7,6 +7,7 @@ import { beginTurn, restoreTurns } from "../services/conversation";
 import { clearAskDraft } from "../services/draft";
 import { messageForApiError } from "../services/errors";
 import {
+  deleteLocalAskSession,
   getLocalAskSession,
   listLocalAskSessions,
   titleFromQuestion,
@@ -67,7 +68,9 @@ export function useChatSession() {
     refreshDbSessions();
   }, [refreshLocalHistory, refreshDbSessions, historyVersion]);
 
-  const persistLocal = useCallback((input: ChatSendInput, nextTurns: ChatTurn[]) => {
+  /** 仅在后端未分配 session_id 时写入 localStorage，避免与 MemorySessionRepository 重复 */
+  const persistLocalFallback = useCallback((input: ChatSendInput, nextTurns: ChatTurn[]) => {
+    if (sessionRef.current) return;
     const id = localHistoryId ?? `local_${Date.now().toString(36)}`;
     if (!localHistoryId) setLocalHistoryId(id);
     const firstUser = nextTurns.find((t) => t.role === "user");
@@ -115,15 +118,13 @@ export function useChatSession() {
         onDone: (done) => {
           if (!active()) return;
           patch(localId, { status: done.status, durationMs: done.duration_ms, thought: "生成结束" });
-          const input = lastInput.current;
-          if (input) persistLocal(input, turnsRef.current);
         },
         onError: (error) => { if (active()) patch(localId, { status: "failed", error: error.message }); },
       }, { signal: controller.signal, lastEventId: cursor });
     } catch (error) {
       if (active()) patch(localId, { status: "failed", error: messageForApiError(error) });
     }
-  }, [patch, persistLocal]);
+  }, [patch]);
 
   const finish = useCallback((run: number) => {
     if (run !== revision.current) return;
@@ -142,6 +143,7 @@ export function useChatSession() {
     const controller = new AbortController();
     abortRef.current = controller;
     lastInput.current = { ...input, question };
+    const retiringLocalId = localHistoryId;
     setLocalHistoryId(null);
     const assistant = newTurn("assistant");
     setTurns((prev) => [...prev, newTurn("user", question), assistant]);
@@ -156,20 +158,20 @@ export function useChatSession() {
       }
       sessionRef.current = created.session_id;
       setSessionId(created.session_id);
-      setLocalHistoryId(null);
+      if (retiringLocalId) deleteLocalAskSession(retiringLocalId);
       patch(assistant.localId, { messageId: created.message_id });
       clearAskDraft();
       await runStream(created.message_id, assistant.localId, run, controller);
     } catch (error) {
       if (run === revision.current) {
         patch(assistant.localId, { status: "failed", error: messageForApiError(error) });
-        persistLocal(input, turnsRef.current);
+        if (!sessionRef.current) persistLocalFallback(input, turnsRef.current);
       }
     } finally {
       if (run === revision.current) pendingCreate.current = null;
       finish(run);
     }
-  }, [finish, lock, patch, persistLocal, runStream]);
+  }, [finish, localHistoryId, lock, patch, persistLocalFallback, runStream]);
 
   const stop = useCallback(async () => {
     const run = ++revision.current;
@@ -191,13 +193,15 @@ export function useChatSession() {
         }
       }
       if (messageId) await stopChatMessage(messageId);
-      if (lastInput.current) persistLocal(lastInput.current, turnsRef.current);
+      if (lastInput.current && !sessionRef.current) {
+        persistLocalFallback(lastInput.current, turnsRef.current);
+      }
     }
     catch (error) {
       if (run === revision.current) setTurns((prev) => prev.map((turn) => turn.messageId === messageId
         ? { ...turn, error: `停止请求未确认：${messageForApiError(error)}` } : turn));
     } finally { finish(run); }
-  }, [finish, lock, patch, persistLocal]);
+  }, [finish, lock, patch, persistLocalFallback]);
 
   const resumeLast = useCallback(async () => {
     if (busyRef.current) return;
