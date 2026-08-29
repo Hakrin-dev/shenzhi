@@ -5,10 +5,10 @@ import Link from "next/link";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { ComposerShell } from "./composer";
 import { ChatThread } from "./chat-thread";
-import { SessionList } from "./session-list";
 import { useChatSession } from "../hooks/use-chat-session";
 import { readAskDraft } from "../services/draft";
-import { getChatConfig } from "@/clients/backend/chat";
+import { getChatConfig, getChatSession } from "@/clients/backend/chat";
+import { getLocalAskSession } from "../services/local-history";
 import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -21,21 +21,34 @@ const SUGGESTIONS = [
 ];
 
 interface AgentChatProps {
-  question?: string; initialMode?: ChatReplyMode; initialModel?: ChatModelId; initialWebSearch?: boolean;
+  question?: string;
+  initialMode?: ChatReplyMode;
+  initialModel?: ChatModelId;
+  initialWebSearch?: boolean;
 }
 
-/** An identity change clears visible Chat state without changing Better Auth itself. */
 export function AgentChat(props: AgentChatProps) {
   const { session, isPending } = useAuth();
   const [initialQuestionConsumed, setInitialQuestionConsumed] = useState(false);
   if (isPending) return <p className="p-6 text-sm text-muted">正在加载会话…</p>;
-  return <ChatWorkspace key={session?.user.id ?? "anonymous"} {...props}
-    question={initialQuestionConsumed ? "" : props.question}
-    onInitialQuestion={() => setInitialQuestionConsumed(true)} />;
+  return (
+    <ChatWorkspace
+      key={session?.user.id ?? "anonymous"}
+      {...props}
+      question={initialQuestionConsumed ? "" : props.question}
+      onInitialQuestion={() => setInitialQuestionConsumed(true)}
+    />
+  );
 }
 
-/** Shared by /agents and /agents/ask; retain A's shell/composer and adopt B capabilities. */
-function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSearch, onInitialQuestion }: AgentChatProps & { onInitialQuestion: () => void }) {
+/** 对话历史统一在 AppSidebar；此处仅保留主对话区 */
+function ChatWorkspace({
+  question = "",
+  initialMode,
+  initialModel,
+  initialWebSearch,
+  onInitialQuestion,
+}: AgentChatProps & { onInitialQuestion: () => void }) {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<ChatReplyMode>(initialMode ?? "fast");
   const [model, setModel] = useState(initialModel ?? DEFAULT_CHAT_MODEL);
@@ -46,7 +59,7 @@ function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSea
   const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
-  const { sessionId, turns, busy, historyVersion, send, stop, resumeLast, reset, openSession } = useChatSession();
+  const { turns, busy, activeHistoryId, send, stop, resumeLast } = useChatSession();
 
   useEffect(() => {
     let live = true;
@@ -56,17 +69,18 @@ function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSea
       const draft = readAskDraft(question);
       const preferred = initialModel ?? draft.model;
       const selected = loaded.models.some((m) => m.value === preferred && m.enabled)
-        ? preferred : loaded.default_model ?? loaded.models.find((m) => m.enabled)?.value ?? preferred;
+        ? preferred
+        : loaded.default_model ?? loaded.models.find((m) => m.enabled)?.value ?? preferred;
       setModel(selected);
       if (!question.trim()) return;
       const selectedMode = initialMode ?? draft.mode;
       const web = initialWebSearch ?? draft.web_search;
-      setMode(selectedMode); setWebSearch(web);
+      setMode(selectedMode);
+      setWebSearch(web);
       onInitialQuestion();
       void send({ question, mode: selectedMode, model: selected, web_search: web, attachments: draft.attachments });
     });
     return () => { live = false; };
-    // Initial URL/draft handoff only. AskPage keys the component when the URL question changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -74,53 +88,118 @@ function ChatWorkspace({ question = "", initialMode, initialModel, initialWebSea
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
+  useEffect(() => {
+    if (!activeHistoryId) return;
+    if (activeHistoryId.startsWith("local_")) {
+      const local = getLocalAskSession(activeHistoryId);
+      if (local) {
+        setMode(local.mode as ChatReplyMode);
+        setModel(local.model as ChatModelId);
+        setWebSearch(local.web_search);
+      }
+      return;
+    }
+    void getChatSession(activeHistoryId).then((session) => {
+      setMode(session.mode);
+      setModel(session.model);
+      setWebSearch(session.web_search);
+    });
+  }, [activeHistoryId]);
+
   const submit = (payload: ComposerSubmitPayload) => {
     if (busy || payload.entryMode === "search") return;
     nearBottom.current = true;
-    setValue(""); setAttachments([]);
+    setValue("");
+    setAttachments([]);
     void send(payload);
   };
-  const followup = (text: string) => submit({ entryMode: "ai", question: text, mode, model, web_search: webSearch, attachments: [] });
-  const newChat = async () => { await reset(); setValue(""); setAttachments([]); setComposerVersion((version) => version + 1); };
-  const composer = <ComposerShell key={composerVersion} value={value} onChange={setValue} onSend={submit}
-    placeholder="输入研究问题…" replyMode={mode} onReplyModeChange={setMode}
-    model={model} onModelChange={setModel} webSearch={webSearch} onWebSearchChange={setWebSearch}
-    attachments={attachments} onAttachmentsChange={setAttachments} config={config} busy={busy} onStop={() => void stop()} />;
 
-  return <div className="flex">
-    <SessionList activeId={sessionId} version={historyVersion} busy={busy} onNew={newChat} onSelect={async (id) => {
-      const session = await openSession(id);
-      if (session) {
-        setMode(session.mode); setModel(session.model); setWebSearch(session.web_search);
-        setValue(""); setAttachments([]); setComposerVersion((version) => version + 1); nearBottom.current = true;
-      }
-    }} />
+  const followup = (text: string) =>
+    submit({ entryMode: "ai", question: text, mode, model, web_search: webSearch, attachments: [] });
+
+  const composer = (
+    <ComposerShell
+      key={composerVersion}
+      value={value}
+      onChange={setValue}
+      onSend={submit}
+      placeholder="输入研究问题…"
+      replyMode={mode}
+      onReplyModeChange={setMode}
+      model={model}
+      onModelChange={setModel}
+      webSearch={webSearch}
+      onWebSearchChange={setWebSearch}
+      attachments={attachments}
+      onAttachmentsChange={setAttachments}
+      config={config}
+      busy={busy}
+      onStop={() => void stop()}
+    />
+  );
+
+  return (
     <div className="flex h-screen min-w-0 flex-1 flex-col">
-      {turns.length === 0 ? <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-auto px-6">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft"><Sparkles className="size-6 text-primary" /></span>
-        <h1 className="text-xl font-semibold text-ink">有什么我可以帮你研究的?</h1>
-        <div className="w-full max-w-4xl">{composer}</div>
-        <div className="flex max-w-4xl flex-wrap justify-center gap-2">{SUGGESTIONS.map((text) => <button key={text} type="button" disabled={busy} onClick={() => followup(text)}
-          className="rounded-full border border-line bg-card px-3.5 py-1.5 text-[13px] text-muted hover:border-primary/40 hover:text-primary">{text}</button>)}</div>
-      </div> : <>
-        <header className="flex h-12 shrink-0 items-center border-b border-line px-6"><h1 className="truncate text-sm font-medium text-ink">{turns[0]?.content}</h1></header>
-        <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto" onScroll={(event) => {
-          const element = event.currentTarget;
-          nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
-          setShowJump(!nearBottom.current);
-        }}>
-          <div className="mx-auto max-w-4xl space-y-5 px-6 py-8">
-            <ChatThread turns={turns} busy={busy} onResume={() => void resumeLast()} onFollowup={followup} />
-            <Link href={`/search?q=${encodeURIComponent(turns[0]?.content ?? "")}`} className="inline-block text-xs text-primary">相关论文</Link>
-            <div ref={bottomRef} />
+      {turns.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-auto px-6">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft">
+            <Sparkles className="size-6 text-primary" />
+          </span>
+          <h1 className="text-xl font-semibold text-ink">有什么我可以帮你研究的?</h1>
+          <div className="w-full max-w-5xl">{composer}</div>
+          <div className="flex max-w-5xl flex-wrap justify-center gap-2">
+            {SUGGESTIONS.map((text) => (
+              <button
+                key={text}
+                type="button"
+                disabled={busy}
+                onClick={() => followup(text)}
+                className="cursor-pointer rounded-full border border-line bg-card px-3.5 py-1.5 text-[13px] text-muted transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                {text}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="relative px-6 pb-5 pt-2">
-          {showJump && <button type="button" aria-label="跳到最新" onClick={() => { nearBottom.current = true; bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }}
-            className="absolute -top-12 left-1/2 flex size-9 items-center justify-center rounded-full border border-line bg-card text-muted shadow-pop"><ChevronDown className="size-4" /></button>}
-          <div className="mx-auto max-w-4xl">{composer}</div>
-        </div>
-      </>}
+      ) : (
+        <>
+          <header className="flex h-12 shrink-0 items-center border-b border-line px-6">
+            <h1 className="truncate text-sm font-medium text-ink">{turns[0]?.content}</h1>
+          </header>
+          <div
+            className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+              setShowJump(!nearBottom.current);
+            }}
+          >
+            <div className="mx-auto max-w-5xl space-y-5 px-6 py-8">
+              <ChatThread turns={turns} busy={busy} onResume={() => void resumeLast()} onFollowup={followup} />
+              <Link href={`/search?q=${encodeURIComponent(turns[0]?.content ?? "")}`} className="inline-block text-xs text-primary">
+                相关论文
+              </Link>
+              <div ref={bottomRef} />
+            </div>
+          </div>
+          <div className="relative px-6 pb-5 pt-2">
+            {showJump && (
+              <button
+                type="button"
+                aria-label="跳到最新"
+                onClick={() => {
+                  nearBottom.current = true;
+                  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="absolute -top-12 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-line bg-card text-muted shadow-pop"
+              >
+                <ChevronDown className="size-4" />
+              </button>
+            )}
+            <div className="mx-auto max-w-5xl">{composer}</div>
+          </div>
+        </>
+      )}
     </div>
-  </div>;
+  );
 }

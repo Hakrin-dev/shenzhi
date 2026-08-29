@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Globe,
   Plus,
+  Search,
+  Sparkles,
   Square,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +30,50 @@ export type { ComposerEntryMode, ComposerSubmitPayload } from "@/types";
 
 const PLAIN_BTN =
   "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-muted transition-colors hover:bg-chip hover:text-ink";
+
+const MODE_PILL =
+  "flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors";
+
+function SearchModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: ComposerEntryMode;
+  onChange: (mode: ComposerEntryMode) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        aria-pressed={mode === "search"}
+        onClick={() => onChange("search")}
+        className={cn(
+          MODE_PILL,
+          mode === "search"
+            ? "bg-primary-soft text-primary"
+            : "text-muted hover:bg-chip hover:text-ink-2",
+        )}
+      >
+        <Search className="size-4 shrink-0" strokeWidth={1.8} />
+        简单搜索
+      </button>
+      <button
+        type="button"
+        aria-pressed={mode === "ai"}
+        onClick={() => onChange("ai")}
+        className={cn(
+          MODE_PILL,
+          mode === "ai"
+            ? "bg-violet-100 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+            : "text-muted hover:bg-chip hover:text-ink-2",
+        )}
+      >
+        <Sparkles className="size-4 shrink-0" strokeWidth={1.8} />
+        智能搜索
+      </button>
+    </div>
+  );
+}
 
 function useCloseOnOutside(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
@@ -158,7 +204,8 @@ export function ComposerShell({
   onSend,
   placeholder,
   variant = "agent",
-  entryMode = "ai",
+  entryMode: entryModeProp,
+  onEntryModeChange,
   replyMode: replyModeProp,
   onReplyModeChange,
   model: modelProp,
@@ -177,6 +224,7 @@ export function ComposerShell({
   placeholder: string;
   variant?: "home" | "agent";
   entryMode?: ComposerEntryMode;
+  onEntryModeChange?: (mode: ComposerEntryMode) => void;
   replyMode?: ChatReplyMode;
   onReplyModeChange?: (mode: ChatReplyMode) => void;
   model?: ChatModelId;
@@ -193,6 +241,7 @@ export function ComposerShell({
   const [uploading, setUploading] = useState(false);
   const canSend = Boolean(value.trim()) && !busy && !uploading;
 
+  const [innerEntryMode, setInnerEntryMode] = useState<ComposerEntryMode>("ai");
   const [innerMode, setInnerMode] = useState<ChatReplyMode>("fast");
   const [innerDepth, setInnerDepth] = useState<"fast" | "deep">("fast");
   const [innerModel, setInnerModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
@@ -202,6 +251,9 @@ export function ComposerShell({
   const controlRef = useRef<HTMLDivElement>(null);
 
   const replyMode = replyModeProp ?? innerMode;
+  const entryMode = entryModeProp ?? innerEntryMode;
+  const setEntryMode = onEntryModeChange ?? setInnerEntryMode;
+  const isSmartSearch = !isHome || entryMode === "ai";
   const depthMode =
     replyMode === "deep" || replyMode === "fast"
       ? (replyMode as "fast" | "deep")
@@ -233,7 +285,7 @@ export function ComposerShell({
   }, [controlOpen]);
 
   const buildPayload = (intent?: ComposerEntryMode): ComposerSubmitPayload => ({
-    entryMode: intent ?? (isHome ? "ai" : entryMode),
+    entryMode: intent ?? entryMode,
     question: value.trim(),
     mode: replyMode,
     model,
@@ -246,10 +298,6 @@ export function ComposerShell({
     if (!parsed.success || busy || uploading) return;
     onSend(buildPayload(intent));
   };
-
-  const keyboardHint = isHome
-    ? "Enter 发送 · Shift+Enter 换行 · Alt+Enter 搜索论文"
-    : "Enter 发送 · Shift+Enter 换行";
 
   return (
     <div className="relative overflow-visible rounded-2xl border border-line/80 bg-card p-3 shadow-pop">
@@ -283,6 +331,10 @@ export function ComposerShell({
           ) {
             e.preventDefault();
             if (busy) return;
+            if (isHome && entryMode === "search") {
+              submit("search");
+              return;
+            }
             if (isHome && e.altKey) {
               submit("search");
               return;
@@ -297,6 +349,9 @@ export function ComposerShell({
       />
 
       <div className="mt-1.5 flex items-center gap-1.5">
+        {isHome && (
+          <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
+        )}
         <PlusMenu webSearch={webSearch} onWebSearchChange={setWebSearch} />
         <AttachmentMenu
           disabled={busy}
@@ -304,28 +359,29 @@ export function ComposerShell({
           accept={config.upload.accept.join(",")}
           maxFiles={Math.max(0, config.upload.max_files - attachments.length)}
           maxSizeMb={config.upload.max_size_mb}
-          onAdd={(items) => setAttachments([...attachments, ...items].slice(0, config.upload.max_files))}
+          onAdd={(items) =>
+            setAttachments([...attachments, ...items].slice(0, config.upload.max_files))
+          }
         />
-        <div ref={controlRef} className="relative min-w-0 shrink">
-          <ComposerControlPicker
-            model={model}
-            onModelChange={setModel}
-            replyMode={replyMode}
-            onReplyModeChange={setReplyMode}
-            depthMode={depthMode}
-            onDepthModeChange={setDepthMode}
-            options={config.models}
-            quota={config.quota}
-            anchorRef={controlRef}
-            open={controlOpen}
-            onOpenChange={setControlOpen}
-          />
-        </div>
+        {isSmartSearch && (
+          <div ref={controlRef} className="relative min-w-0 shrink">
+            <ComposerControlPicker
+              model={model}
+              onModelChange={setModel}
+              replyMode={replyMode}
+              onReplyModeChange={setReplyMode}
+              depthMode={depthMode}
+              onDepthModeChange={setDepthMode}
+              options={config.models}
+              quota={config.quota}
+              anchorRef={controlRef}
+              open={controlOpen}
+              onOpenChange={setControlOpen}
+            />
+          </div>
+        )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="hidden max-w-[14rem] truncate text-[11px] text-faint lg:inline">
-            {keyboardHint}
-          </span>
           {busy && onStop ? (
             <button
               type="button"

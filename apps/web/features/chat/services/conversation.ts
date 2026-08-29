@@ -16,7 +16,8 @@ export function restoreTurns(session: ChatSessionDetail): ChatTurn[] {
       { ...base, localId: `${message.id}-user`, role: "user", content: message.question, status: "done" },
       { ...base, localId: message.id, role: "assistant", messageId: message.id,
         content: message.content, reasoning: message.reasoning, status: message.status,
-        references: message.references, readCount: message.references.length, followups: message.followups, warnings: message.warnings,
+        references: message.references ?? [], readCount: (message.references ?? []).length,
+        followups: message.followups ?? [], warnings: message.warnings ?? [],
         durationMs: message.duration_ms, error: message.error ?? undefined },
     ];
   });
