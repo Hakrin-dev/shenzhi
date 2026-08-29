@@ -2,8 +2,10 @@
 
 import type { ChatTurn } from "../types";
 
+/** 仅在后端 Chat 不可用、且未获得 session_id 时的浏览器降级缓存；见 docs/chat/README.md */
 const STORAGE_KEY = "shenzhi.ask.local-sessions";
 const MAX_SESSIONS = 30;
+const TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface LocalAskSession {
   id: string;
@@ -21,7 +23,11 @@ function readAll(): LocalAskSession[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as LocalAskSession[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    const live = parsed.filter((s) => now - s.updatedAt <= TTL_MS);
+    if (live.length !== parsed.length) writeAll(live);
+    return live;
   } catch {
     return [];
   }

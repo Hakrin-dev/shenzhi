@@ -5,9 +5,11 @@
 ```text
 app/agents/page.tsx 或 app/agents/ask/page.tsx（URL 兼容）
   → features/chat/ChatPage / ask/AskPage
-  → AgentChat + ChatThread + Composer + SessionList
+  → AgentChat + ChatThread + Composer
+  → components/common/layout/SidebarChatHistory（主侧栏唯一历史入口）
   → hooks/use-chat-session（UI 状态、取消、历史恢复、防止过期请求写入）
   → services/conversation（建会话/续问编排、历史数据适配）
+  → services/local-history（仅后端不可用时的浏览器降级缓存，见下文）
   → clients/backend/{chat,http,sse,uploads,search}
   → Next.js app/api/v1/[...path] → clients/backend/forward（BFF）
   → FastAPI api/{chat,search,uploads}
@@ -105,5 +107,13 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 - Backend 不读取 Better Auth 数据库，不引入 B 的 ORM/用户系统。
 - 未配置 `BACKEND_BFF_SECRET` 时 Web 与 Backend 均默认拒绝。仅 loopback 本地开发可在两端显式设置 `BACKEND_ALLOW_INSECURE_LOCAL_BFF=true`；非 loopback 部署必须设置同一高熵 Secret，并只允许 BFF 访问 FastAPI。现有 infra/CI 不自动部署新后端。
 - Better Auth 正常返回空 Session 时 BFF 按匿名会话转发；Better Auth 调用抛错时 BFF 返回 503，不会静默降级为匿名用户。
+
+### 浏览器降级缓存（local-history）
+
+正式会话仍由 FastAPI `MemorySessionRepository` 管理。仅当 **尚未获得后端 `session_id`**（例如 Backend 未启动、BFF 503、首轮建会话失败）时，Web 才将当前对话写入 `localStorage`（`features/chat/services/local-history.ts`）：
+
+- 最多 30 条、24 小时惰性过期；按浏览器隔离，不与 Better Auth 用户绑定。
+- 一旦后端返回 `session_id`，**不再**写入本地缓存，并清除已晋升的本地条目；侧栏以 `/chat/sessions` 列表为准。
+- 侧栏合并展示时，本地条目标记为「本地」，不可收藏/重命名；成功接入后端后不应出现同一会话的双条目。
 
 **后续边界**：PostgreSQL 持久化、与 Better Auth 用户关联及匿名会话归属策略、跨 worker 分发、共享链接/权限/保留期限、限流与成本配额。这次没有设计或执行数据库 migration，没有迁移 B 的 `SharedSession` 数据库和公共分享功能。
