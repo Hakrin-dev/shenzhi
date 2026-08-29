@@ -12,7 +12,7 @@ export function HomePage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-[1080px] space-y-5 overflow-visible px-8 py-6">
+      <div className="mx-auto max-w-[1080px] space-y-5 overflow-visible px-4 py-4 lg:px-5 lg:py-5">
         <SearchHero onSearchActiveChange={setSearchActive} />
         {!searchActive && (
           <>

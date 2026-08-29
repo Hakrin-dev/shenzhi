@@ -26,6 +26,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { useSidebarStore } from "@/stores/sidebar";
 import { Logo } from "./logo";
 import { SettingsMenu } from "./settings-menu";
+import { SidebarChatHistory } from "./sidebar-chat-history";
 
 interface NavItem {
   href: string;
@@ -439,6 +440,7 @@ export function AppSidebar() {
           subNav={AGENT_SUB_NAV}
           collapsed={collapsed}
         />
+        <SidebarChatHistory collapsed={collapsed} />
         <ExpandableNav
           href="/knowledge"
           label="知识库"

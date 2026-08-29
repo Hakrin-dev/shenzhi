@@ -6,12 +6,13 @@ import { ComposerShell } from "@/features/chat/components/composer";
 import { SearchResults } from "@/features/search/components/search-results";
 import { getChatConfig } from "@/clients/backend/chat";
 import { askQueryString, saveAskDraft } from "@/features/chat/services/draft";
+import type { ComposerEntryMode } from "@/types";
 import type { ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
 
-const PLACEHOLDER =
-  "用自然语言提问，例如 Diffusion Policy 有什么创新？";
+const PLACEHOLDER_SEARCH = "请输入想检索的问题";
+const PLACEHOLDER_AI = "用自然语言提问，例如 Diffusion Policy 有什么创新？";
 
-/** 首页入口 —— Enter 问 AI，Alt+Enter 在本页下方展示搜索结果 */
+/** 首页 Hero —— 简单搜索查论文库，智能搜索跳转问 AI */
 export function SearchHero({
   initialQuery = "",
   onSearchActiveChange,
@@ -21,6 +22,7 @@ export function SearchHero({
 }) {
   const router = useRouter();
   const [value, setValue] = useState(initialQuery);
+  const [entryMode, setEntryMode] = useState<ComposerEntryMode>("ai");
   const [inlineSearch, setInlineSearch] = useState<string | null>(null);
   const [config, setConfig] = useState<ChatConfig | undefined>();
 
@@ -43,20 +45,19 @@ export function SearchHero({
   };
 
   return (
-    <div className="overflow-visible">
+    <div className="w-full overflow-visible">
       <ComposerShell
         variant="home"
         value={value}
         onChange={setValue}
         onSend={send}
-        placeholder={PLACEHOLDER}
+        placeholder={entryMode === "search" ? PLACEHOLDER_SEARCH : PLACEHOLDER_AI}
+        entryMode={entryMode}
+        onEntryModeChange={setEntryMode}
         config={config}
       />
-      <p className="mt-2 px-1 text-[11px] text-faint lg:hidden">
-        Enter 发送 · Shift+Enter 换行 · Alt+Enter 搜索论文
-      </p>
       {inlineSearch && (
-        <div className="mt-5">
+        <div className="mt-6">
           <SearchResults query={inlineSearch} />
         </div>
       )}
