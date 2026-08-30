@@ -1,25 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { attachIdentity } from "../../clients/backend/identity";
+import { attachIdentity, resolveBackendIdentity } from "../../clients/backend/identity";
 
 test("BFF distinguishes an anonymous session from a Better Auth failure", async () => {
-  const outgoing = new Headers();
-  assert.equal(await attachIdentity(new Headers(), outgoing, async () => null), "anonymous");
-  assert.equal(outgoing.has("x-shenzhi-user-id"), false);
+  assert.deepEqual(await resolveBackendIdentity(new Headers(), async () => null), { kind: "anonymous" });
 
   await assert.rejects(
-    attachIdentity(new Headers(), outgoing, async () => { throw new Error("database unavailable"); }),
+    resolveBackendIdentity(new Headers(), async () => { throw new Error("database unavailable"); }),
     /database unavailable/,
   );
 });
 
-test("BFF attaches only identity returned by Better Auth", async () => {
-  const outgoing = new Headers();
-  const result = await attachIdentity(new Headers(), outgoing, async () => ({
+test("BFF attaches exactly one identity returned by Better Auth", async () => {
+  const identity = await resolveBackendIdentity(new Headers(), async () => ({
     user: { id: "user-1", email: "user@example.com" },
   }));
-  assert.equal(result, "authenticated");
+  const outgoing = new Headers({
+    "x-shenzhi-anonymous-id": "00000000-0000-4000-8000-000000000001",
+    "x-shenzhi-user-email": "forged@example.com",
+  });
+  attachIdentity(outgoing, identity, "00000000-0000-4000-8000-000000000001");
   assert.equal(outgoing.get("x-shenzhi-user-id"), "user-1");
-  assert.equal(outgoing.get("x-shenzhi-user-email"), "user@example.com");
+  assert.equal(outgoing.has("x-shenzhi-anonymous-id"), false);
+  assert.equal(outgoing.has("x-shenzhi-user-email"), false);
+
+  const anonymous = await resolveBackendIdentity(new Headers(), async () => null);
+  attachIdentity(outgoing, anonymous, "00000000-0000-4000-8000-000000000001");
+  assert.equal(outgoing.has("x-shenzhi-user-id"), false);
+  assert.equal(outgoing.get("x-shenzhi-anonymous-id"), "00000000-0000-4000-8000-000000000001");
 });

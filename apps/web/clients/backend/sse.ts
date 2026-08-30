@@ -1,4 +1,4 @@
-import { authHeaders } from "./http";
+import { requestHeaders } from "./http";
 
 export interface SseEvent { id?: string; event: string; data: string }
 
@@ -7,7 +7,7 @@ export async function readSseStream(
   url: string,
   options: { signal?: AbortSignal; lastEventId?: string; onEvent: (event: SseEvent) => void },
 ): Promise<void> {
-  const headers = authHeaders({ Accept: "text/event-stream" });
+  const headers = requestHeaders({ Accept: "text/event-stream" });
   if (options.lastEventId) headers.set("Last-Event-ID", options.lastEventId);
   const res = await fetch(url, { headers, signal: options.signal, cache: "no-store" });
   if (!res.ok || !res.body) throw new Error(`SSE 连接失败 (${res.status})`);

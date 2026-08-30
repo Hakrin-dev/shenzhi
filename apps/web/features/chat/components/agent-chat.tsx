@@ -7,6 +7,7 @@ import { ComposerShell } from "./composer";
 import { ChatThread } from "./chat-thread";
 import { useChatSession } from "../hooks/use-chat-session";
 import { readAskDraft } from "../services/draft";
+import { chatIdentityScope } from "../services/identity-scope";
 import { getChatConfig, getChatSession } from "@/clients/backend/chat";
 import { getLocalAskSession } from "../services/local-history";
 import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
@@ -33,7 +34,7 @@ export function AgentChat(props: AgentChatProps) {
   if (isPending) return <p className="p-6 text-sm text-muted">正在加载会话…</p>;
   return (
     <ChatWorkspace
-      key={session?.user.id ?? "anonymous"}
+      key={chatIdentityScope(session?.user.id)}
       {...props}
       question={initialQuestionConsumed ? "" : props.question}
       onInitialQuestion={() => setInitialQuestionConsumed(true)}

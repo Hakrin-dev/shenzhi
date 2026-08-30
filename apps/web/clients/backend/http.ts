@@ -1,5 +1,4 @@
 import type { ApiEnvelope } from "../../types/ai-search";
-import { getAccessToken } from "./auth-token";
 
 /** 浏览器一律打同源 `/api/v1`，由 Next 微后端转发到 FastAPI（BUSINESS_BACKEND_URL） */
 export const API_PREFIX = "/api/v1";
@@ -21,11 +20,9 @@ export function apiPath(path: string) {
   return `${API_PREFIX}${p}`;
 }
 
-export function authHeaders(extra?: HeadersInit): Headers {
-  const headers = new Headers(extra);
-  const token = getAccessToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  return headers;
+/** Backend identity is supplied only by the same-origin BFF. */
+export function requestHeaders(extra?: HeadersInit): Headers {
+  return new Headers(extra);
 }
 
 // Serialize first contact so parallel config/history/upload requests cannot issue
@@ -44,7 +41,7 @@ export async function apiJson<T>(
   init: RequestInit = {},
 ): Promise<T> {
   await ensureBackendIdentity();
-  const headers = authHeaders(init.headers);
+  const headers = requestHeaders(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }

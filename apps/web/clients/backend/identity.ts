@@ -6,6 +6,9 @@ type AuthSession = {
 } | null;
 
 export type SessionResolver = (headers: Headers) => Promise<AuthSession>;
+export type BackendIdentity =
+  | { kind: "authenticated"; userId: string }
+  | { kind: "anonymous" };
 
 async function getBetterAuthSession(headers: Headers): Promise<AuthSession> {
   // Keep this lazy so the transport helper does not initialize Better Auth at module load.
@@ -15,15 +18,28 @@ async function getBetterAuthSession(headers: Headers): Promise<AuthSession> {
 }
 
 /** A missing session is anonymous; resolver failures must remain authentication failures. */
-export async function attachIdentity(
+export async function resolveBackendIdentity(
   requestHeaders: Headers,
-  backendHeaders: Headers,
   resolveSession: SessionResolver = getBetterAuthSession,
-) {
+): Promise<BackendIdentity> {
   const session = await resolveSession(requestHeaders);
   const user = session?.user;
-  if (!user?.id) return "anonymous" as const;
-  backendHeaders.set("X-ShenZhi-User-Id", user.id);
-  if (user.email) backendHeaders.set("X-ShenZhi-User-Email", user.email);
-  return "authenticated" as const;
+  if (!user?.id) return { kind: "anonymous" };
+  return { kind: "authenticated", userId: user.id };
+}
+
+/** Writes the one trusted identity accepted by the FastAPI business boundary. */
+export function attachIdentity(
+  backendHeaders: Headers,
+  identity: BackendIdentity,
+  anonymousId: string,
+) {
+  backendHeaders.delete("x-shenzhi-user-id");
+  backendHeaders.delete("x-shenzhi-user-email");
+  backendHeaders.delete("x-shenzhi-anonymous-id");
+  if (identity.kind === "authenticated") {
+    backendHeaders.set("X-ShenZhi-User-Id", identity.userId);
+    return;
+  }
+  backendHeaders.set("X-ShenZhi-Anonymous-Id", anonymousId);
 }
