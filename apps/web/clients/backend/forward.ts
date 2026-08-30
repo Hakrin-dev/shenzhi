@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { backendConfig } from "@/config/backend";
-import { attachIdentity } from "./identity";
+import { attachIdentity, resolveBackendIdentity } from "./identity";
+
+const FORWARDED_REQUEST_HEADERS = ["accept", "content-type", "last-event-id"] as const;
+
+function forwardedHeaders(requestHeaders: Headers): Headers {
+  const headers = new Headers();
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const value = requestHeaders.get(name);
+    if (value) headers.set(name, value);
+  }
+  return headers;
+}
 
 /**
  * Next.js 微后端 → FastAPI 转发。
@@ -13,24 +24,16 @@ export async function forwardToBusinessBackend(
   path: string[],
 ) {
   const dest = `${backendOrigin.replace(/\/$/, "")}/api/v1/${path.join("/")}${req.nextUrl.search}`;
-  const headers = new Headers(req.headers);
-  headers.delete("host");
-  headers.delete("connection");
-  headers.delete("cookie");
-  headers.delete("content-length");
-  // Never trust client-supplied identity or internal credentials.
-  headers.delete("x-shenzhi-user-id");
-  headers.delete("x-shenzhi-user-email");
-  headers.delete("x-shenzhi-anonymous-id");
-  headers.delete("x-shenzhi-bff-secret");
+  // Browser headers are untrusted. Only copy headers the business protocol needs.
+  const headers = forwardedHeaders(req.headers);
   const cookie = req.cookies.get("shenzhi-chat-anon")?.value;
   const anonymousId = cookie && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cookie)
     ? cookie : randomUUID();
-  headers.set("x-shenzhi-anonymous-id", anonymousId);
   if (backendConfig.secret) headers.set("x-shenzhi-bff-secret", backendConfig.secret);
 
   try {
-    await attachIdentity(req.headers, headers);
+    const identity = await resolveBackendIdentity(req.headers);
+    attachIdentity(headers, identity, anonymousId);
   } catch {
     return NextResponse.json(
       { code: 10001, message: "鉴权服务异常，请稍后重试" },
