@@ -400,7 +400,7 @@ export function ComposerShell({
               className={cn(
                 "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
                 canSend
-                  ? "bg-primary text-white hover:bg-primary-dark"
+                  ? "bg-primary text-white hover:bg-primary-deep"
                   : "border border-line bg-chip text-faint",
                 !canSend && "cursor-not-allowed",
               )}
