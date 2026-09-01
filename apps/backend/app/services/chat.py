@@ -19,14 +19,14 @@ STYLE_PROMPTS = {
 }
 
 
-def prepare_message(body, owner: str, session: Session | None = None):
+async def prepare_message(body, owner: str, session: Session | None = None):
     settings = dict(session.settings) if session else {'type': body.type}
     settings.update({k: getattr(body, k) for k in ('mode', 'model', 'web_search') if getattr(body, k) is not None})
     settings['model'] = resolve_model(settings.get('model'))
     context, warnings = attachment_context(body.attachments, owner, repository)
     if session is None:
-        session = repository.create(owner, body.question, settings)
-    return repository.add_message(session, body.question, settings, context, warnings)
+        session = await repository.create(owner, body.question, settings)
+    return await repository.add_message(session, body.question, settings, context, warnings)
 
 
 def model_messages(session: Session, message: Message, source_context: str) -> tuple[list[dict], bool]:
@@ -58,8 +58,8 @@ def model_messages(session: Session, message: Message, source_context: str) -> t
 async def generate(message: Message) -> None:
     started = time.monotonic()
     try:
-        session = repository.session_for_message(message)
-        message.emit('meta', {'phase': 'retrieving', 'ephemeral': True, 'warnings': message.warnings})
+        session = await repository.session_for_message(message)
+        message.emit('meta', {'phase': 'retrieving', 'ephemeral': not repository.is_durable, 'warnings': message.warnings})
         hits = await retrieval_search(message.question, top_k=10, mode=message.settings['mode'])
         references = [map_hit_to_reference(hit, i + 1) for i, hit in enumerate(hits)]
         sources = [{'ordinal': i + 1, 'title': r['title'], 'text': str(hit.get('abstract') or '')[:3000]}
@@ -114,7 +114,8 @@ async def generate(message: Message) -> None:
     finally:
         message.duration_ms += int((time.monotonic() - started) * 1000)
         message.emit('done', {'duration_ms': message.duration_ms, 'status': message.status})
-        repository.touch(message.session_id)
+        await repository.persist_message(message)
+        await repository.touch(message.session_id)
 
 
 async def stop_message(message: Message) -> None:
@@ -125,6 +126,7 @@ async def stop_message(message: Message) -> None:
     if message.status == 'streaming':
         message.status = 'stopped'
         message.emit('done', {'duration_ms': message.duration_ms, 'status': 'stopped'})
+        await repository.persist_message(message)
 
 
 async def stream_events(message: Message, cursor: int = 0):
@@ -147,6 +149,7 @@ async def stream_events(message: Message, cursor: int = 0):
                 yield ': heartbeat\n\n'
     finally:
         message.subscribers -= 1
-        # Losing the last client cancels provider I/O, including optional followup generation.
-        if message.subscribers == 0 and message.task and not message.task.done():
+        # Losing the last client cancels in-flight generation only; never abort finalize/persist.
+        if (message.subscribers == 0 and message.status == 'streaming'
+                and message.task and not message.task.done()):
             message.task.cancel()

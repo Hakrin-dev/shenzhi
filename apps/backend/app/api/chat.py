@@ -27,45 +27,45 @@ def chat_config(_credential: None = Depends(require_bff)):
 
 @router.get('/sessions')
 async def list_sessions(owner: str = Depends(request_owner)):
-    return ok({'sessions': repository.list(owner), 'ephemeral': True})
+    return ok({'sessions': await repository.list(owner), 'ephemeral': not repository.is_durable})
 
 
 @router.post('/sessions')
 async def create_session(body: CreateSessionBody, owner: str = Depends(request_owner)):
-    message = prepare_message(body, owner)
+    message = await prepare_message(body, owner)
     return ok({'session_id': message.session_id, 'message_id': message.id})
 
 
 @router.get('/sessions/{session_id}')
 async def get_session(session_id: str, owner: str = Depends(request_owner)):
-    return ok(repository.get(session_id, owner).public(detail=True))
+    return ok((await repository.get(session_id, owner)).public(detail=True))
 
 
 @router.patch('/sessions/{session_id}')
 async def update_session(session_id: str, body: UpdateSessionBody, owner: str = Depends(request_owner)):
-    session = repository.update(session_id, owner, title=body.title, favorite=body.favorite)
+    session = await repository.update(session_id, owner, title=body.title, favorite=body.favorite)
     return ok(session.public())
 
 
 @router.delete('/sessions/{session_id}')
 async def delete_session(session_id: str, owner: str = Depends(request_owner)):
-    session = repository.get(session_id, owner)
+    session = await repository.get(session_id, owner)
     for message in session.messages:
         await stop_message(message)
-    repository.delete(session_id, owner)
+    await repository.delete(session_id, owner)
     return ok({'ok': True})
 
 
 @router.post('/sessions/{session_id}/messages')
 async def followup(session_id: str, body: FollowupBody, owner: str = Depends(request_owner)):
-    message = prepare_message(body, owner, repository.get(session_id, owner))
+    message = await prepare_message(body, owner, await repository.get(session_id, owner))
     return ok({'session_id': session_id, 'message_id': message.id})
 
 
 @router.get('/messages/{message_id}/stream')
 async def stream(message_id: str, owner: str = Depends(request_owner),
                  last_event_id: str | None = Header(default=None)):
-    message = repository.message(message_id, owner)
+    message = await repository.message(message_id, owner)
     try:
         cursor = int(last_event_id or '0')
     except ValueError:
@@ -78,17 +78,18 @@ async def stream(message_id: str, owner: str = Depends(request_owner),
 
 @router.post('/messages/{message_id}/stop')
 async def stop(message_id: str, owner: str = Depends(request_owner)):
-    await stop_message(repository.message(message_id, owner))
+    await stop_message(await repository.message(message_id, owner))
     return ok({'ok': True})
 
 
 @router.post('/messages/{message_id}/resume')
 async def resume(message_id: str, owner: str = Depends(request_owner)):
-    message = repository.message(message_id, owner)
-    session = repository.get(message.session_id, owner)
+    message = await repository.message(message_id, owner)
+    session = await repository.get(message.session_id, owner)
     if session.messages[-1] is not message or message.status not in ('stopped', 'failed'):
         raise BusinessError(20009, '仅支持继续最近一条已停止或失败的回答', 409)
     await stop_message(message)
     cursor = str(len(message.events))
     message.status, message.error, message.task = 'streaming', None, None
+    await repository.persist_message(message)
     return ok({'session_id': session.id, 'message_id': message.id, 'last_event_id': cursor})

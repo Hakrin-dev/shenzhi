@@ -100,7 +100,8 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 
 ## 临时 Session 与 Auth
 
-- `MemorySessionRepository`：单进程 / **一个 worker**；最多 500 会话、500 已解析附件、每会话 100 轮；24 小时过期，访问列表/创建时惰性清理。重启丢失，收藏也不持久。
+- `MemorySessionRepository`：单进程 / **一个 worker**；最多 500 会话、500 已解析附件、每会话 100 轮；24 小时过期，访问列表/创建时惰性清理。未配置 `CHAT_DATABASE_URL` 时使用；重启丢失，API 返回 `ephemeral: true`。
+- 配置 `CHAT_DATABASE_URL` 后启用 PostgreSQL 持久化（见 `PERSISTENCE-PLAN.md`）：会话与消息跨重启保留，`ephemeral: false`；流式生成仍绑定单 worker 进程内缓存。迁移：`cd apps/backend && uv run alembic -c alembic.ini upgrade head`。
 - BFF 继续使用 dev 的 Better Auth 获取用户身份；不改登录、注册、邮箱验证、OAuth、PostgreSQL schema。
 - BFF 清除浏览器伪造的用户/内部凭据头，再注入经 Better Auth 验证的用户 ID。匿名请求使用 HttpOnly、SameSite=Lax 随机会话 cookie，不按 IP 共用数据。
 - 所有会话/消息/上传操作校验临时 owner。不同用户、匿名与登录后数据不自动迁移，过期附件需要重传。
@@ -116,4 +117,4 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 - 一旦后端返回 `session_id`，**不再**写入本地缓存，并清除已晋升的本地条目；侧栏以 `/chat/sessions` 列表为准。
 - 侧栏合并展示时，本地条目标记为「本地」，不可收藏/重命名；成功接入后端后不应出现同一会话的双条目。
 
-**后续边界**：PostgreSQL 持久化、与 Better Auth 用户关联及匿名会话归属策略、跨 worker 分发、共享链接/权限/保留期限、限流与成本配额。这次没有设计或执行数据库 migration，没有迁移 B 的 `SharedSession` 数据库和公共分享功能。
+**后续边界**：PostgreSQL 持久化、与 Better Auth 用户关联及匿名会话归属策略、跨 worker 分发、共享链接/权限/保留期限、限流与成本配额。这次没有设计或执行数据库 migration，没有迁移 B 的 `SharedSession` 数据库和公共分享功能。持久化实现方案见 `PERSISTENCE-PLAN.md`。

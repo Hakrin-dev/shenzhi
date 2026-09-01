@@ -37,7 +37,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.env = patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'test', 'DEEPSEEK_MODEL': 'deepseek-chat', 'DASHSCOPE_API_KEY': '', 'BACKEND_BFF_SECRET': '', 'BACKEND_ALLOW_INSECURE_LOCAL_BFF': 'true'})
         self.env.start()
-        repository.clear()
+        await repository.clear()
         FakeProvider.calls = []
         self.provider = patch.object(chat, 'ModelProvider', FakeProvider); self.provider.start()
         self.retrieval = patch.object(chat, 'retrieval_search', return_value=[{'id': 'p1', 'title': 'Paper', 'abstract': 'Evidence'}]); self.retrieval.start()
@@ -128,7 +128,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
                     yielded.set()
                     await asyncio.Event().wait()
                 finally: cancelled.set()
-        created = await self.create(); mid = created['message_id']; message = repository.message(mid, OWNER_KEY)
+        created = await self.create(); mid = created['message_id']; message = await repository.message(mid, OWNER_KEY)
         with patch.object(chat, 'ModelProvider', SlowProvider):
             message.task = asyncio.create_task(chat.generate(message))
             await asyncio.wait_for(yielded.wait(), 2)
@@ -138,7 +138,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(f'/api/v1/chat/messages/{mid}/stream', headers={'Last-Event-ID': resumed['last_event_id']})
         self.assertNotIn('"text": "未完成"', response.text)
         self.assertTrue(message.content.startswith('未完成'))
-        self.assertEqual(len(repository.get(created['session_id'], OWNER_KEY).messages), 1)
+        self.assertEqual(len((await repository.get(created['session_id'], OWNER_KEY)).messages), 1)
         self.assertIn({'role': 'assistant', 'content': '未完成'}, FakeProvider.calls[-1])
 
     async def test_truncated_history_emits_visible_warning(self):
@@ -154,7 +154,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_before_stream_and_memory_capacity(self):
         created = await self.create(); mid = created['message_id']
         await self.client.post(f'/api/v1/chat/messages/{mid}/stop')
-        self.assertEqual(repository.message(mid, OWNER_KEY).status, 'stopped')
+        self.assertEqual((await repository.message(mid, OWNER_KEY)).status, 'stopped')
         self.assertEqual(FakeProvider.calls, [])
         self.assertEqual((await self.client.post(f'/api/v1/chat/messages/{mid}/resume')).status_code, 200)
         with patch.object(repository, 'max_sessions', 1):
@@ -162,7 +162,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 429)
 
     async def test_disconnect_and_product_error(self):
-        created = await self.create(); message = repository.message(created['message_id'], OWNER_KEY)
+        created = await self.create(); message = await repository.message(created['message_id'], OWNER_KEY)
         class WaitingProvider(FakeProvider):
             async def stream(self, *args):
                 yield {'text': 'partial'}
