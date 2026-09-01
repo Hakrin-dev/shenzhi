@@ -1,66 +1,44 @@
-"""Bounded process-local repository. No ORM or durable Auth/user binding.
-
-Run ONE worker until this is replaced by a shared PostgreSQL repository.
-All lookup methods check owner, including uploads and SSE messages.
-"""
+"""Session repository: in-memory (default) or PostgreSQL when CHAT_DATABASE_URL is set."""
 import asyncio
+import os
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Protocol
+
 from app.core.errors import BusinessError
+from app.services.session_entities import Message, Session
+
+__all__ = ['Message', 'Session', 'SessionRepository', 'MemorySessionRepository',
+           'build_repository', 'repository']
 
 
-@dataclass
-class Message:
-    id: str
-    session_id: str
-    question: str
-    settings: dict[str, Any]
-    attachment_context: str = ''
-    warnings: list[str] = field(default_factory=list)
-    content: str = ''
-    reasoning: str = ''
-    status: str = 'streaming'
-    references: list[dict] = field(default_factory=list)
-    followups: list[str] = field(default_factory=list)
-    duration_ms: int = 0
-    error: str | None = None
-    events: list[tuple[str, dict]] = field(default_factory=list)
-    task: asyncio.Task | None = None
-    changed: asyncio.Event = field(default_factory=asyncio.Event)
-    subscribers: int = 0
+class SessionRepository(Protocol):
+    is_durable: bool
 
-    def emit(self, event: str, data: dict) -> None:
-        self.events.append((event, data))
-        self.changed.set()
-
-    def public(self) -> dict:
-        return {"last_event_id": str(len(self.events)), **{k: getattr(self, k) for k in (
-            'id', 'question', 'content', 'reasoning', 'status', 'references',
-            'followups', 'duration_ms', 'error', 'warnings',
-        )}}
-
-
-@dataclass
-class Session:
-    id: str
-    owner: str
-    title: str
-    settings: dict[str, Any]
-    favorite: bool = False
-    updated_at: float = field(default_factory=time.time)
-    messages: list[Message] = field(default_factory=list)
-
-    def public(self, detail: bool = False) -> dict:
-        data = {'id': self.id, 'title': self.title, 'favorite': self.favorite,
-                'updated_at': self.updated_at, **self.settings}
-        if detail:
-            data['messages'] = [m.public() for m in self.messages]
-        return data
+    async def recover(self) -> None: ...
+    async def persist_message(self, message: Message) -> None: ...
+    async def create(self, owner: str, question: str, settings: dict) -> Session: ...
+    async def get(self, session_id: str, owner: str) -> Session: ...
+    async def session_for_message(self, message: Message) -> Session: ...
+    async def message(self, message_id: str, owner: str) -> Message: ...
+    async def add_message(self, session: Session, question: str, settings: dict,
+                          context: str = '', warnings: list[str] | None = None) -> Message: ...
+    async def list(self, owner: str) -> list[dict]: ...
+    async def update(self, session_id: str, owner: str, *, title: str | None = None,
+                     favorite: bool | None = None) -> Session: ...
+    async def touch(self, session_id: str) -> None: ...
+    async def clear(self) -> None: ...
+    async def purge_owner(self, owner: str) -> None: ...
+    async def delete(self, session_id: str, owner: str) -> None: ...
+    def prune(self) -> None: ...
+    def save_upload(self, owner: str, filename: str, parsed: dict) -> dict: ...
+    def upload(self, file_id: str, owner: str) -> dict: ...
+    async def close(self) -> None: ...
 
 
 class MemorySessionRepository:
+    is_durable = False
+
     def __init__(self, max_sessions: int = 500, ttl: float = 86400):
         self.sessions: dict[str, Session] = {}
         self.messages: dict[str, Message] = {}
@@ -68,43 +46,49 @@ class MemorySessionRepository:
         self.max_sessions = max_sessions
         self.ttl = ttl
 
-    def prune(self) -> None:
+    async def recover(self) -> None:
+        return None
+
+    async def persist_message(self, message: Message) -> None:
+        return None
+
+    def _prune(self) -> None:
         cutoff = time.time() - self.ttl
         for session in list(self.sessions.values()):
-            if session.updated_at < cutoff and not any(m.task and not m.task.done() for m in session.messages):
-                self.delete(session.id, session.owner)
+            if session.updated_at < cutoff and not any(item.task and not item.task.done() for item in session.messages):
+                self._delete(session.id, session.owner)
         self.uploads = {key: value for key, value in self.uploads.items() if value['created_at'] > cutoff}
 
-    def create(self, owner: str, question: str, settings: dict) -> Session:
-        self.prune()
+    async def create(self, owner: str, question: str, settings: dict) -> Session:
+        self._prune()
         if len(self.sessions) >= self.max_sessions:
             raise BusinessError(20009, '临时会话容量已满，请删除旧会话', 429)
         session = Session(str(uuid.uuid4()), owner, question[:50], settings)
         self.sessions[session.id] = session
         return session
 
-    def get(self, session_id: str, owner: str) -> Session:
+    async def get(self, session_id: str, owner: str) -> Session:
         session = self.sessions.get(session_id)
         if not session or session.owner != owner:
             raise BusinessError(20004, '会话不存在或已过期', 404)
         return session
 
-    def session_for_message(self, message: Message) -> Session:
+    async def session_for_message(self, message: Message) -> Session:
         session = self.sessions.get(message.session_id)
         if not session or not any(item is message for item in session.messages):
             raise BusinessError(20004, '会话不存在或已过期', 404)
         return session
 
-    def message(self, message_id: str, owner: str) -> Message:
+    async def message(self, message_id: str, owner: str) -> Message:
         message = self.messages.get(message_id)
         if not message:
             raise BusinessError(20004, '消息不存在或已过期', 404)
-        self.get(message.session_id, owner)
+        await self.get(message.session_id, owner)
         return message
 
-    def add_message(self, session: Session, question: str, settings: dict,
-                    context: str = '', warnings: list[str] | None = None) -> Message:
-        if any(m.status == 'streaming' for m in session.messages):
+    async def add_message(self, session: Session, question: str, settings: dict,
+                          context: str = '', warnings: list[str] | None = None) -> Message:
+        if any(item.status == 'streaming' for item in session.messages):
             raise BusinessError(20009, '请先停止当前生成', 409)
         if len(session.messages) >= 100:
             raise BusinessError(20009, '单个临时会话最多 100 轮，请新建会话', 429)
@@ -115,14 +99,14 @@ class MemorySessionRepository:
         self.messages[message.id] = message
         return message
 
-    def list(self, owner: str) -> list[dict]:
-        self.prune()
-        return [s.public() for s in sorted(self.sessions.values(),
-                key=lambda s: (s.favorite, s.updated_at), reverse=True) if s.owner == owner]
+    async def list(self, owner: str) -> list[dict]:
+        self._prune()
+        return [item.public() for item in sorted(self.sessions.values(),
+                key=lambda session: (session.favorite, session.updated_at), reverse=True) if item.owner == owner]
 
-    def update(self, session_id: str, owner: str, *, title: str | None = None,
-               favorite: bool | None = None) -> Session:
-        session = self.get(session_id, owner)
+    async def update(self, session_id: str, owner: str, *, title: str | None = None,
+                     favorite: bool | None = None) -> Session:
+        session = await self.get(session_id, owner)
         if title is not None:
             if not title.strip():
                 raise BusinessError(20001, '会话名称不能为空')
@@ -132,26 +116,38 @@ class MemorySessionRepository:
         session.updated_at = time.time()
         return session
 
-    def touch(self, session_id: str) -> None:
+    async def touch(self, session_id: str) -> None:
         session = self.sessions.get(session_id)
         if session:
             session.updated_at = time.time()
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         self.sessions.clear()
         self.messages.clear()
         self.uploads.clear()
 
-    def delete(self, session_id: str, owner: str) -> None:
-        session = self.get(session_id, owner)
+    async def purge_owner(self, owner: str) -> None:
+        for session in [item for item in self.sessions.values() if item.owner == owner]:
+            self._delete(session.id, owner)
+
+    async def delete(self, session_id: str, owner: str) -> None:
+        self._delete(session_id, owner)
+
+    def _delete(self, session_id: str, owner: str) -> None:
+        session = self.sessions.get(session_id)
+        if not session or session.owner != owner:
+            raise BusinessError(20004, '会话不存在或已过期', 404)
         for message in session.messages:
             if message.task and not message.task.done():
                 message.task.cancel()
             self.messages.pop(message.id, None)
         del self.sessions[session_id]
 
+    def prune(self) -> None:
+        self._prune()
+
     def save_upload(self, owner: str, filename: str, parsed: dict) -> dict:
-        self.prune()
+        self._prune()
         if len(self.uploads) >= 500:
             raise BusinessError(20009, '临时附件容量已满，请稍后重试', 429)
         file_id = str(uuid.uuid4())
@@ -166,10 +162,17 @@ class MemorySessionRepository:
         return item
 
     async def close(self) -> None:
-        tasks = [m.task for m in self.messages.values() if m.task and not m.task.done()]
+        tasks = [item.task for item in self.messages.values() if item.task and not item.task.done()]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-repository = MemorySessionRepository()
+def build_repository() -> SessionRepository:
+    if os.getenv('CHAT_DATABASE_URL', '').strip():
+        from app.services.postgres_sessions import PostgresSessionRepository
+        return PostgresSessionRepository()
+    return MemorySessionRepository()
+
+
+repository: SessionRepository = build_repository()

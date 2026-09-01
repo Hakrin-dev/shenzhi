@@ -9,6 +9,7 @@ from app.services.sessions import repository
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    await repository.recover()
     yield
     await repository.close()
 
