@@ -19,6 +19,7 @@ from app.services.sessions import repository
 OWNER = {'x-shenzhi-anonymous-id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}
 OTHER = {'x-shenzhi-anonymous-id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}
 OWNER_KEY = 'anon:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+OTHER_KEY = 'anon:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 
 class FakeProvider:
@@ -63,7 +64,8 @@ class Acceptance2a(unittest.IsolatedAsyncioTestCase):
             'BACKEND_ALLOW_INSECURE_LOCAL_BFF': 'true',
         })
         self.env.start()
-        await repository.clear()
+        await repository.purge_owner(OWNER_KEY)
+        await repository.purge_owner(OTHER_KEY)
         FakeProvider.calls = []
         self.provider = patch.object(chat, 'ModelProvider', FakeProvider)
         self.provider.start()

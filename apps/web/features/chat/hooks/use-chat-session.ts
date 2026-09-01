@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "@/clients/backend/http";
 import { getChatSession, listChatSessions, resumeChatMessage, stopChatMessage, streamChatMessage } from "@/clients/backend/chat";
 import { useAskSidebarBridge } from "@/stores/ask-sidebar-bridge";
 import { beginTurn, restoreTurns } from "../services/conversation";
@@ -219,6 +220,7 @@ export function useChatSession() {
     const controller = new AbortController();
     abortRef.current = controller;
     patch(last.localId, { status: "streaming", error: undefined, thought: "继续生成…" });
+    let resend: ChatSendInput | null = null;
     try {
       const resumed = await resumeChatMessage(last.messageId);
       if (run !== revision.current || controller.signal.aborted) {
@@ -227,8 +229,22 @@ export function useChatSession() {
       }
       await runStream(resumed.message_id, last.localId, run, controller, resumed.last_event_id);
     } catch (error) {
-      if (run === revision.current) patch(last.localId, { status: "failed", error: messageForApiError(error) });
+      if (run === revision.current) {
+        // Server message gone (DB cleared / owner changed) — fall back to a fresh send.
+        if (error instanceof ApiError && error.status === 404 && lastInput.current) {
+          patch(last.localId, {
+            status: "failed",
+            messageId: undefined,
+            error: "原回答已失效，正在重新发送…",
+          });
+          setTurns((prev) => prev.slice(0, -2));
+          resend = lastInput.current;
+        } else {
+          patch(last.localId, { status: "failed", error: messageForApiError(error) });
+        }
+      }
     } finally { finish(run); }
+    if (resend) await send(resend);
   }, [finish, lock, patch, runStream, send, turns]);
 
   const abortCurrent = useCallback(() => {

@@ -14,11 +14,15 @@ from app.services.sessions import MemorySessionRepository
 @unittest.skipUnless(os.getenv('CHAT_DATABASE_URL'), 'CHAT_DATABASE_URL not set')
 class PostgresPersistenceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        from app.core.database import dispose_engine
+        await dispose_engine()
         self.repo = PostgresSessionRepository()
-        await self.repo.clear()
+        for owner in ('user:a', 'user:b'):
+            await self.repo.purge_owner(owner)
 
     async def asyncTearDown(self):
-        await self.repo.clear()
+        for owner in ('user:a', 'user:b'):
+            await self.repo.purge_owner(owner)
         await self.repo.close()
 
     async def test_owner_isolation_and_restart_recovery(self):

@@ -246,6 +246,22 @@ class PostgresSessionRepository:
             await db.execute(delete(ChatMessageRow))
             await db.execute(delete(ChatSessionRow))
 
+    async def purge_owner(self, owner: str) -> None:
+        """Delete one owner's sessions without wiping the shared development database."""
+        async with get_session_factory()() as db:
+            rows = (await db.scalars(
+                select(ChatSessionRow.id).where(ChatSessionRow.owner == owner)
+            )).all()
+        for session_id in rows:
+            sid = str(session_id)
+            for message_id, message in list(self.messages.items()):
+                if message.session_id == sid:
+                    if message.task and not message.task.done():
+                        message.task.cancel()
+                    self._untrack(message_id)
+        async with session_scope() as db:
+            await db.execute(delete(ChatSessionRow).where(ChatSessionRow.owner == owner))
+
     async def delete(self, session_id: str, owner: str) -> None:
         session = await self.get(session_id, owner)
         for item in session.messages:
