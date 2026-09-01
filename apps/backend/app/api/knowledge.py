@@ -1,8 +1,4 @@
-"""ShenZhi Knowledge API.
-
-These routes expose only the domain contract from ``services.knowledge_base``;
-the upstream knowledge-base JSON and URL never reach a browser.
-"""
+"""HTTP routes for the ShenZhi Knowledge Capability."""
 
 from __future__ import annotations
 
@@ -12,15 +8,14 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.clients.knowledge_base import KnowledgeClientError
 from app.core.identity import require_bff
 from app.core.responses import ok
 from app.schemas.knowledge import KnowledgeError, KnowledgeSearchRequest
-from app.services.knowledge_base import KnowledgeAdapter, KnowledgeServiceError
+from app.services.knowledge import KnowledgeService, KnowledgeServiceError
 
 
 router = APIRouter(prefix='/api/v1/knowledge', tags=['knowledge'])
-adapter = KnowledgeAdapter()
+service = KnowledgeService()
 
 
 def request_id(request: Request) -> str:
@@ -30,7 +25,7 @@ def request_id(request: Request) -> str:
     return uuid4().hex
 
 
-def _error_payload(error: KnowledgeClientError | KnowledgeServiceError, request: Request) -> JSONResponse:
+def _error_payload(error: KnowledgeServiceError, request: Request) -> JSONResponse:
     safe = error.error.model_copy(update={'request_id': request_id(request)})
     return JSONResponse(
         status_code=error.status_code,
@@ -74,8 +69,8 @@ async def search(
         return invalid_argument(request, '检索参数不合法')
 
     try:
-        response = await adapter.search(search_request)
-    except (KnowledgeClientError, KnowledgeServiceError) as error:
+        response = await service.search(search_request)
+    except KnowledgeServiceError as error:
         return _error_payload(error, request)
     except Exception:
         return unknown_error(request)
@@ -98,8 +93,8 @@ async def paper(
     if isinstance(resolved, JSONResponse):
         return resolved
     try:
-        response = await adapter.paper(resolved)
-    except (KnowledgeClientError, KnowledgeServiceError) as error:
+        response = await service.get_paper(resolved)
+    except KnowledgeServiceError as error:
         return _error_payload(error, request)
     except Exception:
         return unknown_error(request)
@@ -124,8 +119,8 @@ async def graph(
         return invalid_argument(request, 'depth 必须是 1 或 2')
 
     try:
-        response = await adapter.graph(resolved, depth=depth_value)
-    except (KnowledgeClientError, KnowledgeServiceError) as error:
+        response = await service.get_graph(resolved, depth=depth_value)
+    except KnowledgeServiceError as error:
         return _error_payload(error, request)
     except Exception:
         return unknown_error(request)

@@ -1,0 +1,90 @@
+"""The upstream Knowledge Base API contract.
+
+These types intentionally retain the Research Capability's field names. They
+are transport-bound descriptions, not ShenZhi's public Knowledge contract.
+"""
+
+from __future__ import annotations
+
+from typing import Any, NotRequired, TypedDict
+
+
+class UpstreamSearchPayload(TypedDict):
+    query: str
+    top_k: int
+    year_gte: NotRequired[int]
+    year_lte: NotRequired[int]
+    conference: NotRequired[list[str]]
+    author: NotRequired[list[str]]
+    keyword: NotRequired[list[str]]
+    subject: NotRequired[list[str]]
+
+
+class UpstreamSearchResult(TypedDict):
+    paper_id: str
+    title: str
+    abstract: NotRequired[str | None]
+    conference: NotRequired[str | None]
+    venue: NotRequired[str | None]
+    authors: NotRequired[list[str] | str | None]
+    year: NotRequired[int | str | None]
+    keywords: NotRequired[list[str] | str | None]
+    subjects: NotRequired[list[str] | str | None]
+    score: NotRequired[int | float | str | None]
+    rank: NotRequired[int | str | None]
+
+
+class UpstreamSearchResponse(TypedDict):
+    results: list[UpstreamSearchResult]
+    state: NotRequired[dict[str, Any]]
+    query_parse: NotRequired[dict[str, Any]]
+    query_rewrite: NotRequired[dict[str, Any]]
+
+
+class UpstreamPaperResponse(TypedDict):
+    paper_id: str
+    title: str
+    abstract: NotRequired[str | None]
+    authors: NotRequired[list[str] | str | None]
+    year: NotRequired[int | str | None]
+    venue: NotRequired[str | None]
+    conference: NotRequired[str | None]
+    doi: NotRequired[str | None]
+    pdf_url: NotRequired[str | None]
+    pdfUrl: NotRequired[str | None]
+    keywords: NotRequired[list[str] | str | None]
+    subjects: NotRequired[list[str] | str | None]
+    citationCount: NotRequired[int | str | None]
+    citation_count: NotRequired[int | str | None]
+    citeCount: NotRequired[int | str | None]
+    cite_count: NotRequired[int | str | None]
+    referenceCount: NotRequired[int | str | None]
+    reference_count: NotRequired[int | str | None]
+
+
+class UpstreamGraphNode(TypedDict, total=False):
+    id: str
+    text: str
+    title: str
+    color: str
+    borderColor: str
+    data: dict[str, Any]
+
+
+UpstreamGraphEdge = TypedDict(
+    'UpstreamGraphEdge',
+    {
+        'from': str,
+        'to': str,
+        'text': NotRequired[str],
+        'description': NotRequired[str],
+        'data': NotRequired[dict[str, Any]],
+    },
+    total=False,
+)
+
+
+class UpstreamGraphResponse(TypedDict):
+    rootId: str
+    nodes: list[UpstreamGraphNode]
+    lines: list[UpstreamGraphEdge]

@@ -9,14 +9,15 @@ import httpx
 from app.main import app
 from app.core.identity import require_bff
 from app.schemas.knowledge import KnowledgeSearchRequest
-from app.services.knowledge_base import (
+from app.integrations.knowledge.adapter import (
     KnowledgeAdapter,
-    KnowledgeServiceError,
     map_graph,
     map_paper_detail,
     map_search_result,
 )
-from app.clients.knowledge_base import KnowledgeBaseClient, KnowledgeClientError
+from app.integrations.knowledge.client import KnowledgeBaseClient
+from app.integrations.knowledge.exceptions import KnowledgeIntegrationError
+from app.services.knowledge import KnowledgeService, KnowledgeServiceError
 
 
 PAPER_ID = 'paper:17203_aaai:911ff38f19e8'
@@ -156,9 +157,9 @@ class KnowledgeMappingTests(unittest.TestCase):
         self.assertEqual(graph.edges[0].relation, 'RELATES_TO')
 
     def test_mapping_rejects_missing_required_contract_fields(self):
-        with self.assertRaises(KnowledgeServiceError) as caught:
+        with self.assertRaises(KnowledgeIntegrationError) as caught:
             map_search_result({'title': 'missing id'}, retrieved_at=self.retrieved_at)
-        self.assertEqual(caught.exception.error.code, 'CONTRACT_VIOLATION')
+        self.assertEqual(caught.exception.code, 'CONTRACT_VIOLATION')
 
     def test_search_request_uses_one_public_spelling_and_rejects_upstream_aliases(self):
         request = KnowledgeSearchRequest.model_validate({
@@ -243,6 +244,55 @@ class KnowledgeContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.results, [])
 
 
+class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_service_delegates_domain_use_cases_to_adapter(self):
+        search_response = object()
+        paper_response = object()
+        graph_response = object()
+
+        class FixtureAdapter:
+            async def search(self, request):
+                self.search_request = request
+                return search_response
+
+            async def paper(self, paper_id):
+                self.paper_id = paper_id
+                return paper_response
+
+            async def graph(self, paper_id, *, depth=1):
+                self.graph_id = paper_id
+                self.depth = depth
+                return graph_response
+
+        adapter = FixtureAdapter()
+        service = KnowledgeService(adapter)
+        request = KnowledgeSearchRequest(query='q')
+
+        self.assertIs(await service.search(request), search_response)
+        self.assertIs(await service.get_paper(PAPER_ID), paper_response)
+        self.assertIs(await service.get_graph(PAPER_ID, depth=2), graph_response)
+        self.assertIs(adapter.search_request, request)
+        self.assertEqual(adapter.paper_id, PAPER_ID)
+        self.assertEqual(adapter.graph_id, PAPER_ID)
+        self.assertEqual(adapter.depth, 2)
+
+    async def test_service_converts_integration_error_to_domain_error(self):
+        class FailingAdapter:
+            async def search(self, request):
+                raise KnowledgeIntegrationError(
+                    'TIMEOUT', '知识底座请求超时', True, 504
+                )
+
+        with self.assertRaises(KnowledgeServiceError) as caught:
+            await KnowledgeService(FailingAdapter()).search(
+                KnowledgeSearchRequest(query='q')
+            )
+        self.assertEqual(caught.exception.error.code, 'TIMEOUT')
+        self.assertTrue(caught.exception.error.retryable)
+        self.assertEqual(caught.exception.error.request_id, '')
+        self.assertEqual(caught.exception.status_code, 504)
+
+
 class KnowledgeClientTests(unittest.IsolatedAsyncioTestCase):
     def test_client_reads_server_side_configuration(self):
         with patch.dict('os.environ', {
@@ -304,11 +354,11 @@ class KnowledgeClientTests(unittest.IsolatedAsyncioTestCase):
                         )
                     ),
                 )
-                with self.assertRaises(KnowledgeClientError) as caught:
+                with self.assertRaises(KnowledgeIntegrationError) as caught:
                     await client.search({'query': 'q', 'top_k': 1})
-                self.assertEqual(caught.exception.error.code, code)
-                self.assertEqual(caught.exception.error.retryable, retryable)
-                self.assertNotIn('secret-token', caught.exception.error.message)
+                self.assertEqual(caught.exception.code, code)
+                self.assertEqual(caught.exception.retryable, retryable)
+                self.assertNotIn('secret-token', caught.exception.message)
 
     async def test_client_maps_timeout_connection_invalid_json_and_contract(self):
         handlers = [
@@ -327,16 +377,16 @@ class KnowledgeClientTests(unittest.IsolatedAsyncioTestCase):
                 client = KnowledgeBaseClient(
                     base_url='https://knowledge.test', transport=httpx.MockTransport(handler)
                 )
-                with self.assertRaises(KnowledgeClientError) as caught:
+                with self.assertRaises(KnowledgeIntegrationError) as caught:
                     await client.search({'query': 'q', 'top_k': 1})
-                self.assertEqual(caught.exception.error.code, code)
+                self.assertEqual(caught.exception.code, code)
 
     async def test_client_maps_invalid_base_url_to_safe_unavailable_error(self):
         client = KnowledgeBaseClient(base_url='http://example.com:bad')
-        with self.assertRaises(KnowledgeClientError) as caught:
+        with self.assertRaises(KnowledgeIntegrationError) as caught:
             await client.search({'query': 'q', 'top_k': 1})
-        self.assertEqual(caught.exception.error.code, 'UPSTREAM_UNAVAILABLE')
-        self.assertFalse(caught.exception.error.retryable)
+        self.assertEqual(caught.exception.code, 'UPSTREAM_UNAVAILABLE')
+        self.assertFalse(caught.exception.retryable)
         self.assertEqual(caught.exception.status_code, 503)
 
 
@@ -352,9 +402,9 @@ class KnowledgeApiTests(unittest.IsolatedAsyncioTestCase):
         self.allow_bff = allow_bff
         app.dependency_overrides[require_bff] = allow_bff
         self.adapter = FixtureClient()
-        self.adapter = KnowledgeAdapter(self.adapter)
-        self.adapter_patch = patch('app.api.knowledge.adapter', self.adapter)
-        self.adapter_patch.start()
+        self.service = KnowledgeService(KnowledgeAdapter(self.adapter))
+        self.service_patch = patch('app.api.knowledge.service', self.service)
+        self.service_patch.start()
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url='http://test',
@@ -363,7 +413,7 @@ class KnowledgeApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
         app.dependency_overrides.pop(require_bff, None)
-        self.adapter_patch.stop()
+        self.service_patch.stop()
         self.env.stop()
 
     async def test_knowledge_search_detail_graph_api_envelope(self):
@@ -409,9 +459,10 @@ class KnowledgeApiTests(unittest.IsolatedAsyncioTestCase):
         configured = KnowledgeAdapter(KnowledgeBaseClient(
             base_url='https://knowledge.test', transport=httpx.MockTransport(handler)
         ))
-        self.adapter_patch.stop()
-        self.adapter_patch = patch('app.api.knowledge.adapter', configured)
-        self.adapter_patch.start()
+        configured_service = KnowledgeService(configured)
+        self.service_patch.stop()
+        self.service_patch = patch('app.api.knowledge.service', configured_service)
+        self.service_patch.start()
 
         search = await self.client.post('/api/v1/knowledge/search', json={'query': 'q'})
         self.assertEqual(search.status_code, 200, search.text)
@@ -430,11 +481,13 @@ class KnowledgeApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_upstream_error_is_not_silently_returned_as_empty_results(self):
         class FailingAdapter:
             async def search(self, request):
-                raise KnowledgeClientError('upstream failed')
+                raise KnowledgeIntegrationError.connection_unavailable()
 
-        self.adapter_patch.stop()
-        self.adapter_patch = patch('app.api.knowledge.adapter', FailingAdapter())
-        self.adapter_patch.start()
+        self.service_patch.stop()
+        self.service_patch = patch(
+            'app.api.knowledge.service', KnowledgeService(FailingAdapter())
+        )
+        self.service_patch.start()
         response = await self.client.post('/api/v1/knowledge/search', json={'query': 'q'})
         self.assertEqual(response.status_code, 503)
         body = response.json()

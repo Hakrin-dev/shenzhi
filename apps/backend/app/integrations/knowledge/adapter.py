@@ -1,4 +1,4 @@
-"""Knowledge-base adapter and external-to-domain mapping."""
+"""Map the upstream Knowledge Base contract to ShenZhi's domain contract."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
-from app.clients.knowledge_base import KnowledgeBaseClient
+from app.integrations.knowledge.client import KnowledgeBaseClient
+from app.integrations.knowledge.exceptions import KnowledgeIntegrationError
+from app.integrations.knowledge.schemas import UpstreamSearchPayload
 from app.schemas.knowledge import (
     GraphEdge,
     GraphNode,
-    KnowledgeError,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     PaperDetail,
@@ -19,22 +20,6 @@ from app.schemas.knowledge import (
     PaperSearchResult,
     Provenance,
 )
-
-
-class KnowledgeServiceError(Exception):
-    """A safe domain/contract error produced while adapting upstream data."""
-
-    def __init__(self, error: KnowledgeError | str, status_code: int = 502):
-        if isinstance(error, str):
-            error = KnowledgeError(
-                code='CONTRACT_VIOLATION',
-                message='知识底座返回格式无效',
-                retryable=False,
-                request_id='',
-            )
-        super().__init__(error.message)
-        self.error = error
-        self.status_code = status_code
 
 
 def _retrieved_at(value: datetime | None) -> datetime:
@@ -57,7 +42,7 @@ def _provenance(external_id: str | None, retrieved_at: datetime | None) -> Prove
 def _required_string(item: dict[str, Any], key: str) -> str:
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise KnowledgeServiceError('missing required string field')
+        raise KnowledgeIntegrationError.contract_violation()
     return value.strip()
 
 
@@ -65,7 +50,7 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise KnowledgeServiceError('invalid optional string field')
+        raise KnowledgeIntegrationError.contract_violation()
     value = value.strip()
     return value or None
 
@@ -85,11 +70,11 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, str):
         value = [value]
     if not isinstance(value, list):
-        raise KnowledgeServiceError('invalid string-list field')
+        raise KnowledgeIntegrationError.contract_violation()
     result: list[str] = []
     for item in value:
         if not isinstance(item, str):
-            raise KnowledgeServiceError('invalid string-list element')
+            raise KnowledgeIntegrationError.contract_violation()
         item = item.strip()
         if item:
             result.append(item)
@@ -102,7 +87,7 @@ def _optional_int(value: Any) -> int | None:
     if isinstance(value, str) and not value.strip():
         return None
     if isinstance(value, bool) or not isinstance(value, int):
-        raise KnowledgeServiceError('invalid integer field')
+        raise KnowledgeIntegrationError.contract_violation()
     return value
 
 
@@ -112,7 +97,7 @@ def _optional_number(value: Any) -> float | None:
     if isinstance(value, str) and not value.strip():
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise KnowledgeServiceError('invalid numeric field')
+        raise KnowledgeIntegrationError.contract_violation()
     return float(value)
 
 
@@ -140,9 +125,9 @@ def _property_key(key: Any) -> str:
     return aliases.get(text, text)
 
 
-def _upstream_search_payload(request: KnowledgeSearchRequest) -> dict[str, Any]:
+def _upstream_search_payload(request: KnowledgeSearchRequest) -> UpstreamSearchPayload:
     """Translate the public request once at the anti-corruption boundary."""
-    payload: dict[str, Any] = {
+    payload: UpstreamSearchPayload = {
         'query': request.query,
         'top_k': request.top_k,
     }
@@ -164,17 +149,17 @@ def _upstream_search_payload(request: KnowledgeSearchRequest) -> dict[str, Any]:
 def _contract_model(factory: Callable[[], Any]) -> Any:
     try:
         return factory()
-    except KnowledgeServiceError:
+    except KnowledgeIntegrationError:
         raise
     except (TypeError, ValueError, ValidationError) as exc:
-        raise KnowledgeServiceError('contract model validation failed') from exc
+        raise KnowledgeIntegrationError.contract_violation() from exc
 
 
 def map_search_result(
     item: dict[str, Any], *, retrieved_at: datetime | None = None
 ) -> PaperSearchResult:
     if not isinstance(item, dict):
-        raise KnowledgeServiceError('search result must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     paper_id = _required_string(item, 'paper_id')
     title = _required_string(item, 'title')
     return _contract_model(lambda: PaperSearchResult(
@@ -196,7 +181,7 @@ def map_paper_detail(
     item: dict[str, Any], *, retrieved_at: datetime | None = None
 ) -> PaperDetail:
     if not isinstance(item, dict):
-        raise KnowledgeServiceError('paper response must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     paper_id = _required_string(item, 'paper_id')
     title = _required_string(item, 'title')
     return _contract_model(lambda: PaperDetail(
@@ -227,17 +212,17 @@ def _graph_node(
     item: dict[str, Any], *, retrieved_at: datetime | None = None
 ) -> GraphNode:
     if not isinstance(item, dict):
-        raise KnowledgeServiceError('graph node must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     node_id = _required_string(item, 'id')
     data = item.get('data')
     if not isinstance(data, dict):
-        raise KnowledgeServiceError('graph node data must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     kind = _first_optional_string(data, 'type')
     if kind is None:
         labels = _string_list(data.get('labels'))
         kind = labels[0] if labels else None
     if kind is None:
-        raise KnowledgeServiceError('graph node is missing type')
+        raise KnowledgeIntegrationError.contract_violation()
     label = _first_optional_string(item, 'text', 'title')
     if label is None:
         label = _first_optional_string(data, 'name', 'title')
@@ -262,16 +247,16 @@ def _graph_edge(
     item: dict[str, Any], *, retrieved_at: datetime | None = None
 ) -> GraphEdge:
     if not isinstance(item, dict):
-        raise KnowledgeServiceError('graph edge must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     source_id = _required_string(item, 'from')
     target_id = _required_string(item, 'to')
     data = item.get('data')
     if data is not None and not isinstance(data, dict):
-        raise KnowledgeServiceError('graph edge data must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     data = data or {}
     relation = _first_optional_string(data, 'type') or _optional_string(item.get('text'))
     if relation is None:
-        raise KnowledgeServiceError('graph edge is missing relation')
+        raise KnowledgeIntegrationError.contract_violation()
     return _contract_model(lambda: GraphEdge(
         source_id=source_id,
         target_id=target_id,
@@ -287,12 +272,12 @@ def map_graph(
     item: dict[str, Any], *, retrieved_at: datetime | None = None
 ) -> PaperGraph:
     if not isinstance(item, dict):
-        raise KnowledgeServiceError('graph response must be an object')
+        raise KnowledgeIntegrationError.contract_violation()
     root_id = _required_string(item, 'rootId')
     nodes = item.get('nodes')
     lines = item.get('lines')
     if not isinstance(nodes, list) or not isinstance(lines, list):
-        raise KnowledgeServiceError('graph nodes/lines must be lists')
+        raise KnowledgeIntegrationError.contract_violation()
     mapped_nodes = [_graph_node(node, retrieved_at=retrieved_at) for node in nodes]
     mapped_edges = [_graph_edge(line, retrieved_at=retrieved_at) for line in lines]
     return _contract_model(lambda: PaperGraph(
@@ -313,7 +298,7 @@ class KnowledgeAdapter:
         body = await self.client.search(_upstream_search_payload(request))
         results = body.get('results') if isinstance(body, dict) else None
         if not isinstance(results, list):
-            raise KnowledgeServiceError('search response results must be a list')
+            raise KnowledgeIntegrationError.contract_violation()
         retrieved_at = datetime.now(timezone.utc)
         mapped = [map_search_result(item, retrieved_at=retrieved_at) for item in results]
         return KnowledgeSearchResponse(results=mapped)
@@ -322,12 +307,12 @@ class KnowledgeAdapter:
         body = await self.client.paper(paper_id)
         detail = map_paper_detail(body, retrieved_at=datetime.now(timezone.utc))
         if detail.id != paper_id:
-            raise KnowledgeServiceError('detail ID does not match requested paper')
+            raise KnowledgeIntegrationError.contract_violation()
         return detail
 
     async def graph(self, paper_id: str, *, depth: int = 1) -> PaperGraph:
         body = await self.client.graph(paper_id, depth)
         graph = map_graph(body, retrieved_at=datetime.now(timezone.utc))
         if graph.root_id != paper_id:
-            raise KnowledgeServiceError('graph rootId does not match requested paper')
+            raise KnowledgeIntegrationError.contract_violation()
         return graph
