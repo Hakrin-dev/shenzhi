@@ -41,8 +41,8 @@ next-env.d.ts
 .idea/
 *.swp
 
-# Cursor personal agent rules (local only; do not commit fork-specific sync norms)
-.cursor/rules/
+# Cursor 本地配置与 Agent 规范（个人维护，不入库）
+.cursor/
 
 # python(截图验证 / 品牌资产处理脚本;本地 venv 不入库)
 __pycache__/

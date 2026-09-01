@@ -14,3 +14,9 @@
 - 完成修改后执行与改动范围相符的检查或测试。架构、公共接口或关键开发方式发生变化时，同步更新相关文档。
 
 若任务要求与现有架构存在明显冲突，先说明冲突及影响，再进行实质性调整。
+
+## Agent 与本地工具约定
+
+- 个人 fork、`origin`/`upstream` 等远程配置属于本机 `.git/config`；**禁止**写入仓库内的 Agent 规则、`AGENTS.md` 或文档，以免误导其他成员的 Agent。
+- 未获用户明确要求时，Agent **不得**修改 `git remote`、改写他人的 fork 推送目标，或把个人 Cursor 规范（`.cursor/`）提交入库。
+- Git 协作流程以 `docs/engineering/git-conventions.md` 为准；个人 Agent 习惯仅留在本地（可用 `.git/info/exclude` 忽略）。
