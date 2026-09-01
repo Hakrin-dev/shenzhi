@@ -140,7 +140,7 @@ export function ScholarNetwork() {
             <p className="flex items-center gap-2 text-muted"><BookOpen className="size-4 text-faint" />研究方向：{selected.tags.slice(0, 2).join("、")}</p>
           </div>
           <div className="mt-5 flex flex-wrap gap-1.5">{selected.tags.map((tag) => <span key={tag} className="rounded-md bg-chip px-2 py-1 text-[10px] text-muted">{tag}</span>)}</div>
-          <Link href={`/scholars/${selected.id}`} className="mt-6 flex h-10 w-full items-center justify-center rounded-xl bg-primary text-xs font-medium text-white hover:bg-primary-dark">查看完整学者画像</Link>
+          <Link href={`/scholars/${selected.id}`} className="mt-6 flex h-10 w-full items-center justify-center rounded-xl bg-primary text-xs font-medium text-white hover:bg-primary-deep">查看完整学者画像</Link>
           <div className="mt-6 border-t border-line pt-4">
             <p className="text-[11px] font-semibold text-ink-2">当前关联</p>
             <div className="mt-2 space-y-2">

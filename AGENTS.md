@@ -15,9 +15,8 @@
 
 若任务要求与现有架构存在明显冲突，先说明冲突及影响，再进行实质性调整。
 
-## Git 与远程同步
+## Agent 与本地工具约定
 
-- **主项目**：`upstream` → `https://github.com/Hakrin-dev/shenzhi.git`；**fork**：`origin` → `zixuanzheng2007-stack/shenzhi`。
-- 日常在 `dev` 上开发，对照 `upstream/dev`；合入主仓库通过 PR（`origin:dev` → `Hakrin-dev/shenzhi:dev`），不直接向 `upstream` push。
-- **每次提交后必须同步远程**：`git fetch upstream` → 必要时 rebase → commit → `git push origin dev`；有进行中的 PR 则随 push 自动更新。
-- 禁止只留本地 commit 不同步 fork；禁止把 `.env`、密钥、`_local-only/` 纳入版本库。
+- 个人 fork、`origin`/`upstream` 等远程配置属于本机 `.git/config`；**禁止**写入仓库内的 Agent 规则、`AGENTS.md` 或文档，以免误导其他成员的 Agent。
+- 未获用户明确要求时，Agent **不得**修改 `git remote`、改写他人的 fork 推送目标，或把个人 Cursor 规范（`.cursor/`）提交入库。
+- Git 协作流程以 `docs/engineering/git-conventions.md` 为准；个人 Agent 习惯仅留在本地（可用 `.git/info/exclude` 忽略）。

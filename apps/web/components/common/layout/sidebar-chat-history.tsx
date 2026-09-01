@@ -177,7 +177,7 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
           <button
             type="button"
             onClick={newChat}
-            className="flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+            className="flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white transition-colors hover:bg-primary-deep"
           >
             <MessageSquarePlus className="size-4 shrink-0" strokeWidth={1.8} />
             新对话

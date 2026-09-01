@@ -2,9 +2,9 @@
 @import "tw-animate-css";
 
 /*
- * 设计令牌 —— 深知品牌配色
- * 主色深知蓝 #174A7E · 深色 #123A63 · 浅底 #E8F1F8
- * 页面 #F6F9FC · 正文 #17212B · 智能体强调 #0F766E
+ * 设计令牌 —— 深知品牌色板 V2
+ * 主色 #174A7E · 深色状态 #123A63（悬停、深色导航、页脚）· 浅色背景 #E8F1F8
+ * 智能强调 #0F766E（智能体、数据连接、成功）· 正文 #17212B · 页面 #F6F9FC
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -14,12 +14,12 @@
   --color-card: #ffffff;
 
   --color-primary: #174a7e;
-  --color-primary-dark: #123a63;
+  --color-primary-deep: #123a63;
   --color-primary-foreground: #ffffff;
   --color-primary-soft: #e8f1f8;
 
   --color-agent: #0f766e;
-  --color-agent-soft: #e6f3f1;
+  --color-agent-soft: #dff0ee;
 
   --color-brand-violet: #5b21b6;
   --color-brand-cyan: #0f766e;
@@ -37,7 +37,7 @@
   --color-danger: #ef4444;
   --color-danger-soft: #fee2e2;
   --color-success: #0f766e;
-  --color-success-soft: #e6f3f1;
+  --color-success-soft: #dff0ee;
 
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -51,16 +51,16 @@
   --color-sidebar: #123a63;
   --color-card: #161d36;
 
-  --color-primary: #6b9fd4;
-  --color-primary-dark: #174a7e;
+  --color-primary: #5a94c8;
+  --color-primary-deep: #4a80b3;
   --color-primary-foreground: #ffffff;
-  --color-primary-soft: #1a3552;
+  --color-primary-soft: #1a2c47;
 
-  --color-agent: #2dd4bf;
-  --color-agent-soft: #12332b;
+  --color-agent: #3aa79d;
+  --color-agent-soft: #12332e;
 
   --color-brand-violet: #9f7aea;
-  --color-brand-cyan: #2dd4bf;
+  --color-brand-cyan: #3aa79d;
   --color-brand-gold: #f3d029;
 
   --color-ink: #e9edf7;
@@ -74,8 +74,8 @@
 
   --color-danger: #f87171;
   --color-danger-soft: #3d2129;
-  --color-success: #2dd4bf;
-  --color-success-soft: #12332b;
+  --color-success: #3aa79d;
+  --color-success-soft: #12332e;
 
   --shadow-card: 0 2px 6px 0 rgb(0 0 0 / 0.3);
   --shadow-pop: 0 8px 24px 0 rgb(0 0 0 / 0.4);
@@ -103,7 +103,7 @@
   }
 
   .dark ::selection {
-    background: rgb(107 159 212 / 0.35);
+    background: rgb(90 148 200 / 0.35);
   }
 }
 
