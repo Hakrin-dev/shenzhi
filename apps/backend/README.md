@@ -30,6 +30,29 @@ BUSINESS_BACKEND_URL=http://127.0.0.1:8000
 BACKEND_ALLOW_INSECURE_LOCAL_BFF=true
 ```
 
+## Knowledge Capability
+
+后端通过 `KNOWLEDGE_BASE_API_URL` 以服务端方式调用知识底座，仅提供三条
+ShenZhi-owned Capability API：
+
+```text
+POST /api/v1/knowledge/search
+GET  /api/v1/knowledge/paper?paperId=...
+GET  /api/v1/knowledge/graph?paperId=...&depth=1
+```
+
+响应使用 `data` envelope 和独立 Knowledge Contract；上游 `paper_id` 是不透明
+字符串，且必须来自 retrieval search，不能使用会议列表接口的 `paper_id`。本阶段
+不接 `/api/papers`、multistep 或知识底座认证/收藏接口，也不在 ShenZhi 侧修复
+上游数据和检索能力。
+
+Contract v0 的核心字段为：Search `results[].id/title/abstract/authors/year/venue/keywords/subjects/score/rank`；
+Detail `id/title/abstract/authors/year/venue/doi/pdfUrl/keywords/subjects/citationCount/referenceCount`；
+Graph `rootId/nodes/edges`，边使用 `sourceId/targetId/relation`。空字符串归一化为 `null`，
+未知引用数保持 `null`，节点和关系类型为开放字符串。错误响应包含
+`code/message/retryable/requestId`。Search 请求只使用 `query/topK/yearFrom/yearTo/venue/author/keyword/subject`；
+上游的 snake_case 字段只在 Adapter 到 HTTP Client 的边界出现。
+
 当前仅支持 **单进程 / 单 worker**，Session 与解析后的附件为临时内存数据，重启清空。
 
 Python 环境与依赖统一使用 [uv](https://docs.astral.sh/uv/) 管理。新增依赖使用：
