@@ -14,10 +14,3 @@
 - 完成修改后执行与改动范围相符的检查或测试。架构、公共接口或关键开发方式发生变化时，同步更新相关文档。
 
 若任务要求与现有架构存在明显冲突，先说明冲突及影响，再进行实质性调整。
-
-## Git 与远程同步
-
-- **主项目**：`upstream` → `https://github.com/Hakrin-dev/shenzhi.git`；**fork**：`origin` → `zixuanzheng2007-stack/shenzhi`。
-- 日常在 `dev` 上开发，对照 `upstream/dev`；合入主仓库通过 PR（`origin:dev` → `Hakrin-dev/shenzhi:dev`），不直接向 `upstream` push。
-- **每次提交后必须同步远程**：`git fetch upstream` → 必要时 rebase → commit → `git push origin dev`；有进行中的 PR 则随 push 自动更新。
-- 禁止只留本地 commit 不同步 fork；禁止把 `.env`、密钥、`_local-only/` 纳入版本库。
