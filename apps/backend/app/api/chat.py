@@ -86,7 +86,7 @@ async def stop(message_id: str, owner: str = Depends(request_owner)):
 async def resume(message_id: str, owner: str = Depends(request_owner)):
     message = await repository.message(message_id, owner)
     session = await repository.get(message.session_id, owner)
-    if session.messages[-1] is not message or message.status not in ('stopped', 'failed'):
+    if session.messages[-1].id != message.id or message.status not in ('stopped', 'failed'):
         raise BusinessError(20009, '仅支持继续最近一条已停止或失败的回答', 409)
     await stop_message(message)
     cursor = str(len(message.events))

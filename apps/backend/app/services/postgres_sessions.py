@@ -155,19 +155,20 @@ class PostgresSessionRepository:
             await self.get(message.session_id, owner)
             return message
         async with get_session_factory()() as db:
-            row = await db.scalar(
+            result = await db.execute(
                 select(ChatMessageRow, ChatSessionRow.owner)
                 .join(ChatSessionRow, ChatMessageRow.session_id == ChatSessionRow.id)
                 .where(ChatMessageRow.id == uuid.UUID(message_id))
             )
+            row = result.first()
         if row is None:
             raise BusinessError(20004, '消息不存在或已过期', 404)
         msg_row, msg_owner = row
         if msg_owner != owner:
             raise BusinessError(20004, '消息不存在或已过期', 404)
         message = _message_from_row(msg_row)
-        if message.status == 'streaming':
-            self._track(message)
+        # Track so resume/stop/stream share one object with session.messages overlay.
+        self._track(message)
         return message
 
     async def add_message(self, session: Session, question: str, settings: dict,

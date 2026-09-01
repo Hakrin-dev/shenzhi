@@ -169,6 +169,15 @@ class Acceptance2a(unittest.IsolatedAsyncioTestCase):
         other_list = (await self.client.get('/api/v1/chat/sessions', headers=OTHER)).json()['data']['sessions']
         self.assertEqual(other_list, [])
 
+    async def test_C08b_resume_after_cache_miss(self):
+        created = (await self.client.post('/api/v1/chat/sessions', json={'question': 'resume缺缓存'})).json()['data']
+        mid = created['message_id']
+        await self.client.post(f'/api/v1/chat/messages/{mid}/stop')
+        repository.messages.clear()
+        resumed = await self.client.post(f'/api/v1/chat/messages/{mid}/resume')
+        self.assertEqual(resumed.status_code, 200, resumed.text)
+        self.assertEqual(resumed.json()['data']['message_id'], mid)
+
     async def test_C09_recover_marks_streaming_failed(self):
         from sqlalchemy import update
         session = await repository.create(OWNER_KEY, 'recover', {
