@@ -4,7 +4,7 @@ from unittest.mock import patch
 from starlette.requests import Request
 
 from app.core.errors import BusinessError
-from app.core.identity import request_identity, request_owner
+from app.core.identity import migration_identity, request_identity, request_owner
 
 
 def request(headers: dict[str, str], host: str = '127.0.0.1') -> Request:
@@ -52,6 +52,25 @@ class IdentityTests(unittest.TestCase):
         with self.assertRaises(BusinessError) as caught:
             request_identity(request({'x-shenzhi-bff-secret': 'wrong', 'x-shenzhi-user-id': 'user-1'}))
         self.assertEqual(caught.exception.status, 401)
+
+    def test_migration_identity_requires_trusted_target_and_source(self):
+        headers = {
+            'x-shenzhi-bff-secret': 'shared-secret',
+            'x-shenzhi-user-id': 'user-1',
+            'x-shenzhi-source-anonymous-id': '00000000-0000-4000-8000-000000000001',
+        }
+        identity = migration_identity(request(headers))
+        self.assertEqual(identity.target_owner, 'user:user-1')
+        self.assertEqual(identity.source_owner, 'anon:00000000-0000-4000-8000-000000000001')
+
+        for invalid in (
+            {key: value for key, value in headers.items() if key != 'x-shenzhi-user-id'},
+            {key: value for key, value in headers.items() if key != 'x-shenzhi-source-anonymous-id'},
+            {**headers, 'x-shenzhi-source-anonymous-id': 'not-a-uuid'},
+        ):
+            with self.subTest(headers=invalid), self.assertRaises(BusinessError) as caught:
+                migration_identity(request(invalid))
+            self.assertEqual(caught.exception.status, 401)
 
 
 if __name__ == '__main__':

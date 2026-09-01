@@ -13,6 +13,7 @@ import { getLocalAskSession } from "../services/local-history";
 import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { useAuth } from "@/components/auth/auth-provider";
+import { AnonymousClaimCoordinator } from "./anonymous-claim-coordinator";
 
 const SUGGESTIONS = [
   "帮我总结一下扩散模型在机器人控制中的最新进展",
@@ -33,12 +34,15 @@ export function AgentChat(props: AgentChatProps) {
   const [initialQuestionConsumed, setInitialQuestionConsumed] = useState(false);
   if (isPending) return <p className="p-6 text-sm text-muted">正在加载会话…</p>;
   return (
-    <ChatWorkspace
-      key={chatIdentityScope(session?.user.id)}
-      {...props}
-      question={initialQuestionConsumed ? "" : props.question}
-      onInitialQuestion={() => setInitialQuestionConsumed(true)}
-    />
+    <>
+      <AnonymousClaimCoordinator />
+      <ChatWorkspace
+        key={chatIdentityScope(session?.user.id)}
+        {...props}
+        question={initialQuestionConsumed ? "" : props.question}
+        onInitialQuestion={() => setInitialQuestionConsumed(true)}
+      />
+    </>
   );
 }
 
@@ -56,7 +60,6 @@ function ChatWorkspace({
   const [webSearch, setWebSearch] = useState(Boolean(initialWebSearch));
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [config, setConfig] = useState<ChatConfig>();
-  const [composerVersion, setComposerVersion] = useState(0);
   const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
@@ -91,20 +94,30 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (!activeHistoryId) return;
+    let live = true;
+    let localRestoreTimer: number | undefined;
     if (activeHistoryId.startsWith("local_")) {
       const local = getLocalAskSession(activeHistoryId);
       if (local) {
-        setMode(local.mode as ChatReplyMode);
-        setModel(local.model as ChatModelId);
-        setWebSearch(local.web_search);
+        localRestoreTimer = window.setTimeout(() => {
+          if (!live) return;
+          setMode(local.mode as ChatReplyMode);
+          setModel(local.model as ChatModelId);
+          setWebSearch(local.web_search);
+        }, 0);
       }
-      return;
+    } else {
+      void getChatSession(activeHistoryId).then((session) => {
+        if (!live) return;
+        setMode(session.mode);
+        setModel(session.model);
+        setWebSearch(session.web_search);
+      });
     }
-    void getChatSession(activeHistoryId).then((session) => {
-      setMode(session.mode);
-      setModel(session.model);
-      setWebSearch(session.web_search);
-    });
+    return () => {
+      live = false;
+      if (localRestoreTimer !== undefined) window.clearTimeout(localRestoreTimer);
+    };
   }, [activeHistoryId]);
 
   const submit = (payload: ComposerSubmitPayload) => {
@@ -120,7 +133,6 @@ function ChatWorkspace({
 
   const composer = (
     <ComposerShell
-      key={composerVersion}
       value={value}
       onChange={setValue}
       onSend={submit}

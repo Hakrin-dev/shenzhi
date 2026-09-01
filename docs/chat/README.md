@@ -36,12 +36,22 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 | GET | `/chat/config` | 已配置模型、回答模式、附件限制；不含 Key |
 | POST | `/search/explore` | 保留 dev 论文检索 |
 | GET / POST | `/chat/sessions` | 列表 / 创建会话及首轮消息 |
+| POST | `/chat/anonymous-claim` | 登录后将当前浏览器已完成匿名会话归入账号（仅专用 BFF） |
 | GET / PATCH / DELETE | `/chat/sessions/{id}` | 详情 / 标题与收藏 / 删除 |
 | POST | `/chat/sessions/{id}/messages` | 续问（服务端构造多轮上下文） |
 | GET | `/chat/messages/{id}/stream` | SSE，可携带 `Last-Event-ID` |
 | POST | `/chat/messages/{id}/stop` | 取消生成和上游连接 |
 | POST | `/chat/messages/{id}/resume` | 继续最近一条停止/失败的回答 |
 | POST / GET | `/uploads` / `/uploads/{id}` | 内存解析上传 / 状态 |
+
+### 匿名会话归属切换
+
+- 浏览器只向同源 `POST /api/chat/anonymous-claim` 发送空 POST，不传用户 ID、匿名 ID 或 owner。
+- 专用 Next.js Route 从 Better Auth Session 读取目标用户，并从 `shenzhi-chat-anon` HttpOnly Cookie 读取来源匿名 UUID；普通 `/api/v1` 转发仍只注入一个主身份。
+- FastAPI 专用端点只接受 BFF 注入的 `X-ShenZhi-User-Id` 与 `X-ShenZhi-Source-Anonymous-Id`，请求体不能指定来源或目标。
+- PostgreSQL 在一个事务中只更新没有 `streaming` 消息的 Session owner；Session ID 和 Message 行保持不变。重复或多标签并发调用不会复制数据。
+- streaming Session 保持匿名归属；生成完成后刷新页面可再次安全认领。内存模式返回 `durable=false`，不宣称已完成持久化切换。
+- Chat Coordinator 在当前页面的登录 Session 稳定后对该用户尝试一次；只有 `durable=true` 且 `moved_count>0` 时才清空旧选择并刷新历史。失败不会影响登录和 Chat，页面重载可重试。
 
 创建入参：`{type, question, mode, model, web_search, attachments}`。问题 1–2000 字，`mode` 为 `fast/deep/idea/doubt`，附件最多 5 个。文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
 

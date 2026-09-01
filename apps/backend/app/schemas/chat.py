@@ -36,3 +36,9 @@ class FollowupBody(CreateSessionBody):
 class UpdateSessionBody(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     favorite: bool | None = None
+
+
+class AnonymousClaimResult(BaseModel):
+    moved_count: int = Field(ge=0)
+    skipped_streaming_count: int = Field(ge=0)
+    durable: bool

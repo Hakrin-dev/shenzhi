@@ -1,4 +1,5 @@
 """Contract tests for PostgreSQL session persistence (requires CHAT_DATABASE_URL)."""
+import asyncio
 import os
 import unittest
 import uuid
@@ -17,11 +18,13 @@ class PostgresPersistenceTests(unittest.IsolatedAsyncioTestCase):
         from app.core.database import dispose_engine
         await dispose_engine()
         self.repo = PostgresSessionRepository()
-        for owner in ('user:a', 'user:b'):
+        for owner in ('user:a', 'user:b', 'anon:00000000-0000-4000-8000-000000000001',
+                      'anon:00000000-0000-4000-8000-000000000002'):
             await self.repo.purge_owner(owner)
 
     async def asyncTearDown(self):
-        for owner in ('user:a', 'user:b'):
+        for owner in ('user:a', 'user:b', 'anon:00000000-0000-4000-8000-000000000001',
+                      'anon:00000000-0000-4000-8000-000000000002'):
             await self.repo.purge_owner(owner)
         await self.repo.close()
 
@@ -60,6 +63,57 @@ class PostgresPersistenceTests(unittest.IsolatedAsyncioTestCase):
         assert row is not None
         self.assertEqual(row.content, 'done text')
 
+    async def test_claim_moves_completed_sessions_and_skips_streaming(self):
+        source = 'anon:00000000-0000-4000-8000-000000000001'
+        other = 'anon:00000000-0000-4000-8000-000000000002'
+        completed = await self.repo.create(source, 'done', {'mode': 'fast'})
+        completed_message = await self.repo.add_message(completed, 'done', completed.settings)
+        completed_message.content, completed_message.status = 'answer', 'done'
+        await self.repo.persist_message(completed_message)
+        streaming = await self.repo.create(source, 'streaming', {'mode': 'fast'})
+        streaming_message = await self.repo.add_message(streaming, 'streaming', streaming.settings)
+        await self.repo.create(other, 'other browser', {'mode': 'fast'})
+
+        result = await self.repo.claim_anonymous_sessions(source, 'user:a')
+        self.assertEqual(result, {
+            'moved_count': 1,
+            'skipped_streaming_count': 1,
+            'durable': True,
+        })
+        claimed = await self.repo.get(completed.id, 'user:a')
+        self.assertEqual(claimed.messages[0].id, completed_message.id)
+        self.assertEqual(claimed.messages[0].content, 'answer')
+        self.assertEqual((await self.repo.get(streaming.id, source)).owner, source)
+        self.assertEqual(len(await self.repo.list(other)), 1)
+        streaming_message.content, streaming_message.status = 'finished later', 'done'
+        await self.repo.persist_message(streaming_message)
+        retry = await self.repo.claim_anonymous_sessions(source, 'user:a')
+        self.assertEqual(retry, {
+            'moved_count': 1,
+            'skipped_streaming_count': 0,
+            'durable': True,
+        })
+        self.assertEqual((await self.repo.get(streaming.id, 'user:a')).messages[0].content,
+                         'finished later')
+        self.assertEqual(
+            await self.repo.claim_anonymous_sessions(source, 'user:a'),
+            {'moved_count': 0, 'skipped_streaming_count': 0, 'durable': True},
+        )
+
+    async def test_concurrent_claim_is_idempotent(self):
+        source = 'anon:00000000-0000-4000-8000-000000000001'
+        session = await self.repo.create(source, 'done', {'mode': 'fast'})
+        message = await self.repo.add_message(session, 'done', session.settings)
+        message.status = 'done'
+        await self.repo.persist_message(message)
+
+        first, second = await asyncio.gather(
+            self.repo.claim_anonymous_sessions(source, 'user:a'),
+            self.repo.claim_anonymous_sessions(source, 'user:a'),
+        )
+        self.assertEqual(sorted((first['moved_count'], second['moved_count'])), [0, 1])
+        self.assertEqual(len(await self.repo.list('user:a')), 1)
+
 
 class MemoryRepositoryAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def test_async_wrapper_parity(self):
@@ -70,6 +124,20 @@ class MemoryRepositoryAsyncTests(unittest.IsolatedAsyncioTestCase):
         await repo.persist_message(message)
         listed = await repo.list('user:a')
         self.assertEqual(len(listed), 1)
+
+    async def test_claim_never_reports_ephemeral_migration_as_durable(self):
+        repo = MemorySessionRepository()
+        await repo.create('anon:00000000-0000-4000-8000-000000000001', 'q', {'mode': 'fast'})
+        result = await repo.claim_anonymous_sessions(
+            'anon:00000000-0000-4000-8000-000000000001',
+            'user:a',
+        )
+        self.assertEqual(result, {
+            'moved_count': 0,
+            'skipped_streaming_count': 0,
+            'durable': False,
+        })
+        self.assertEqual(len(await repo.list('anon:00000000-0000-4000-8000-000000000001')), 1)
 
 
 if __name__ == '__main__':

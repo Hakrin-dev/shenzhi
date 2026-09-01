@@ -95,6 +95,24 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await remote.aclose()
 
+    async def test_anonymous_claim_uses_only_trusted_headers(self):
+        migration_headers = {
+            'x-shenzhi-user-id': 'user-1',
+            'x-shenzhi-source-anonymous-id': '00000000-0000-4000-8000-000000000001',
+        }
+        response = await self.client.post('/api/v1/chat/anonymous-claim', headers=migration_headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['data'], {
+            'moved_count': 0,
+            'skipped_streaming_count': 0,
+            'durable': False,
+        })
+        self.assertEqual((await self.client.post(
+            '/api/v1/chat/anonymous-claim',
+            headers={'x-shenzhi-user-id': 'user-1'},
+            json={'source_owner': OWNER_KEY},
+        )).status_code, 401)
+
     async def test_upload_roundtrip_and_no_disk_spooling(self):
         with patch('tempfile.SpooledTemporaryFile', side_effect=AssertionError('must stay in memory')):
             response = await self.client.post('/api/v1/uploads', files={'file': ('notes.md', b'A' * 1100000, 'text/markdown')})

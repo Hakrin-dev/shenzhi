@@ -13,7 +13,9 @@ export function ReasoningChainPanel({
 }) {
   const [open, setOpen] = useState(Boolean(streaming));
   useEffect(() => {
-    if (streaming) setOpen(true);
+    if (!streaming) return;
+    const timer = window.setTimeout(() => setOpen(true), 0);
+    return () => window.clearTimeout(timer);
   }, [streaming]);
 
   const tokens = Array.from(content).length;
