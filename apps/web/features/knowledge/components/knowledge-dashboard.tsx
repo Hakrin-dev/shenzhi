@@ -193,10 +193,19 @@ export function KnowledgeDashboard() {
           </div>
           <p className="mt-1.5 text-sm text-muted">连接论文、专利、基金、学者与机构，让知识不再彼此孤立</p>
         </div>
-        <Link href="/knowledge/graph" className="flex h-9 items-center gap-2 rounded-lg border border-line bg-card px-3.5 text-xs font-medium text-ink-2 shadow-card transition-colors hover:bg-chip hover:text-primary">
-          <Network className="size-4" />
-          打开私域知识图谱
-        </Link>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Link
+            href="/knowledge/search"
+            className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-xs font-medium text-primary-foreground shadow-card transition-colors hover:bg-primary-deep"
+          >
+            <Search className="size-4" />
+            论文检索
+          </Link>
+          <Link href="/knowledge/graph" className="flex h-9 items-center gap-2 rounded-lg border border-line bg-card px-3.5 text-xs font-medium text-ink-2 shadow-card transition-colors hover:bg-chip hover:text-primary">
+            <Network className="size-4" />
+            打开私域知识图谱
+          </Link>
+        </div>
       </header>
 
       <section className="relative mt-6 rounded-2xl bg-card p-4 shadow-card">
