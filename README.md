@@ -18,28 +18,27 @@ pnpm lint           # ESLint
 
 打开 http://localhost:3000 。URL 加 `?theme=dark` / `?theme=light` 可强制日/夜模式(用于调试与分享)。
 
+> **远程演示**:`pnpm demo` = 生产构建 + 本地服务 + Tailscale Funnel(固定 `*.ts.net` 域名),详见 [docs/local-demo-plan.md](docs/local-demo-plan.md)。
+
 > **Turbopack 恢复说明**:本副本运行于 WSL2,dev/build 均使用 `--turbopack`(见 package.json)。Windows 侧曾因智能应用控制拦截 Turbopack 原生二进制而临时改用 `--webpack`,该问题仅存在于 Windows 环境,当前副本不受影响。
 
 ---
 
-## 部署(已上线 ✅)
+## 部署与演示
 
-**线上地址:http://47.238.241.77**(阿里云香港 ECS,免备案)
+**线上主通道:Vercel**(与姊妹项目 scinexus 同构,免费 Hobby 计划):GitHub 导入仓库后 `git push` 自动部署,无需任何环境变量(纯前端 mock 数据)。带宽评估:两项目合计 < 1GB/月,100GB 免费额度绰绰有余。
 
-```
-git push origin main
-   │
-   ▼
-GitHub Actions:docker build → 推 GHCR(私有)→ Trivy 安全扫描 → SSH 到 ECS 部署
-   │
-   ▼
-ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
+**离线/无网备份:本机 Funnel**(电脑开机时可用,详见 [docs/local-demo-plan.md](docs/local-demo-plan.md)):
+
+```bash
+pnpm demo                            # 生产服务 + Tailscale Funnel(固定 https://<机器名>.<tailnet>.ts.net)
+pnpm demo --build                    # 先重新构建
+pnpm demo --tunnel=cloudflared       # Funnel 不可用时秒切 Cloudflare 快速隧道
 ```
 
-- **日常迭代 = `git push`**,无需其他操作;Actions 页面可看每次部署状态
-- 镜像:`ghcr.io/hakrin-dev/shenzhi-frontend`(私有,ECS 凭 GHCR_PAT 拉取)
-- Dockerfile 多阶段 + `output: 'standalone'`,镜像 ~150MB;构建在 CI 完成,ECS 只拉取运行
-- 完整运维文档(Secrets 配置、回滚、扩展后端/数据库):[deploy/README.md](deploy/README.md)
+> 演示结束务必验证 `"/mnt/c/Program Files/Tailscale/tailscale.exe" funnel status` 为 `No serve config`。
+
+**恢复 ECS 云端(备用)**:按量付费开机即可零改动恢复 —— CI 流水线(docker build → 推 GHCR → Watchtower 拉取更新)与镜像 `ghcr.io/hakrin-dev/shenzhi-frontend` 均保留,详见 [deploy/README.md](deploy/README.md)(已归档)。
 
 ---
 

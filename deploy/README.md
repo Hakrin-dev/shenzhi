@@ -1,5 +1,7 @@
 # 深知 ShenZhi · 部署文档
 
+> ⚠️ **2025-08-23 起:ECS 实例已下线**(免费额度用尽);当前线上主通道为 **Vercel**,本文档归档保留供恢复 ECS 部署时参考;离线备份方案见 [../docs/local-demo-plan.md](../docs/local-demo-plan.md)。
+
 > 架构:Docker Compose + GitHub Actions 构建推镜像,ECS 上 Watchtower 拉取式自动更新。
 > 镜像仓库:GitHub Container Registry(ghcr.io)。
 > **2026-08-07 起:部署改为拉取式,CI 不再 SSH 入站**(当日安全组收紧导致 SSH 部署失败,故改造)。

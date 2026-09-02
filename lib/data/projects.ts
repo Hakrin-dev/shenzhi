@@ -34,7 +34,7 @@ export const projects: Project[] = [
     owner: "Hakrin-dev",
     overview: [
       "深知提供论文检索、投稿筛选,以及用于 Deep Research 与 Auto Research 的知识智能体服务。前端为 prototype_v1 SVG 原型的正式 React 实现,9 个页面已全部完成转换,并落地了品牌体系与日/夜模式。",
-      "已部署至阿里云香港 ECS(http://47.238.241.77),日常迭代只需 git push:GitHub Actions 完成 docker 构建、推 GHCR、Trivy 安全扫描并 SSH 到 ECS 自动上线。",
+      "曾部署至阿里云香港 ECS,因免费额度用尽已下线;现部署于 Vercel(免费 Hobby 计划,git push 自动部署),离线场景用本机 + Tailscale Funnel 备份,方案见 docs/local-demo-plan.md。",
     ],
     techStack: [
       "Next.js 16",
@@ -84,7 +84,7 @@ export const projects: Project[] = [
       { name: "李识", role: "算法" },
     ],
     links: [
-      { label: "线上地址", href: "http://47.238.241.77" },
+      { label: "演示方案", href: "https://github.com/Hakrin-dev/shenzhi/blob/main/docs/local-demo-plan.md" },
       { label: "GitHub 仓库", href: "https://github.com/Hakrin-dev/shenzhi" },
       { label: "GHCR 镜像", href: "https://ghcr.io/hakrin-dev/shenzhi-frontend" },
     ],
