@@ -83,6 +83,7 @@ export function useChatSession() {
       mode: input.mode,
       model: input.model,
       web_search: input.web_search,
+      knowledge_enabled: input.capabilities.knowledge.enabled,
     });
     refreshLocalHistory();
   }, [localHistoryId, refreshLocalHistory]);
@@ -298,6 +299,7 @@ export function useChatSession() {
       model: item.model as ChatModelId,
       web_search: item.web_search,
       attachments: [],
+      capabilities: { knowledge: { enabled: item.knowledge_enabled ?? false } },
     };
   }, [abortCurrent]);
 

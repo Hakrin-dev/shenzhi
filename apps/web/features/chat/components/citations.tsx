@@ -1,19 +1,31 @@
 "use client";
 
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import { isKnownCitation } from "../services/citation-validation";
 
-const CitationContext = createContext<{ active: number; jump: (id: number, target: "source" | "text") => void }>({ active: 0, jump: () => {} });
+const CitationContext = createContext<{
+  active: number;
+  jump: (id: number, target: "source" | "text") => void;
+  validIds: ReadonlySet<string>;
+}>({ active: 0, jump: () => {}, validIds: new Set() });
 
 /** B's bidirectional citations, scoped to ONE assistant turn. */
-export function CitationScope({ children }: { children: ReactNode }) {
+export function CitationScope({
+  children,
+  referenceIds = [],
+}: {
+  children: ReactNode;
+  referenceIds?: Array<string | number>;
+}) {
   const root = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+  const validIds = new Set(referenceIds.map(String));
   const jump = (id: number, target: "source" | "text") => {
     setActive(id);
     root.current?.querySelector(`[data-${target}-citation="${id}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
-  return <CitationContext.Provider value={{ active, jump }}><div ref={root}>{children}</div></CitationContext.Provider>;
+  return <CitationContext.Provider value={{ active, jump, validIds }}><div ref={root}>{children}</div></CitationContext.Provider>;
 }
 
 export const useCitation = () => useContext(CitationContext);
@@ -27,7 +39,8 @@ function CitationTag({ id }: { id: number }) {
   </button>;
 }
 
-export function citeText(text: string): ReactNode[] {
+export function citeText(text: string, validIds?: ReadonlySet<string>): ReactNode[] {
   return text.split(/(\[\d+\])/g).map((part, index) => /^\[\d+\]$/.test(part)
-    ? <CitationTag key={index} id={Number(part.slice(1, -1))} /> : part);
+    && (!validIds || isKnownCitation(part.slice(1, -1), validIds))
+      ? <CitationTag key={index} id={Number(part.slice(1, -1))} /> : part);
 }

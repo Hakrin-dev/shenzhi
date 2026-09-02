@@ -6,11 +6,13 @@ import { ChevronDown, Sparkles } from "lucide-react";
 import { ComposerShell } from "./composer";
 import { ChatThread } from "./chat-thread";
 import { useChatSession } from "../hooks/use-chat-session";
+import { chatInputFromComposer, capabilitiesForEntryMode } from "../services/conversation";
 import { readAskDraft } from "../services/draft";
 import { chatIdentityScope } from "../services/identity-scope";
 import { getChatConfig, getChatSession } from "@/clients/backend/chat";
 import { getLocalAskSession } from "../services/local-history";
 import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload, ChatConfig } from "@/types/ai-search";
+import type { ComposerEntryMode } from "@/types";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { useAuth } from "@/components/auth/auth-provider";
 
@@ -54,6 +56,7 @@ function ChatWorkspace({
   const [mode, setMode] = useState<ChatReplyMode>(initialMode ?? "fast");
   const [model, setModel] = useState(initialModel ?? DEFAULT_CHAT_MODEL);
   const [webSearch, setWebSearch] = useState(Boolean(initialWebSearch));
+  const [entryMode, setEntryMode] = useState<ComposerEntryMode>("ai");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [config, setConfig] = useState<ChatConfig>();
   const [composerVersion, setComposerVersion] = useState(0);
@@ -78,8 +81,16 @@ function ChatWorkspace({
       const web = initialWebSearch ?? draft.web_search;
       setMode(selectedMode);
       setWebSearch(web);
+      const capabilities = capabilitiesForEntryMode("ai");
       onInitialQuestion();
-      void send({ question, mode: selectedMode, model: selected, web_search: web, attachments: draft.attachments });
+      void send({
+        question,
+        mode: selectedMode,
+        model: selected,
+        web_search: web,
+        attachments: draft.attachments,
+        capabilities,
+      });
     });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +108,8 @@ function ChatWorkspace({
         setMode(local.mode as ChatReplyMode);
         setModel(local.model as ChatModelId);
         setWebSearch(local.web_search);
+        const enabled = local.knowledge_enabled ?? false;
+        setEntryMode(enabled ? "ai" : "search");
       }
       return;
     }
@@ -104,19 +117,23 @@ function ChatWorkspace({
       setMode(session.mode);
       setModel(session.model);
       setWebSearch(session.web_search);
+      setEntryMode(session.capabilities?.knowledge.enabled ? "ai" : "search");
     });
   }, [activeHistoryId]);
 
   const submit = (payload: ComposerSubmitPayload) => {
-    if (busy || payload.entryMode === "search") return;
+    if (busy) return;
     nearBottom.current = true;
     setValue("");
     setAttachments([]);
-    void send(payload);
+    const request = chatInputFromComposer(payload);
+    setEntryMode(payload.entryMode);
+    void send(request);
   };
 
-  const followup = (text: string) =>
-    submit({ entryMode: "ai", question: text, mode, model, web_search: webSearch, attachments: [] });
+  const followup = (text: string) => {
+    submit({ entryMode, question: text, mode, model, web_search: webSearch, attachments: [] });
+  };
 
   const composer = (
     <ComposerShell
@@ -133,6 +150,8 @@ function ChatWorkspace({
       onWebSearchChange={setWebSearch}
       attachments={attachments}
       onAttachmentsChange={setAttachments}
+      entryMode={entryMode}
+      onEntryModeChange={setEntryMode}
       config={config}
       busy={busy}
       onStop={() => void stop()}

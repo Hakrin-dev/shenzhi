@@ -133,7 +133,9 @@ Knowledge 查询最多自动重试一次；`TIMEOUT`、`RATE_LIMITED`、
 | `/knowledge/search/[paperId]` | 论文详情 |
 | `/knowledge/search/[paperId]/graph` | fullGraph（保留异构节点/边）、References/Citations 筛选、节点详情 |
 
-当前 MVP 只打通 Search → Detail → Graph；暂不包含 Knowledge → Chat、
+当前 Knowledge MVP 打通 Search → Detail → Graph，并由 Chat Core 复用 Search
+Capability 完成 Knowledge → Chat；
+暂不包含
 multistep、会议浏览、ID resolver、scholar、patents、projects、funds、
 Deep Research 或 Auto Research。
 

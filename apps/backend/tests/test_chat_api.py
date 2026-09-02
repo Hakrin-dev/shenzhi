@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 import httpx
 from app.main import app
+from app.schemas.knowledge import KnowledgeSearchResponse, PaperSearchResult, Provenance
 from app.services import chat
 from app.services.sessions import repository
 
@@ -33,6 +34,14 @@ class FakeProvider:
         return ['继续解释？', '如何验证？']
 
 
+class FakeKnowledge:
+    async def search(self, request):
+        return KnowledgeSearchResponse(results=[PaperSearchResult(
+            id='p1', title='Paper', abstract='Evidence', authors=['Author'],
+            year=2024, venue='Venue', provenance=Provenance(external_id='p1'),
+        )])
+
+
 class ChatApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.env = patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'test', 'DEEPSEEK_MODEL': 'deepseek-chat', 'DASHSCOPE_API_KEY': '', 'BACKEND_BFF_SECRET': '', 'BACKEND_ALLOW_INSECURE_LOCAL_BFF': 'true'})
@@ -40,15 +49,19 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         await repository.clear()
         FakeProvider.calls = []
         self.provider = patch.object(chat, 'ModelProvider', FakeProvider); self.provider.start()
-        self.retrieval = patch.object(chat, 'retrieval_search', return_value=[{'id': 'p1', 'title': 'Paper', 'abstract': 'Evidence'}]); self.retrieval.start()
+        self.knowledge = patch.object(chat, 'knowledge_service', FakeKnowledge()); self.knowledge.start()
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=OWNER)
 
     async def asyncTearDown(self):
         await repository.close(); await self.client.aclose()
-        self.provider.stop(); self.retrieval.stop(); self.env.stop()
+        self.provider.stop(); self.knowledge.stop(); self.env.stop()
 
     async def create(self, **kwargs):
-        response = await self.client.post('/api/v1/chat/sessions', json={'question': '首问', **kwargs})
+        response = await self.client.post('/api/v1/chat/sessions', json={
+            'question': '首问',
+            'capabilities': {'knowledge': {'enabled': True}},
+            **kwargs,
+        })
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()['data']
 

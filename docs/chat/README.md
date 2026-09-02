@@ -15,7 +15,8 @@ app/agents/page.tsx 或 app/agents/ask/page.tsx（URL 兼容）
   → FastAPI api/{chat,search,uploads}
   → services/chat
       ├─ model_provider（OpenAI-compatible HTTP）
-      ├─ retrieval（保留 dev 论文检索接口）
+      ├─ knowledge_context（Knowledge2Chat runtime Evidence / prompt / citation）
+      ├─ retrieval（仅保留 dev 论文搜索接口）
       ├─ web_search（Tavily → SearXNG）
       ├─ document_parser / upload_reader
       └─ sessions（临时 Repository）
@@ -43,7 +44,31 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 | POST | `/chat/messages/{id}/resume` | 继续最近一条停止/失败的回答 |
 | POST / GET | `/uploads` / `/uploads/{id}` | 内存解析上传 / 状态 |
 
-创建入参：`{type, question, mode, model, web_search, attachments}`。问题 1–2000 字，`mode` 为 `fast/deep/idea/doubt`，附件最多 5 个。文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
+创建入参：`{type, question, mode, model, web_search, attachments, capabilities}`，其中
+`capabilities` 的 MVP 结构为
+`{knowledge: {enabled: boolean}}`。问题 1–2000 字，`mode` 为
+`fast/deep/idea/doubt`，附件最多 5 个。旧调用方可以暂时发送 `smartSearch`，仅在
+Chat API 边界转换为 `capabilities.knowledge.enabled`；Chat 核心不读取该旧字段。
+文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
+
+### Knowledge2Chat
+
+智能搜索开启时，`services/chat` 使用用户原始问题调用现有
+`services/knowledge → integrations/knowledge` Capability。SearchResponse 经
+`knowledge_context.KnowledgeContextBuilder` 过滤无 abstract 的结果、按现有返回顺序
+选取 Top-K，并生成稳定的 `referenceId`。原始论文 title、abstract 和必要 metadata
+只在运行时格式化为 `<reference_data>`，随本轮模型输入发送；用户原始问题本身不拼接
+该块。Chat 问题仍保存 1–2000 字原文；Knowledge 检索的 query 上限为 500 字，超过时
+明确返回 Knowledge `INVALID_ARGUMENT`，不截断、不调用模型。运行时资料使用确定性的
+48,000 字符总预算和每篇摘要 4,000 字符上限；超限只截取
+runtime prefix，不调用 LLM 做摘要。Reference Snapshot 仍保存上游原始 abstract，便于
+历史恢复和 Sources 展示；资料中的换行和 delimiter 字符会被转义为数据文本。
+
+关闭智能搜索时不调用 Knowledge Capability，直接走普通 Chat。开启后若没有可用
+Evidence、Knowledge timeout 或 upstream unavailable，不降级为普通 Chat，而是在 SSE
+中返回可识别的 Knowledge retrieval error。`message_refs` 复用现有 JSONB 字段保存本轮
+实际使用的 Reference Snapshot（`referenceId/resourceType/resourceId/title/content/metadata`），
+因此不需要单独的 Knowledge2Chat migration。
 
 ## 唯一 SSE 协议
 
@@ -59,9 +84,9 @@ data: {"text":"正文增量","reasoning":"可选推理增量"}
 | --- | --- | --- |
 | `meta` | `phase`, `read_count`, `ephemeral`, `warnings`, `context_truncated` | 阶段/来源数/临时存储/非致命告警 |
 | `delta` | `text?`, `reasoning?` | 增量追加，不是全文替换 |
-| `refs` | `references[]` | 有 ordinal 的来源快照；空数组不显示假引用 |
+| `refs` | `references[]` | `referenceId/resourceType/resourceId` 来源快照；空数组不显示假引用 |
 | `followups` | `items[]` | 模型生成追问；失败可为空，不影响答案 |
-| `error` | `code:number`, `message` | 致命错误，UI 标记失败 |
+| `error` | `code:number`, `message`, `category?`, `knowledge_code?` | 致命错误，UI 标记失败 |
 | `done` | `duration_ms`, `status` | 终止状态 `done/stopped/failed` |
 
 正常：`meta → refs → meta → delta* → followups → done`。失败：`error → done(failed)`。间歇发送 SSE 注释 heartbeat。
@@ -85,7 +110,8 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 
 ## 检索与联网搜索
 
-- `RETRIEVAL_API_URL` 指向 dev 原有 `/api/retrieval/search`；空值禁用论文检索，不偷偷调用硬编码地址。
+- `RETRIEVAL_API_URL` 仅供现有 `/search/explore` dev 论文搜索接口使用；Chat 的智能搜索
+  不再调用该旧路径，而是复用 Knowledge Capability。
 - `TAVILY_API_KEY` 优先；失败或无结果后使用 `SEARXNG_BASE_URL` 的 JSON `/search`。
 - 每个搜索请求 10 秒超时，归一化标题、URL、摘要、引擎、发布日期，并过滤非 HTTP(S) 来源。
 - 新闻/近期问题使用 Tavily `news`（week），概念问题使用 `general`（不机械限制一个月）。

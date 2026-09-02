@@ -25,7 +25,7 @@ function AssistantTurn({ turn, canResume, busy, onResume, onFollowup }: {
   const followups = turn.followups ?? [];
 
   return (
-    <CitationScope>
+    <CitationScope referenceIds={turn.references.map((reference) => reference.referenceId ?? reference.ordinal ?? "")}>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft">
           <Sparkles className="size-4 text-primary" />

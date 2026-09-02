@@ -253,7 +253,7 @@ export function ComposerShell({
   const replyMode = replyModeProp ?? innerMode;
   const entryMode = entryModeProp ?? innerEntryMode;
   const setEntryMode = onEntryModeChange ?? setInnerEntryMode;
-  const isSmartSearch = !isHome || entryMode === "ai";
+  const isSmartSearch = entryMode === "ai";
   const depthMode =
     replyMode === "deep" || replyMode === "fast"
       ? (replyMode as "fast" | "deep")
@@ -349,9 +349,7 @@ export function ComposerShell({
       />
 
       <div className="mt-1.5 flex items-center gap-1.5">
-        {isHome && (
-          <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
-        )}
+        <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
         <PlusMenu webSearch={webSearch} onWebSearchChange={setWebSearch} />
         <AttachmentMenu
           disabled={busy}

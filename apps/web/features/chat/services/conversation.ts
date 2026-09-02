@@ -1,5 +1,10 @@
 import { createChatSession, sendChatMessage } from "../../../clients/backend/chat";
-import type { ChatSessionDetail } from "../../../types/ai-search";
+import type {
+  ChatCapabilities,
+  ChatSessionDetail,
+  ComposerSubmitPayload,
+} from "../../../types/ai-search";
+import type { ComposerEntryMode } from "../../../types";
 import type { ChatSendInput, ChatTurn } from "../types";
 
 /** Session/message orchestration; HTTP/SSE stays in clients/backend. */
@@ -7,6 +12,16 @@ export function beginTurn(sessionId: string | null, input: ChatSendInput) {
   return sessionId
     ? sendChatMessage(sessionId, input)
     : createChatSession({ type: "chat", ...input });
+}
+
+/** UI-only adapter: the Chat domain receives the nested capability contract. */
+export function capabilitiesForEntryMode(entryMode: ComposerEntryMode): ChatCapabilities {
+  return { knowledge: { enabled: entryMode === "ai" } };
+}
+
+export function chatInputFromComposer(payload: ComposerSubmitPayload): ChatSendInput {
+  const { entryMode, ...input } = payload;
+  return { ...input, capabilities: capabilitiesForEntryMode(entryMode) };
 }
 
 export function restoreTurns(session: ChatSessionDetail): ChatTurn[] {

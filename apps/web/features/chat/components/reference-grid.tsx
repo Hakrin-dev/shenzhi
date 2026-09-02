@@ -18,15 +18,21 @@ export function ReferenceGrid({ references }: { references: ChatReference[] }) {
     </div>
     <div className="mt-3 grid gap-2 sm:grid-cols-2">
       {(all ? references : references.slice(0, 8)).map((ref) => {
+        const referenceId = ref.referenceId ?? String(ref.ordinal ?? "");
+        const ordinal = Number(referenceId);
+        const resourceType = ref.resourceType ?? ref.source_type ?? "paper";
+        const resourceId = ref.resourceId ?? ref.source_id ?? referenceId;
+        const authors = ref.metadata?.authors?.join(" · ") ?? ref.authors ?? "";
+        const venue = ref.metadata?.venue ?? ref.venue;
         const url = ref.url && /^https?:\/\//i.test(ref.url) ? ref.url : undefined;
-        const Icon = ref.source_type === "web" ? Globe : FileText;
-        return <article key={`${ref.ordinal}-${ref.source_id}`} data-source-citation={ref.ordinal}
-          className={cn("rounded-xl border border-line p-3", active === ref.ordinal && "border-primary bg-primary-soft")}>
-          <button type="button" onClick={() => jump(ref.ordinal, "text")} className="w-full text-left" aria-label={`定位正文引用 ${ref.ordinal}`}>
-            <span className="text-xs text-primary">[{ref.ordinal}] <Icon className="inline size-3" /> {ref.source_type === "web" ? "网页" : "论文"}</span>
+        const Icon = resourceType === "web" ? Globe : FileText;
+        return <article key={`${referenceId}-${resourceId}`} data-source-citation={ordinal}
+          className={cn("rounded-xl border border-line p-3", active === ordinal && "border-primary bg-primary-soft")}>
+          <button type="button" onClick={() => jump(ordinal, "text")} className="w-full text-left" aria-label={`定位正文引用 ${referenceId}`}>
+            <span className="text-xs text-primary">[{referenceId}] <Icon className="inline size-3" /> {resourceType === "web" ? "网页" : "论文"}</span>
             <span className="mt-1 block line-clamp-2 text-[13px] font-medium">{ref.title}</span>
           </button>
-          <p className="mt-1 truncate text-xs text-muted">{[ref.authors, ref.venue].filter(Boolean).join(" · ")}</p>
+          <p className="mt-1 truncate text-xs text-muted">{[authors, venue].filter(Boolean).join(" · ")}</p>
           {url && <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-primary">打开来源 <ExternalLink className="size-3" /></a>}
         </article>;
       })}

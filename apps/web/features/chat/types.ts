@@ -1,4 +1,11 @@
-import type { ChatAttachment, ChatMessageStatus, ChatModelId, ChatReference, ChatReplyMode } from "../../types/ai-search";
+import type {
+  ChatAttachment,
+  ChatCapabilities,
+  ChatMessageStatus,
+  ChatModelId,
+  ChatReference,
+  ChatReplyMode,
+} from "../../types/ai-search";
 
 export interface ChatTurn {
   localId: string;
@@ -22,4 +29,5 @@ export interface ChatSendInput {
   model: ChatModelId;
   web_search: boolean;
   attachments: ChatAttachment[];
+  capabilities: ChatCapabilities;
 }
