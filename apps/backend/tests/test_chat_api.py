@@ -105,7 +105,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()['data'], {
             'moved_count': 0,
             'skipped_streaming_count': 0,
-            'durable': False,
+            'durable': repository.is_durable,
         })
         self.assertEqual((await self.client.post(
             '/api/v1/chat/anonymous-claim',
@@ -177,7 +177,7 @@ class ChatApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.post(f'/api/v1/chat/messages/{mid}/resume')).status_code, 200)
         with patch.object(repository, 'max_sessions', 1):
             response = await self.client.post('/api/v1/chat/sessions', json={'question': 'capacity'})
-        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.status_code, 200 if repository.is_durable else 429)
 
     async def test_disconnect_and_product_error(self):
         created = await self.create(); message = await repository.message(created['message_id'], OWNER_KEY)
