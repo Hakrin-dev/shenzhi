@@ -50,6 +50,7 @@ const SUBMIT_SUB_NAV = [
 
 /** 「知识库」的子栏目 */
 const KNOWLEDGE_SUB_NAV = [
+  { href: "/knowledge/search", label: "论文检索" },
   { href: "/knowledge/papers", label: "论文库" },
   { href: "/knowledge/patents", label: "专利库" },
   { href: "/knowledge/funding", label: "项目基金库" },
@@ -282,10 +283,6 @@ function ExpandableNav({
                 key={sub.href}
                 href={sub.href}
                 aria-current={active ? "page" : undefined}
-                onClick={() => {
-                  // 同一主标题下点击副标题:折叠侧边栏
-                  if (routeActive) setCollapsed(true);
-                }}
                 className={cn(
                   "flex h-9 items-center rounded-lg px-3 text-sm transition-colors",
                   active

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from app.api import chat, search, uploads
+from app.api import chat, knowledge, search, uploads
 from app.core.errors import BusinessError
 from app.core.responses import fail
 from app.services.sessions import repository
@@ -15,7 +15,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title='ShenZhi AI API', version='1.0.0', lifespan=lifespan)
-for router in (chat.router, search.router, uploads.router):
+for router in (chat.router, search.router, uploads.router, knowledge.router):
     app.include_router(router)
 
 
