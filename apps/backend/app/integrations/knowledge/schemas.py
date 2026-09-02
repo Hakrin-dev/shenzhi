@@ -1,118 +1,90 @@
-"""知识底座科研组接口的输入输出 Schema。
+"""The upstream Knowledge Base API contract.
 
-本文件描述「知识底座科研组 API」自身的请求 / 响应格式，
-仅供 integrations/knowledge 内部与 Mock / HTTP Client 使用，
-不直接暴露给深知业务侧；业务数据转换统一走 adapter.py。
-
-字段命名与《论文检索与知识图谱 API 使用手册》对齐：
-- 检索：POST /api/retrieval/search，请求用 conference，响应含 conference / state
-- 详情：GET  /api/kg/paper?paperId=...，字段 venue / doi / pdf_url
-- 图谱：GET  /api/kg/graph?paperId=...&depth=1，返回 rootId + nodes + lines(from/to/text/data)
-  （真实图谱为 relation-graph 风格：节点 data.type 为类型、lines 表达边）
-
-约定：
-- id 一律视为 opaque string，禁止解析内部格式
-- year / citation_count 等为 null 表示上游未提供，不等同于 0
-- state / query_parse / query_rewrite / color / borderColor 等非稳定字段不进入业务契约
+These types intentionally retain the Research Capability's field names. They
+are transport-bound descriptions, not ShenZhi's public Knowledge contract.
 """
+
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field
-
-__all__ = [
-    "KnowledgeSearchRequest",
-    "KnowledgeSearchHit",
-    "KnowledgeSearchResponse",
-    "KnowledgePaperDetail",
-    "KnowledgeGraphNode",
-    "KnowledgeGraphLine",
-    "KnowledgeGraphResponse",
-]
+from typing import Any, NotRequired, TypedDict
 
 
-# ---------------------------------------------------------------------------
-# Search（POST /api/retrieval/search）
-# ---------------------------------------------------------------------------
-class KnowledgeSearchRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=200)
-    top_k: int = Field(default=10, ge=1, le=50)
-
-    year_gte: int | None = Field(default=None, ge=1800, le=2100)
-    year_lte: int | None = Field(default=None, ge=1800, le=2100)
-
-    conference: list[str] = Field(default_factory=list)
-    author: list[str] = Field(default_factory=list)
-    keyword: list[str] = Field(default_factory=list)
-    subject: list[str] = Field(default_factory=list)
+class UpstreamSearchPayload(TypedDict):
+    query: str
+    top_k: int
+    year_gte: NotRequired[int]
+    year_lte: NotRequired[int]
+    conference: NotRequired[list[str]]
+    author: NotRequired[list[str]]
+    keyword: NotRequired[list[str]]
+    subject: NotRequired[list[str]]
 
 
-class KnowledgeSearchHit(BaseModel):
+class UpstreamSearchResult(TypedDict):
     paper_id: str
     title: str
-    abstract: str | None = None
-    conference: str | None = None
-    year: int | None = None
-    authors: list[str] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
-    subjects: list[str] = Field(default_factory=list)
-    score: float | None = None
-    rank: int | None = None
+    abstract: NotRequired[str | None]
+    conference: NotRequired[str | None]
+    venue: NotRequired[str | None]
+    authors: NotRequired[list[str] | str | None]
+    year: NotRequired[int | str | None]
+    keywords: NotRequired[list[str] | str | None]
+    subjects: NotRequired[list[str] | str | None]
+    score: NotRequired[int | float | str | None]
+    rank: NotRequired[int | str | None]
 
 
-class KnowledgeSearchResponse(BaseModel):
-    results: list[KnowledgeSearchHit] = Field(default_factory=list)
-    # 真实接口还会返回 state / query_parse / query_rewrite，均非稳定契约，忽略
-    state: Any = None
+class UpstreamSearchResponse(TypedDict):
+    results: list[UpstreamSearchResult]
+    state: NotRequired[dict[str, Any]]
+    query_parse: NotRequired[dict[str, Any]]
+    query_rewrite: NotRequired[dict[str, Any]]
 
 
-# ---------------------------------------------------------------------------
-# Paper Detail（GET /api/kg/paper?paperId=...）
-# ---------------------------------------------------------------------------
-class KnowledgePaperDetail(BaseModel):
+class UpstreamPaperResponse(TypedDict):
     paper_id: str
     title: str
-    abstract: str | None = None
-    authors: list[str] = Field(default_factory=list)
-    year: int | None = None
-    venue: str | None = None
+    abstract: NotRequired[str | None]
+    authors: NotRequired[list[str] | str | None]
+    year: NotRequired[int | str | None]
+    venue: NotRequired[str | None]
+    conference: NotRequired[str | None]
+    doi: NotRequired[str | None]
+    pdf_url: NotRequired[str | None]
+    pdfUrl: NotRequired[str | None]
+    keywords: NotRequired[list[str] | str | None]
+    subjects: NotRequired[list[str] | str | None]
+    citationCount: NotRequired[int | str | None]
+    citation_count: NotRequired[int | str | None]
+    citeCount: NotRequired[int | str | None]
+    cite_count: NotRequired[int | str | None]
+    referenceCount: NotRequired[int | str | None]
+    reference_count: NotRequired[int | str | None]
 
-    doi: str | None = None
-    pdf_url: str | None = None
 
-    # 非稳定字段：真实接口不一定返回，缺省为 None（不等同于 0）
-    citation_count: int | None = None
-    reference_count: int | None = None
-
-
-# ---------------------------------------------------------------------------
-# Graph（GET /api/kg/graph?paperId=...&depth=1）
-# 真实返回为 relation-graph 风格：rootId + nodes + lines
-# ---------------------------------------------------------------------------
-class KnowledgeGraphNode(BaseModel):
-    """图谱节点（relation-graph 风格：text 为标签、data.type 为类型）。"""
-
+class UpstreamGraphNode(TypedDict, total=False):
     id: str
-    text: str = ""
-    data: dict[str, Any] = Field(default_factory=dict)
-    # 真实接口可能返回 color / borderColor 等展示字段，此处不建模、不进入业务契约
+    text: str
+    title: str
+    color: str
+    borderColor: str
+    data: dict[str, Any]
 
 
-class KnowledgeGraphLine(BaseModel):
-    """图谱边（真实接口的 lines：from 引用 to，text 为关系名）。"""
+UpstreamGraphEdge = TypedDict(
+    'UpstreamGraphEdge',
+    {
+        'from': str,
+        'to': str,
+        'text': NotRequired[str],
+        'description': NotRequired[str],
+        'data': NotRequired[dict[str, Any]],
+    },
+    total=False,
+)
 
-    from_: str = Field(alias="from")
-    to: str
-    text: str = ""
-    data: dict[str, Any] = Field(default_factory=dict)
 
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class KnowledgeGraphResponse(BaseModel):
-    root_id: str = Field(alias="rootId")
-    nodes: list[KnowledgeGraphNode] = Field(default_factory=list)
-    lines: list[KnowledgeGraphLine] = Field(default_factory=list)
-
-    model_config = ConfigDict(populate_by_name=True)
+class UpstreamGraphResponse(TypedDict):
+    rootId: str
+    nodes: list[UpstreamGraphNode]
+    lines: list[UpstreamGraphEdge]

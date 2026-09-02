@@ -1,60 +1,127 @@
-"""知识底座 API 路由。
+"""HTTP routes for the ShenZhi Knowledge Capability."""
 
-承载知识底座能力的对外接口（经 Next.js BFF 转发到本后端）：
-    POST /api/v1/knowledge/search   论文搜索
-    GET  /api/v1/knowledge/paper    论文详情
-    GET  /api/v1/knowledge/graph    论文关系图谱
-
-业务校验与数据组装在 services/knowledge.py 与 integrations/knowledge。
-"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.core.identity import require_bff
 from app.core.responses import ok
-from app.schemas.knowledge import KnowledgeSearchBody
-from app.services.knowledge import (
-    knowledge_graph,
-    knowledge_paper_detail,
-    knowledge_search,
-)
+from app.schemas.knowledge import KnowledgeError, KnowledgeSearchRequest
+from app.services.knowledge import KnowledgeService, KnowledgeServiceError
+
 
 router = APIRouter(prefix='/api/v1/knowledge', tags=['knowledge'])
+service = KnowledgeService()
+
+
+def request_id(request: Request) -> str:
+    candidate = request.headers.get('x-request-id', '').strip()
+    if candidate and len(candidate) <= 128:
+        return candidate
+    return uuid4().hex
+
+
+def _error_payload(error: KnowledgeServiceError, request: Request) -> JSONResponse:
+    safe = error.error.model_copy(update={'request_id': request_id(request)})
+    return JSONResponse(
+        status_code=error.status_code,
+        content=safe.model_dump(mode='json', by_alias=True),
+    )
+
+
+def invalid_argument(request: Request, message: str = '请求参数不合法') -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content=KnowledgeError(
+            code='INVALID_ARGUMENT',
+            message=message,
+            retryable=False,
+            request_id=request_id(request),
+        ).model_dump(mode='json', by_alias=True),
+    )
+
+
+def unknown_error(request: Request) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content=KnowledgeError(
+            code='UNKNOWN',
+            message='知识服务请求失败',
+            retryable=False,
+            request_id=request_id(request),
+        ).model_dump(mode='json', by_alias=True),
+    )
 
 
 @router.post('/search')
-async def search_papers(
-    body: KnowledgeSearchBody,
+async def search(
+    request: Request,
     _credential: None = Depends(require_bff),
 ):
-    data = await knowledge_search(
-        body.query,
-        top_k=body.topK,
-        year_from=body.yearFrom,
-        year_to=body.yearTo,
-        venue=body.venue,
-        author=body.author,
-        keyword=body.keyword,
-        subject=body.subject,
-    )
-    return ok(data)
+    try:
+        body = await request.json()
+        search_request = KnowledgeSearchRequest.model_validate(body)
+    except (ValidationError, ValueError, UnicodeDecodeError):
+        return invalid_argument(request, '检索参数不合法')
+
+    try:
+        response = await service.search(search_request)
+    except KnowledgeServiceError as error:
+        return _error_payload(error, request)
+    except Exception:
+        return unknown_error(request)
+    return ok(response.model_dump(mode='json', by_alias=True))
+
+
+def _paper_id_or_error(paper_id: str | None, request: Request) -> str | JSONResponse:
+    if paper_id is None or not paper_id.strip():
+        return invalid_argument(request, 'paperId 不能为空')
+    return paper_id
 
 
 @router.get('/paper')
-async def paper_detail(
-    paperId: str = Query(min_length=1, max_length=200),
+async def paper(
+    request: Request,
+    paper_id: str | None = Query(default=None, alias='paperId'),
     _credential: None = Depends(require_bff),
 ):
-    data = await knowledge_paper_detail(paperId)
-    return ok(data)
+    resolved = _paper_id_or_error(paper_id, request)
+    if isinstance(resolved, JSONResponse):
+        return resolved
+    try:
+        response = await service.get_paper(resolved)
+    except KnowledgeServiceError as error:
+        return _error_payload(error, request)
+    except Exception:
+        return unknown_error(request)
+    return ok(response.model_dump(mode='json', by_alias=True))
 
 
 @router.get('/graph')
-async def paper_graph(
-    paperId: str = Query(min_length=1, max_length=200),
-    depth: int = Query(default=1, ge=1, le=3),
+async def graph(
+    request: Request,
+    paper_id: str | None = Query(default=None, alias='paperId'),
+    depth: str = Query(default='1'),
     _credential: None = Depends(require_bff),
 ):
-    data = await knowledge_graph(paperId, depth=depth)
-    return ok(data)
+    resolved = _paper_id_or_error(paper_id, request)
+    if isinstance(resolved, JSONResponse):
+        return resolved
+    try:
+        depth_value = int(depth)
+    except (TypeError, ValueError):
+        return invalid_argument(request, 'depth 必须是 1 或 2')
+    if depth_value not in (1, 2):
+        return invalid_argument(request, 'depth 必须是 1 或 2')
+
+    try:
+        response = await service.get_graph(resolved, depth=depth_value)
+    except KnowledgeServiceError as error:
+        return _error_payload(error, request)
+    except Exception:
+        return unknown_error(request)
+    return ok(response.model_dump(mode='json', by_alias=True))

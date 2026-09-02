@@ -78,6 +78,10 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 Chat 已统一为 `features/chat → clients/backend → /api/v1 BFF → FastAPI`；`/agents` 与 `/agents/ask` 共用实现。
 当前 Session 为单进程临时内存数据，不绑定新的账号体系。架构、SSE、配置与边界见 [docs/chat/README.md](docs/chat/README.md)。
 
+Knowledge Base 是外部 Research Capability，FastAPI 后端统一通过
+`apps/backend/app/integrations/knowledge/` 接入。当前只承诺 Search、Paper Detail、
+Paper Graph 三项能力，不表述为完整知识底座已接入，也不在本轮接入 Chat Tool。
+
 ## 技术栈(当前实际)
 
 | 类别 | 技术 | 状态 |
@@ -100,7 +104,7 @@ Chat 已统一为 `features/chat → clients/backend → /api/v1 BFF → FastAPI
 shenzhi/
 ├── apps/
 │   ├── web/                  # Next.js Web；app 为薄路由，features 为页面实现
-│   └── backend/              # FastAPI：Chat / 检索 / 模型流 / 搜索 / 附件解析
+│   └── backend/              # FastAPI：Chat / 检索 / Knowledge Capability / 模型流 / 搜索 / 附件解析
 ├── infra/                    # Dockerfile、Compose 与部署文档
 ├── tests/visual/             # 页面、主题与图谱截图验证脚本
 ├── tools/brand/              # 品牌资源处理工具

@@ -67,6 +67,8 @@ shenzhi/
 │       │   ├── api/             # API 路由与请求边界
 │       │   ├── schemas/         # 输入输出 Schema
 │       │   ├── services/        # 核心业务逻辑
+│       │   ├── integrations/    # 外部服务与科研能力接入边界
+│       │   │   └── knowledge/   # Knowledge Base Research Capability
 │       │   ├── core/            # 配置、身份、错误等基础能力
 │       │   └── main.py          # FastAPI 应用入口
 │       ├── tests/
@@ -327,6 +329,27 @@ FastAPI / Research API
       ↓
 Knowledge / Deep Research / Auto Research / AI Service
 ```
+
+Knowledge Base 在 FastAPI 内部采用明确的后端调用链：
+
+```text
+FastAPI API
+      ↓
+backend services
+      ↓
+backend integrations/knowledge
+      ↓
+上游知识底座科研组 API
+```
+
+其中 `app/integrations/knowledge/` 是外部 Research Capability 的唯一接入边界：
+
+- `client.py` 只负责 base URL、HTTP method/path、query/body、timeout 与 transport。
+- `schemas.py` 只描述科研组上游实际字段，不作为 ShenZhi Domain Contract。
+- `adapter.py` 只将上游 Schema 映射为 `app/schemas/knowledge.py` 的 Domain Schema。
+- `exceptions.py` 统一 timeout、connection、rate limit、not found、invalid response、contract violation 与 upstream unavailable 等上游异常。
+
+Knowledge Base 当前只承诺 Search、Paper Detail、Paper Graph；科研组内部业务由科研组维护，ShenZhi 只调用、隔离和适配，不在此边界内修改、补偿或修复科研组业务。
 
 接入科研能力前，需要明确：
 

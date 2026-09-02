@@ -15,7 +15,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title='ShenZhi AI API', version='1.0.0', lifespan=lifespan)
-for router in (chat.router, search.router, uploads.router, knowledge.router):
+for router in (chat.router, knowledge.router, search.router, uploads.router):
     app.include_router(router)
 
 

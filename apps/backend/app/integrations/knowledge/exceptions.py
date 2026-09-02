@@ -1,99 +1,50 @@
-"""知识底座调用相关异常定义与转换。
+"""Safe failures raised inside the external Knowledge integration."""
 
-对外统一使用 KnowledgeErrorCode 描述失败类别，与前端 Contract 对齐：
-
-    INVALID_ARGUMENT | NOT_FOUND | RATE_LIMITED | UPSTREAM_UNAVAILABLE
-    | TIMEOUT | CONTRACT_VIOLATION | UNKNOWN
-"""
 from __future__ import annotations
 
-from typing import Literal
 
-import httpx
+class KnowledgeIntegrationError(Exception):
+    """Classified integration failure with no upstream payload attached."""
 
-KnowledgeErrorCode = Literal[
-    "INVALID_ARGUMENT",
-    "NOT_FOUND",
-    "RATE_LIMITED",
-    "UPSTREAM_UNAVAILABLE",
-    "TIMEOUT",
-    "CONTRACT_VIOLATION",
-    "UNKNOWN",
-]
-
-
-class KnowledgeBaseError(Exception):
-    """知识底座调用失败的统一异常基类。"""
-
-    code: KnowledgeErrorCode
-    retryable: bool
-    status: int
-
-    def __init__(
-        self,
-        code: KnowledgeErrorCode,
-        message: str,
-        *,
-        retryable: bool = False,
-        status: int = 502,
-    ) -> None:
+    def __init__(self, code: str, message: str, retryable: bool, status_code: int):
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = retryable
-        self.status = status
+        self.status_code = status_code
 
+    @classmethod
+    def not_configured(cls) -> 'KnowledgeIntegrationError':
+        return cls('UPSTREAM_UNAVAILABLE', '知识底座未配置', False, 503)
 
-class KnowledgeBaseInvalidArgumentError(KnowledgeBaseError):
-    def __init__(self, message: str = "请求参数不合法") -> None:
-        super().__init__("INVALID_ARGUMENT", message, retryable=False, status=422)
+    @classmethod
+    def timeout(cls) -> 'KnowledgeIntegrationError':
+        return cls('TIMEOUT', '知识底座请求超时', True, 504)
 
+    @classmethod
+    def connection_unavailable(cls) -> 'KnowledgeIntegrationError':
+        return cls('UPSTREAM_UNAVAILABLE', '知识底座暂不可用', True, 503)
 
-class KnowledgeBaseNotFoundError(KnowledgeBaseError):
-    def __init__(self, message: str = "未找到对应论文或节点") -> None:
-        super().__init__("NOT_FOUND", message, retryable=False, status=404)
+    @classmethod
+    def invalid_configuration(cls) -> 'KnowledgeIntegrationError':
+        return cls('UPSTREAM_UNAVAILABLE', '知识底座配置无效', False, 503)
 
+    @classmethod
+    def request_failed(cls) -> 'KnowledgeIntegrationError':
+        return cls('UPSTREAM_UNAVAILABLE', '知识底座请求失败', True, 503)
 
-class KnowledgeBaseRateLimitedError(KnowledgeBaseError):
-    def __init__(self, message: str = "知识底座请求过于频繁") -> None:
-        super().__init__("RATE_LIMITED", message, retryable=True, status=429)
+    @classmethod
+    def invalid_argument(cls) -> 'KnowledgeIntegrationError':
+        return cls('INVALID_ARGUMENT', '知识底座拒绝了请求', False, 400)
 
+    @classmethod
+    def not_found(cls) -> 'KnowledgeIntegrationError':
+        return cls('NOT_FOUND', '知识底座资源不存在', False, 404)
 
-class KnowledgeBaseUnavailableError(KnowledgeBaseError):
-    def __init__(self, message: str = "知识底座服务暂不可用") -> None:
-        super().__init__("UPSTREAM_UNAVAILABLE", message, retryable=True, status=502)
+    @classmethod
+    def rate_limited(cls) -> 'KnowledgeIntegrationError':
+        return cls('RATE_LIMITED', '知识底座请求过于频繁', True, 429)
 
-
-class KnowledgeBaseTimeoutError(KnowledgeBaseError):
-    def __init__(self, message: str = "知识底座服务响应超时") -> None:
-        super().__init__("TIMEOUT", message, retryable=True, status=504)
-
-
-class KnowledgeBaseContractViolationError(KnowledgeBaseError):
-    def __init__(self, message: str = "知识底座返回数据不符合契约") -> None:
-        super().__init__("CONTRACT_VIOLATION", message, retryable=False, status=502)
-
-
-class KnowledgeBaseUnknownError(KnowledgeBaseError):
-    def __init__(self, message: str = "知识底座未知错误") -> None:
-        super().__init__("UNKNOWN", message, retryable=False, status=500)
-
-
-def map_http_error(exc: httpx.HTTPError, message: str | None = None) -> KnowledgeBaseError:
-    """把 HTTP 调用错误转换为知识底座统一异常。"""
-    if isinstance(exc, httpx.TimeoutException):
-        return KnowledgeBaseTimeoutError(message or "知识底座服务响应超时")
-    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
-        return KnowledgeBaseUnavailableError(message or "无法连接知识底座服务")
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        if status == 404:
-            return KnowledgeBaseNotFoundError(message or "未找到对应论文或节点")
-        if status == 429:
-            return KnowledgeBaseRateLimitedError(message or "知识底座请求过于频繁")
-        if status == 408:
-            return KnowledgeBaseTimeoutError(message or "知识底座服务响应超时")
-        if 500 <= status < 600:
-            return KnowledgeBaseUnavailableError(message or "知识底座服务暂不可用")
-        return KnowledgeBaseUnknownError(message or f"知识底座调用失败（HTTP {status}）")
-    return KnowledgeBaseUnknownError(message or f"知识底座调用失败：{exc}")
+    @classmethod
+    def contract_violation(cls) -> 'KnowledgeIntegrationError':
+        return cls('CONTRACT_VIOLATION', '知识底座返回格式无效', False, 502)

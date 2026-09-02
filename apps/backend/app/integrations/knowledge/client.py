@@ -1,154 +1,118 @@
-"""知识底座科研组 API Client。
+"""HTTP transport boundary for the external Knowledge Base API."""
 
-职责：怎么调用知识底座科研 API —— 地址、HTTP 请求、Header、Timeout、Retry 等。
-真实的 HTTP 客户端在 HTTPKnowledgeApiClient；Mock 实现位于 mock_data.py。
-两者实现同一 KnowledgeApiClient 接口，由 __init__.py 的工厂按配置选择。
-
-当前阶段真实接口尚未接入，默认使用 MockKnowledgeApiClient（见 __init__.py）。
-"""
 from __future__ import annotations
 
-import asyncio
 import os
-from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Mapping, cast
 
 import httpx
 
-from .exceptions import map_http_error
-from .schemas import (
-    KnowledgeGraphResponse,
-    KnowledgePaperDetail,
-    KnowledgeSearchRequest,
-    KnowledgeSearchResponse,
+from app.integrations.knowledge.exceptions import KnowledgeIntegrationError
+from app.integrations.knowledge.schemas import (
+    UpstreamGraphResponse,
+    UpstreamPaperResponse,
+    UpstreamSearchResponse,
 )
 
-KNOWLEDGE_API_URL = os.getenv("KNOWLEDGE_API_URL", "").rstrip("/")
-KNOWLEDGE_API_TIMEOUT = float(os.getenv("KNOWLEDGE_API_TIMEOUT_SEC", "15"))
-KNOWLEDGE_API_MAX_RETRIES = int(os.getenv("KNOWLEDGE_API_MAX_RETRIES", "2"))
 
-# 知识底座科研组 API 的错误 code 可接受集合（契约错误识别）
-_KNOWN_ERROR_CODES = {
-    "INVALID_ARGUMENT",
-    "NOT_FOUND",
-    "RATE_LIMITED",
-    "UPSTREAM_UNAVAILABLE",
-    "TIMEOUT",
-    "CONTRACT_VIOLATION",
-    "UNKNOWN",
-}
+DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
-class KnowledgeApiClient(ABC):
-    """知识底座科研组 API 的抽象接口（真实 / Mock 共用）。
-
-    端点与《论文检索与知识图谱 API 使用手册》对齐：
-        search: POST /api/retrieval/search
-        paper:  GET  /api/kg/paper?paperId=...
-        graph:  GET  /api/kg/graph?paperId=...&depth=N
-        health: GET  /api/health
-    """
-
-    @abstractmethod
-    async def search(self, request: KnowledgeSearchRequest) -> KnowledgeSearchResponse:
-        """论文检索（增强检索）。"""
-
-    @abstractmethod
-    async def paper(self, paper_id: str) -> KnowledgePaperDetail:
-        """论文详情。paper_id 作为 opaque string 处理，禁止解析内部格式。"""
-
-    @abstractmethod
-    async def graph(self, paper_id: str, depth: int = 1) -> KnowledgeGraphResponse:
-        """论文关系图谱。默认 depth=1（手册建议 1）。"""
-
-    @abstractmethod
-    async def health(self) -> dict[str, Any]:
-        """服务状态检查（GET /api/health），不可用时抛 KnowledgeBaseError。"""
+def _configured_timeout() -> float:
+    raw = os.getenv('KNOWLEDGE_BASE_TIMEOUT_SEC', str(DEFAULT_TIMEOUT_SECONDS)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_TIMEOUT_SECONDS
 
 
-class HTTPKnowledgeApiClient(KnowledgeApiClient):
-    """真实 HTTP 实现：通过 KNOWLEDGE_API_URL 访问知识底座科研组 API。"""
+class KnowledgeBaseClient:
+    """Async transport client for the three existing upstream endpoints."""
 
     def __init__(
         self,
-        base_url: str = KNOWLEDGE_API_URL,
-        timeout: float = KNOWLEDGE_API_TIMEOUT,
-        max_retries: int = KNOWLEDGE_API_MAX_RETRIES,
-    ) -> None:
-        if not base_url:
-            raise ValueError("HTTPKnowledgeApiClient 需要配置 KNOWLEDGE_API_URL")
-        self.base_url = base_url
-        self.timeout = timeout
-        self.max_retries = max_retries
+        *,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        configured = base_url if base_url is not None else os.getenv('KNOWLEDGE_BASE_API_URL', '')
+        self.base_url = configured.strip().rstrip('/')
+        self.timeout = timeout if timeout is not None and timeout > 0 else _configured_timeout()
+        self.transport = transport
 
-    async def _request_json(self, method: str, path: str, *, payload: dict | None = None) -> dict:
-        url = f"{self.base_url}{path}"
-        attempt = 0
-        while True:
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.request(method, url, json=payload)
-                    response.raise_for_status()
-                    body = response.json()
-                if not isinstance(body, dict):
-                    from .exceptions import KnowledgeBaseContractViolationError
-                    raise KnowledgeBaseContractViolationError("知识底座返回非 JSON 对象")
-                return body
-            except httpx.HTTPError as exc:
-                if attempt < self.max_retries and isinstance(
-                    exc, (httpx.TimeoutException, httpx.TransportError)
-                ):
-                    attempt += 1
-                    await asyncio.sleep(0.3 * attempt)
-                    continue
-                raise map_http_error(exc) from exc
-
-    async def search(self, request: KnowledgeSearchRequest) -> KnowledgeSearchResponse:
+    async def search(self, payload: Mapping[str, Any]) -> UpstreamSearchResponse:
+        """POST an already-adapted upstream search payload."""
         body = await self._request_json(
-            "POST", "/api/retrieval/search", payload=request.model_dump()
+            'POST', '/api/retrieval/search', json=dict(payload)
         )
-        try:
-            return KnowledgeSearchResponse.model_validate(body)
-        except Exception as exc:  # noqa: BLE001 - 契约校验失败统一转换
-            from .exceptions import KnowledgeBaseContractViolationError
-            raise KnowledgeBaseContractViolationError("检索响应不符合契约") from exc
+        if not isinstance(body.get('results'), list):
+            raise KnowledgeIntegrationError.contract_violation()
+        return cast(UpstreamSearchResponse, body)
 
-    async def paper(self, paper_id: str) -> KnowledgePaperDetail:
+    async def paper(self, paper_id: str) -> UpstreamPaperResponse:
+        """GET an upstream paper detail using an opaque paper ID."""
         body = await self._request_json(
-            "GET", f"/api/kg/paper?paperId={_quote(paper_id)}"
+            'GET', '/api/kg/paper', params={'paperId': paper_id}
         )
-        try:
-            return KnowledgePaperDetail.model_validate(body)
-        except Exception as exc:  # noqa: BLE001
-            from .exceptions import KnowledgeBaseContractViolationError
-            raise KnowledgeBaseContractViolationError("论文详情响应不符合契约") from exc
+        if not isinstance(body.get('paper_id'), str) or not body['paper_id'].strip():
+            raise KnowledgeIntegrationError.contract_violation()
+        return cast(UpstreamPaperResponse, body)
 
-    async def graph(self, paper_id: str, depth: int = 1) -> KnowledgeGraphResponse:
+    async def graph(self, paper_id: str, depth: int = 1) -> UpstreamGraphResponse:
+        """GET an upstream paper graph using an opaque paper ID."""
         body = await self._request_json(
-            "GET", f"/api/kg/graph?paperId={_quote(paper_id)}&depth={int(depth)}"
+            'GET', '/api/kg/graph', params={'paperId': paper_id, 'depth': depth}
         )
-        try:
-            return KnowledgeGraphResponse.model_validate(body)
-        except Exception as exc:  # noqa: BLE001
-            from .exceptions import KnowledgeBaseContractViolationError
-            raise KnowledgeBaseContractViolationError("图谱响应不符合契约") from exc
+        if not isinstance(body.get('rootId'), str) or not body['rootId'].strip():
+            raise KnowledgeIntegrationError.contract_violation()
+        if not isinstance(body.get('nodes'), list) or not isinstance(body.get('lines'), list):
+            raise KnowledgeIntegrationError.contract_violation()
+        return cast(UpstreamGraphResponse, body)
 
-    async def health(self) -> dict[str, Any]:
-        body = await self._request_json("GET", "/api/health")
+    async def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        if not self.base_url:
+            raise KnowledgeIntegrationError.not_configured()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                transport=self.transport,
+            ) as client:
+                response = await client.request(method, f'{self.base_url}{path}', **kwargs)
+        except httpx.TimeoutException as exc:
+            raise KnowledgeIntegrationError.timeout() from exc
+        except (httpx.ConnectError, httpx.NetworkError) as exc:
+            raise KnowledgeIntegrationError.connection_unavailable() from exc
+        except (httpx.InvalidURL, httpx.UnsupportedProtocol) as exc:
+            raise KnowledgeIntegrationError.invalid_configuration() from exc
+        except httpx.HTTPError as exc:
+            raise KnowledgeIntegrationError.request_failed() from exc
+
+        if response.status_code >= 400:
+            raise self._status_error(response.status_code)
+
+        try:
+            body = response.json()
+        except (TypeError, ValueError) as exc:
+            raise KnowledgeIntegrationError.contract_violation() from exc
+        if not isinstance(body, dict):
+            raise KnowledgeIntegrationError.contract_violation()
         return body
 
-
-def _quote(value: str) -> str:
-    from urllib.parse import quote
-
-    return quote(str(value), safe="")
-
-
-__all__ = [
-    "KnowledgeApiClient",
-    "HTTPKnowledgeApiClient",
-    "KNOWLEDGE_API_URL",
-    "KNOWLEDGE_API_TIMEOUT",
-    "KNOWLEDGE_API_MAX_RETRIES",
-    "_KNOWN_ERROR_CODES",
-]
+    @staticmethod
+    def _status_error(status_code: int) -> KnowledgeIntegrationError:
+        if status_code == 400:
+            return KnowledgeIntegrationError.invalid_argument()
+        if status_code == 404:
+            return KnowledgeIntegrationError.not_found()
+        if status_code == 429:
+            return KnowledgeIntegrationError.rate_limited()
+        if status_code >= 500:
+            return KnowledgeIntegrationError(
+                'UPSTREAM_UNAVAILABLE', '知识底座暂不可用', True, 503
+            )
+        return KnowledgeIntegrationError(
+            'UPSTREAM_UNAVAILABLE', '知识底座请求失败', True, 502
+        )
