@@ -20,7 +20,7 @@ const EMPTY_FILTERS: KnowledgeFilters = {
 /**
  * 论文检索页 `/knowledge/search` —— 知识底座 · 论文搜索。
  *
- * 业务链路：页面 → KnowledgeClient 接口 → Mock / BFF 实现。
+ * 业务链路：页面 → KnowledgeClient 接口 → Next.js BFF → FastAPI。
  * 页面只依赖 clients/knowledge 的契约类型与 Client 工厂。
  */
 export function KnowledgeSearchPage({ initialQuery = "" }: { initialQuery?: string }) {
@@ -80,8 +80,7 @@ export function KnowledgeSearchPage({ initialQuery = "" }: { initialQuery?: stri
               <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-card/40 px-6 text-center shadow-card">
                 <p className="text-sm font-medium text-ink-2">输入关键词开始检索论文</p>
                 <p className="mt-2 max-w-md text-xs leading-relaxed text-faint">
-                  支持按年份、会议、作者、关键词与学科筛选；也可输入
-                  timeout / 不可用 / 未找到 / 无结果 等关键词体验 Mock 状态。
+                  支持按年份、会议、作者、关键词与学科筛选；结果通过 Knowledge BFF 获取。
                 </p>
               </div>
             )}

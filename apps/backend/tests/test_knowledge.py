@@ -134,6 +134,57 @@ class KnowledgeMappingTests(unittest.TestCase):
         self.assertIsNone(normalized.citation_count)
         self.assertIsNone(normalized.reference_count)
 
+    def test_numeric_strings_normalize_without_fabricating_zeroes(self):
+        search_item = copy.deepcopy(SEARCH_RESPONSE['results'][0])
+        search_item.update({'year': '2021', 'rank': '2', 'score': '0.87'})
+        result = map_search_result(search_item, retrieved_at=self.retrieved_at)
+        self.assertEqual(result.year, 2021)
+        self.assertEqual(result.rank, 2)
+        self.assertEqual(result.score, 0.87)
+
+        detail_item = copy.deepcopy(DETAIL_RESPONSE)
+        detail_item.update({
+            'year': '2021',
+            'citationCount': '42',
+            'referenceCount': '7',
+        })
+        detail = map_paper_detail(detail_item, retrieved_at=self.retrieved_at)
+        self.assertEqual(detail.year, 2021)
+        self.assertEqual(detail.citation_count, 42)
+        self.assertEqual(detail.reference_count, 7)
+
+        empty_item = copy.deepcopy(SEARCH_RESPONSE['results'][0])
+        empty_item.update({'year': '', 'rank': ' ', 'score': ''})
+        empty_result = map_search_result(empty_item, retrieved_at=self.retrieved_at)
+        self.assertIsNone(empty_result.year)
+        self.assertIsNone(empty_result.rank)
+        self.assertIsNone(empty_result.score)
+
+    def test_invalid_numeric_values_are_contract_violations(self):
+        invalid_search_values = [
+            ('year', '2021.5'),
+            ('rank', 'abc'),
+            ('score', 'NaN'),
+            ('score', float('nan')),
+            ('score', 'Infinity'),
+            ('score', float('inf')),
+        ]
+        for field, value in invalid_search_values:
+            with self.subTest(field=field, value=value):
+                item = copy.deepcopy(SEARCH_RESPONSE['results'][0])
+                item[field] = value
+                with self.assertRaises(KnowledgeIntegrationError) as caught:
+                    map_search_result(item, retrieved_at=self.retrieved_at)
+                self.assertEqual(caught.exception.code, 'CONTRACT_VIOLATION')
+
+        for field in ('citationCount', 'referenceCount'):
+            with self.subTest(field=field):
+                item = copy.deepcopy(DETAIL_RESPONSE)
+                item[field] = 'abc'
+                with self.assertRaises(KnowledgeIntegrationError) as caught:
+                    map_paper_detail(item, retrieved_at=self.retrieved_at)
+                self.assertEqual(caught.exception.code, 'CONTRACT_VIOLATION')
+
     def test_graph_mapping_exposes_open_types_and_cites_direction(self):
         graph = map_graph(GRAPH_RESPONSE, retrieved_at=self.retrieved_at)
         self.assertEqual(graph.root_id, PAPER_ID)

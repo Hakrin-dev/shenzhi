@@ -3,15 +3,29 @@ import type { ApiEnvelope } from "../../types/ai-search";
 /** 浏览器一律打同源 `/api/v1`，由 Next 微后端转发到 FastAPI（BUSINESS_BACKEND_URL） */
 export const API_PREFIX = "/api/v1";
 
-export class ApiError extends Error {
-  code: number;
-  status: number;
+export interface ApiErrorOptions {
+  retryable?: boolean;
+  requestId?: string | null;
+}
 
-  constructor(code: number, message: string, status = 400) {
+export class ApiError extends Error {
+  code: number | string;
+  status: number;
+  retryable: boolean | undefined;
+  requestId: string | null;
+
+  constructor(
+    code: number | string,
+    message: string,
+    status = 400,
+    options: ApiErrorOptions = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    this.retryable = options.retryable;
+    this.requestId = options.requestId ?? null;
   }
 }
 
@@ -47,9 +61,9 @@ export async function apiJson<T>(
   }
 
   const res = await fetch(apiPath(path), { ...init, headers, signal: init.signal ?? AbortSignal.timeout(30000) });
-  let envelope: ApiEnvelope<T> | null = null;
+  let payload: unknown;
   try {
-    envelope = (await res.json()) as ApiEnvelope<T>;
+    payload = await res.json();
   } catch {
     throw new ApiError(
       20004,
@@ -58,6 +72,14 @@ export async function apiJson<T>(
     );
   }
 
+  if (isKnowledgeErrorPayload(payload)) {
+    throw new ApiError(payload.code, payload.message, res.status, {
+      retryable: payload.retryable,
+      requestId: payload.requestId,
+    });
+  }
+
+  const envelope = isRecord(payload) ? (payload as Partial<ApiEnvelope<T>>) : null;
   if (!res.ok || !envelope || envelope.code !== 0 || envelope.data === undefined) {
     throw new ApiError(
       envelope?.code ?? 20004,
@@ -67,4 +89,23 @@ export async function apiJson<T>(
   }
 
   return envelope.data;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isKnowledgeErrorPayload(
+  value: unknown,
+): value is {
+  code: string;
+  message: string;
+  retryable: boolean;
+  requestId: string | null;
+} {
+  if (!isRecord(value)) return false;
+  return typeof value.code === "string" &&
+    typeof value.message === "string" &&
+    typeof value.retryable === "boolean" &&
+    (value.requestId === null || typeof value.requestId === "string");
 }

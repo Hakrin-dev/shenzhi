@@ -1,4 +1,5 @@
 import { KnowledgePaperDetailPage } from "@/features/knowledge/paper/KnowledgePaperDetailPage";
+import { decodeKnowledgePaperRouteId } from "../route-id";
 
 export default async function Page({
   params,
@@ -6,5 +7,5 @@ export default async function Page({
   params: Promise<{ paperId: string }>;
 }) {
   const { paperId } = await params;
-  return <KnowledgePaperDetailPage paperId={decodeURIComponent(paperId)} />;
+  return <KnowledgePaperDetailPage paperId={decodeKnowledgePaperRouteId(paperId)} />;
 }

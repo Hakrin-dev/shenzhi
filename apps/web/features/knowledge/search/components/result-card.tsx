@@ -22,7 +22,6 @@ export function KnowledgeResultCard({
   index: number;
 }) {
   const authors = hit.authors.length ? hit.authors.join(" · ") : "未知作者";
-  const score = hit.score;
 
   return (
     <motion.article
@@ -93,22 +92,14 @@ export function KnowledgeResultCard({
           </div>
         </div>
 
-        {/* 右侧得分 */}
+        {/* 右侧排序 */}
         <div className="hidden w-[104px] shrink-0 flex-col items-center justify-center rounded-xl bg-panel py-4 sm:flex">
-          {score !== null ? (
-            <>
-              <p className="text-xl font-bold tabular-nums text-primary">
-                {Math.round(score * 100)}
-              </p>
-              <p className="mt-0.5 text-[10px] text-faint">相关性分</p>
-            </>
-          ) : (
-            <p className="text-sm text-faint">—</p>
-          )}
-          {hit.rank !== null && (
-            <span className="mt-2 rounded-full bg-chip px-2 py-0.5 text-[10px] text-muted">
+          {hit.rank !== null ? (
+            <span className="rounded-full bg-chip px-2 py-0.5 text-[10px] text-muted">
               #{hit.rank}
             </span>
+          ) : (
+            <p className="text-sm text-faint">—</p>
           )}
         </div>
       </div>

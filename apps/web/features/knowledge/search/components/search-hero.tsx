@@ -51,7 +51,7 @@ export function KnowledgeSearchHero({
           </button>
         </div>
         <p className="mt-2 px-1 text-[11px] text-faint">
-          检索范围：论文 / 会议等学术资源（当前接入 Mock 数据源，真实联调后切换 BFF）
+          检索范围：论文 / 会议等学术资源
         </p>
       </form>
     </header>

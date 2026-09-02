@@ -15,6 +15,7 @@ export type {
   KnowledgePaperHit,
   KnowledgePaperDetail,
   KnowledgeGraph,
+  KnowledgeGraphDepth,
   KnowledgeGraphNode,
   KnowledgeGraphNodeProperties,
   KnowledgeGraphEdge,
@@ -30,9 +31,10 @@ export { KNOWLEDGE_RELATION_LABELS } from "./types";
 /**
  * 知识底座 Client 工厂。
  *
- * 默认使用 Mock（页面开发阶段）；设置环境变量
- *   NEXT_PUBLIC_KNOWLEDGE_SOURCE=bff
- * 后切换到 BffKnowledgeClient（走 ShenZhi FastAPI，真实联调）。
+ * 默认使用 BffKnowledgeClient（走同源 Next.js BFF → ShenZhi FastAPI）。
+ * 只有显式设置
+ *   NEXT_PUBLIC_KNOWLEDGE_SOURCE=mock
+ * 才启用 MockKnowledgeClient，供开发、测试或 demo fixture 使用。
  */
 export function getKnowledgeClient(): KnowledgeClient {
   const source =
@@ -40,6 +42,6 @@ export function getKnowledgeClient(): KnowledgeClient {
       ? process.env.NEXT_PUBLIC_KNOWLEDGE_SOURCE
       : undefined;
 
-  if (source === "bff") return new BffKnowledgeClient();
-  return new MockKnowledgeClient();
+  if (source === "mock") return new MockKnowledgeClient();
+  return new BffKnowledgeClient();
 }

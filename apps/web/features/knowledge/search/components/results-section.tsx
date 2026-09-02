@@ -5,6 +5,7 @@ import { getKnowledgeClient } from "@/clients/knowledge";
 import { KnowledgeClientError } from "@/clients/knowledge";
 import type { KnowledgeSearchParams } from "@/clients/knowledge";
 import { KnowledgeResultCard } from "./result-card";
+import { knowledgeQueryRetry } from "../../retry";
 import {
   KnowledgeSearchEmpty,
   KnowledgeSearchError,
@@ -23,6 +24,7 @@ export function KnowledgeResultsSection({ params }: { params: KnowledgeSearchPar
     queryKey: ["knowledge", "search", params],
     queryFn: () => fetchSearch(params),
     enabled: query.length > 0,
+    retry: knowledgeQueryRetry,
   });
 
   if (query.length === 0) {

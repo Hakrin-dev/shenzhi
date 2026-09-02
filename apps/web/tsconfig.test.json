@@ -6,6 +6,10 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "rootDir": ".",
     "outDir": ".next/test-output"
   },

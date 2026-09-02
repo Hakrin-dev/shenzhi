@@ -3,6 +3,7 @@
 import type {
   KnowledgeApiError,
   KnowledgeErrorCode,
+  KnowledgeGraphDepth,
   KnowledgeGraph,
   KnowledgePaperDetail,
   KnowledgePaperHit,
@@ -12,9 +13,9 @@ import type {
 /**
  * 知识底座前端 Client 统一接口。
  *
- * 页面只依赖本接口；当前由 MockKnowledgeClient 实现（mock.ts），
- * 真实联调时切换为 BffKnowledgeClient（bff.ts，走 ShenZhi FastAPI），
- * 页面无需大改。
+ * 页面只依赖本接口；正式运行由 BffKnowledgeClient 实现（bff.ts，
+ * 走同源 Next.js BFF → ShenZhi FastAPI），MockKnowledgeClient 仅通过
+ * 显式配置用于开发、测试或 demo fixture。
  */
 export interface KnowledgeClient {
   /** 论文搜索；无匹配返回空 results（不是错误） */
@@ -22,7 +23,7 @@ export interface KnowledgeClient {
   /** 论文详情；id 作为 opaque string 使用 */
   paper(paperId: string): Promise<KnowledgePaperDetail>;
   /** 论文关系图谱；默认 depth=1 */
-  graph(paperId: string, depth?: number): Promise<KnowledgeGraph>;
+  graph(paperId: string, depth?: KnowledgeGraphDepth): Promise<KnowledgeGraph>;
 }
 
 /** 知识底座错误（契约统一格式） */

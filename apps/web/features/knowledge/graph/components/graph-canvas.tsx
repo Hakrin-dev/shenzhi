@@ -1,10 +1,11 @@
 "use client";
 
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { motion } from "framer-motion";
 import type { KnowledgeGraph } from "@/clients/knowledge";
+import { Minus, Plus, Scan } from "lucide-react";
 import {
-  VIEW_H,
-  VIEW_W,
   kindLabel,
   nodeById,
   nodeColor,
@@ -12,6 +13,13 @@ import {
   nodeRadiusOf,
 } from "../lib/graph-utils";
 import type { NodePositions } from "../lib/layouts";
+import {
+  createFittedViewport,
+  fitGraphViewBox,
+  panViewportState,
+  zoomViewportState,
+} from "../lib/graph-viewport";
+import { cn } from "@/lib/utils";
 
 /** 边按关系类型着色；CITES 使用中性灰，其余按类型 */
 const EDGE_COLORS: Record<string, string> = {
@@ -54,6 +62,76 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   const byId = nodeById(graph);
   const focusId = hoveredId ?? selectedId;
+  const fitViewBox = useMemo(() => fitGraphViewBox(positions), [positions]);
+  const [viewportState, setViewportState] = useState(() => createFittedViewport(fitViewBox));
+  const [isPanning, setIsPanning] = useState(false);
+  const drag = useRef<{ lastX: number; lastY: number } | null>(null);
+  const didPan = useRef(false);
+
+  const resetView = useCallback(() => {
+    setViewportState(createFittedViewport(fitViewBox));
+    didPan.current = false;
+  }, [fitViewBox]);
+
+  const zoomAt = useCallback(
+    (factor: number, anchor: { x: number; y: number }) => {
+      setViewportState((state) => zoomViewportState(state, factor, anchor, fitViewBox));
+    },
+    [fitViewBox],
+  );
+
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<SVGSVGElement>) => {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      zoomAt(
+        event.deltaY < 0 ? 1.1 : 0.9,
+        {
+          x: (event.clientX - rect.left) / rect.width,
+          y: (event.clientY - rect.top) / rect.height,
+        },
+      );
+    },
+    [zoomAt],
+  );
+
+  const handlePointerDown = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    const target = event.target;
+    if (event.button !== 0 || (target instanceof Element && target.closest("[data-graph-node]"))) {
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { lastX: event.clientX, lastY: event.clientY };
+    didPan.current = false;
+    setIsPanning(true);
+  }, []);
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!drag.current) return;
+    const deltaX = event.clientX - drag.current.lastX;
+    const deltaY = event.clientY - drag.current.lastY;
+    drag.current = { lastX: event.clientX, lastY: event.clientY };
+    if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) didPan.current = true;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setViewportState((state) => panViewportState(state, deltaX, deltaY, rect.width, rect.height));
+  }, []);
+
+  const handlePointerEnd = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.current = null;
+    setIsPanning(false);
+  }, []);
+
+  const handleCanvasClick = useCallback(() => {
+    if (didPan.current) {
+      didPan.current = false;
+      return;
+    }
+    onCanvasClick();
+  }, [onCanvasClick]);
 
   // 与当前焦点节点直接相连的节点（弱化其余）
   const neighbors = new Set<string>();
@@ -66,16 +144,26 @@ export function GraphCanvas({
   }
 
   const root = byId.get(graph.rootId);
+  const { x, y, width, height } = viewportState.viewBox;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-line/70 bg-card/30">
         <svg
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-          className="h-full w-full select-none"
+          viewBox={`${x} ${y} ${width} ${height}`}
+          preserveAspectRatio="xMidYMid meet"
+          className={cn(
+            "h-full w-full select-none touch-none",
+            isPanning ? "cursor-grabbing" : "cursor-grab",
+          )}
           role="img"
           aria-label="论文关系图谱"
-          onClick={onCanvasClick}
+          onClick={handleCanvasClick}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
         >
           {/* 边 */}
           {graph.edges.map((edge) => {
@@ -120,6 +208,7 @@ export function GraphCanvas({
                   transformOrigin: "center",
                   cursor: "pointer",
                 }}
+                data-graph-node="true"
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelect(node.id);
@@ -127,6 +216,7 @@ export function GraphCanvas({
                 onMouseEnter={() => onHover(node.id)}
                 onMouseLeave={() => onHover(null)}
               >
+                <title>{node.label}</title>
                 {/* 选中外圈 */}
                 {selected && (
                   <circle
@@ -162,7 +252,7 @@ export function GraphCanvas({
                   x={position.x}
                   y={position.y + radius + 16}
                   textAnchor="middle"
-                  fontSize={12}
+                  fontSize={14}
                   fontWeight={600}
                   className="fill-ink-2"
                 >
@@ -172,7 +262,7 @@ export function GraphCanvas({
                   x={position.x}
                   y={position.y + radius + 31}
                   textAnchor="middle"
-                  fontSize={10}
+                  fontSize={11}
                   className="fill-faint"
                 >
                   {line2}
@@ -181,6 +271,39 @@ export function GraphCanvas({
             );
           })}
         </svg>
+        <div className="absolute right-3 top-3 flex items-center gap-1 rounded-lg border border-line/70 bg-card/90 p-1 shadow-card backdrop-blur">
+          <button
+            type="button"
+            aria-label="缩小图谱"
+            title="缩小图谱"
+            onClick={() => zoomAt(0.85, { x: 0.5, y: 0.5 })}
+            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-panel hover:text-ink"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <span className="min-w-10 text-center text-[10px] tabular-nums text-faint" aria-live="polite">
+            {Math.round(viewportState.zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="放大图谱"
+            title="放大图谱"
+            onClick={() => zoomAt(1.18, { x: 0.5, y: 0.5 })}
+            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-panel hover:text-ink"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="适应视图"
+            title="适应视图"
+            onClick={resetView}
+            className="ml-1 flex h-7 items-center gap-1 rounded-md px-2 text-[10px] text-muted transition-colors hover:bg-panel hover:text-ink"
+          >
+            <Scan className="size-3.5" />
+            适应视图
+          </button>
+        </div>
       </div>
 
       {/* 图例 */}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpDown, Network, Search, X } from "lucide-react";
-import { getKnowledgeClient } from "@/clients/knowledge";
+import { getKnowledgeClient, KnowledgeClientError } from "@/clients/knowledge";
 import type {
   KnowledgePaperHit,
   KnowledgeRelatedPaper,
@@ -51,7 +51,9 @@ export function GraphRelatedPanel({
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<KnowledgePaperHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<KnowledgeClientError | null>(null);
   const [open, setOpen] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sequence = useRef(0);
 
@@ -62,20 +64,29 @@ export function GraphRelatedPanel({
     timer.current = setTimeout(() => {
       if (!text) {
         setSuggestions([]);
+        setSearchError(null);
         setOpen(false);
         setSearching(false);
         return;
       }
+      setSearchError(null);
       setSearching(true);
       getKnowledgeClient()
         .search({ query: text, topK: 8, yearFrom: null, yearTo: null, venue: [], author: [], keyword: [], subject: [] })
         .then((data) => {
           if (current !== sequence.current) return;
           setSuggestions(data.results.slice(0, 8));
+          setSearchError(null);
           setOpen(true);
         })
-        .catch(() => {
-          if (current === sequence.current) setSuggestions([]);
+        .catch((error: unknown) => {
+          if (current !== sequence.current) return;
+          setSuggestions([]);
+          setSearchError(
+            error instanceof KnowledgeClientError
+              ? error
+              : new KnowledgeClientError("UNKNOWN", "中心论文搜索失败"),
+          );
         })
         .finally(() => {
           if (current === sequence.current) setSearching(false);
@@ -84,7 +95,7 @@ export function GraphRelatedPanel({
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query]);
+  }, [query, retryNonce]);
 
   const visible = filterByDirection(related, direction);
   const counts: Record<GraphDirectionFilter, number> = {
@@ -144,6 +155,18 @@ export function GraphRelatedPanel({
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-faint">
             搜索中…
           </span>
+        )}
+        {searchError && !searching && (
+          <div className="mt-2 flex items-center justify-between rounded-lg bg-danger-soft px-2.5 py-2 text-[11px] text-danger">
+            <span className="truncate">中心论文搜索失败：{searchError.message}</span>
+            <button
+              type="button"
+              className="ml-2 shrink-0 font-medium underline underline-offset-2"
+              onClick={() => setRetryNonce((value) => value + 1)}
+            >
+              重试
+            </button>
+          </div>
         )}
       </div>
 

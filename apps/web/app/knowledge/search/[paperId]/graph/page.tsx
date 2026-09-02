@@ -1,4 +1,5 @@
 import { KnowledgeRelationGraphPage } from "@/features/knowledge/graph/KnowledgeRelationGraphPage";
+import { decodeKnowledgePaperRouteId } from "../../route-id";
 
 export default async function Page({
   params,
@@ -6,5 +7,5 @@ export default async function Page({
   params: Promise<{ paperId: string }>;
 }) {
   const { paperId } = await params;
-  return <KnowledgeRelationGraphPage paperId={decodeURIComponent(paperId)} />;
+  return <KnowledgeRelationGraphPage paperId={decodeKnowledgePaperRouteId(paperId)} />;
 }

@@ -51,7 +51,7 @@ function delay(ms: number): Promise<void> {
  * 知识底座 Mock Client。
  *
  * 页面不直接依赖本实现，统一走 KnowledgeClient 接口；
- * 真实联调时通过 getKnowledgeClient() 切换为 BffKnowledgeClient。
+ * 仅在 getKnowledgeClient() 显式配置 source=mock 时启用；正式运行走 BFF。
  */
 export class MockKnowledgeClient implements KnowledgeClient {
   private scenario: MockScenario;

@@ -21,6 +21,7 @@ import {
 } from "@/clients/knowledge";
 import type { KnowledgePaperDetail } from "@/clients/knowledge";
 import { KnowledgePaperSkeleton } from "./components/paper-skeleton";
+import { knowledgeQueryRetry } from "../retry";
 
 async function fetchPaper(paperId: string) {
   const client = getKnowledgeClient();
@@ -37,6 +38,7 @@ export function KnowledgePaperDetailPage({ paperId }: { paperId: string }) {
   const { data: paper, isPending, isError, error, refetch } = useQuery({
     queryKey: ["knowledge", "paper", paperId],
     queryFn: () => fetchPaper(paperId),
+    retry: knowledgeQueryRetry,
   });
 
   return (

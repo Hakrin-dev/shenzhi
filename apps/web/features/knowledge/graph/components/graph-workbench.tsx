@@ -11,6 +11,7 @@ import {
   KnowledgeClientError,
 } from "@/clients/knowledge";
 import type {
+  KnowledgeGraphDepth,
   KnowledgeGraphNode,
   KnowledgePaperDetail,
 } from "@/clients/knowledge";
@@ -28,16 +29,17 @@ import {
   type GraphLayoutMode,
 } from "../lib/layouts";
 import { cn } from "@/lib/utils";
+import { knowledgeQueryRetry } from "../../retry";
 
 const LAYOUT_OPTIONS: GraphLayoutMode[] = ["radial", "treeHorizontal", "treeVertical", "force"];
-const DEPTH_OPTIONS = [1, 2, 3];
+const DEPTH_OPTIONS: KnowledgeGraphDepth[] = [1, 2];
 
 /** 图谱工作台 —— 三栏：左关联论文 / 中图谱 / 右详情 */
 export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
   const router = useRouter();
   const [layoutMode, setLayoutMode] = useState<GraphLayoutMode>("radial");
   const [direction, setDirection] = useState<GraphDirectionFilter>("all");
-  const [depth, setDepth] = useState(1);
+  const [depth, setDepth] = useState<KnowledgeGraphDepth>(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -46,19 +48,20 @@ export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
     queryKey: ["knowledge", "graph", paperId, depth],
     queryFn: () => getKnowledgeClient().graph(paperId, depth),
     staleTime: 60_000,
+    retry: knowledgeQueryRetry,
   });
 
-  const graph = graphQuery.data ?? null;
+  const fullGraph = graphQuery.data ?? null;
   const graphError = graphQuery.isError ? toKnowledgeError(graphQuery.error) : null;
 
   // 选中节点：默认 root；切换到新中心论文时由页面 key 重挂载重置
   const selectedNode = useMemo(() => {
-    if (!graph) return null;
-    if (selectedId && graph.nodes.some((node) => node.id === selectedId)) {
-      return graph.nodes.find((node) => node.id === selectedId) ?? null;
+    if (!fullGraph) return null;
+    if (selectedId && fullGraph.nodes.some((node) => node.id === selectedId)) {
+      return fullGraph.nodes.find((node) => node.id === selectedId) ?? null;
     }
-    return graph.nodes.find((node) => node.id === graph.rootId) ?? null;
-  }, [graph, selectedId]);
+    return fullGraph.nodes.find((node) => node.id === fullGraph.rootId) ?? null;
+  }, [fullGraph, selectedId]);
 
   const isPaperNode = selectedNode?.kind === "Paper";
   const selectedPaperId = isPaperNode ? selectedNode.id : null;
@@ -69,18 +72,19 @@ export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
     queryFn: () => getKnowledgeClient().paper(selectedPaperId as string),
     enabled: Boolean(selectedPaperId),
     staleTime: 60_000,
+    retry: knowledgeQueryRetry,
   });
 
   const displayGraph = useMemo(
-    () => (graph ? filterGraphByDirection(graph, direction) : null),
-    [graph, direction],
+    () => (fullGraph ? filterGraphByDirection(fullGraph, direction) : null),
+    [fullGraph, direction],
   );
   const positions = useMemo(
     () => (displayGraph ? computeLayout(layoutMode, displayGraph) : null),
     [displayGraph, layoutMode],
   );
-  const related = useMemo(() => (graph ? relatedPapers(graph) : []), [graph]);
-  const centerTitle = graph?.nodes.find((node) => node.id === graph.rootId)?.label ?? "";
+  const related = useMemo(() => (fullGraph ? relatedPapers(fullGraph) : []), [fullGraph]);
+  const centerTitle = fullGraph?.nodes.find((node) => node.id === fullGraph.rootId)?.label ?? "";
 
   const pickCenter = (id: string) => {
     // 切换中心论文：更新 URL → 页面 key 重挂载重置图谱
@@ -91,7 +95,7 @@ export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
     return <WorkbenchLoading />;
   }
 
-  if (graphError || !graph || !displayGraph || !positions || !selectedNode) {
+  if (graphError || !fullGraph || !displayGraph || !positions || !selectedNode) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center rounded-2xl bg-card px-10 py-12 text-center shadow-card">
@@ -185,15 +189,16 @@ export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
           />
         </aside>
 
-        <main className="order-1 min-w-0 flex-1 bg-panel/40 p-4 lg:order-2">
+        <main className="order-1 min-h-[420px] min-w-0 flex-1 bg-panel/40 p-4 lg:order-2">
           <GraphCanvas
+            key={`${paperId}:${depth}:${layoutMode}:${direction}:${graphQuery.dataUpdatedAt}`}
             graph={displayGraph}
             positions={positions}
             selectedId={selectedNode.id}
             hoveredId={hoveredId}
             onSelect={setSelectedId}
             onHover={setHoveredId}
-            onCanvasClick={() => setSelectedId(graph.rootId)}
+            onCanvasClick={() => setSelectedId(fullGraph.rootId)}
           />
         </main>
 
@@ -206,7 +211,7 @@ export function KnowledgeGraphWorkbench({ paperId }: { paperId: string }) {
             }
             loading={detailQuery.isLoading}
             error={detailQuery.isError ? toKnowledgeError(detailQuery.error) : null}
-            isCenter={selectedNode.id === graph.rootId}
+            isCenter={selectedNode.id === fullGraph.rootId}
             onRetry={() => void detailQuery.refetch()}
           />
         </aside>

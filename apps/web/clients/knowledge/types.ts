@@ -123,7 +123,12 @@ export interface KnowledgeGraph {
   rootId: string;
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
+  /** Backend provenance is retained for downstream diagnostics and attribution. */
+  provenance?: unknown;
 }
+
+/** Backend-supported graph depth. */
+export type KnowledgeGraphDepth = 1 | 2;
 
 /** 错误码（契约统一） */
 export type KnowledgeErrorCode =

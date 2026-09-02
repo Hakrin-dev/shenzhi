@@ -9,7 +9,7 @@ new knowledge-base entity types can be introduced without a backend release.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -191,15 +191,21 @@ class PaperGraph(KnowledgeModel):
 class KnowledgeError(KnowledgeModel):
     """Safe error payload exposed by the Knowledge API.
 
-    ``code`` is intentionally a string rather than a closed enum so the
-    contract can add a more specific classification without changing the
-    response shape.
+    ``code`` is a stable string classification, not a legacy numeric code.
     """
 
-    code: str
+    code: Literal[
+        'NOT_FOUND',
+        'INVALID_ARGUMENT',
+        'RATE_LIMITED',
+        'UPSTREAM_UNAVAILABLE',
+        'TIMEOUT',
+        'CONTRACT_VIOLATION',
+        'UNKNOWN',
+    ]
     message: str
     retryable: bool
-    request_id: str = Field(
+    request_id: str | None = Field(
         validation_alias=AliasChoices('requestId', 'request_id'),
         serialization_alias='requestId',
     )

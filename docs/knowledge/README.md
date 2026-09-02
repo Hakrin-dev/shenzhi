@@ -1,108 +1,144 @@
 # 知识底座接入说明
 
-> 知识底座（论文搜索 / 论文详情 / 论文关系图谱）接入 ShenZhi 的工程边界与当前进度。
-> 相关代码：`apps/web/clients/knowledge`、`apps/web/features/knowledge/{search,paper,graph}`、`apps/backend/app/integrations/knowledge`。
+本文说明 ShenZhi Knowledge MVP（论文搜索、论文详情、论文关系图谱）的
+工程边界、运行配置和稳定契约。科研组 Knowledge Base 是外部 Capability：
+ShenZhi 只调用、隔离并适配，不修改其内部实现。
 
-## 整体调用链
+## 调用链
 
 ```text
-前端页面 / Component
-        ↓
-features/knowledge（search / paper / graph）
-        ↓
-apps/web/clients/knowledge（KnowledgeClient 接口 → Mock / BFF 实现）
-        ↓
-ShenZhi FastAPI（api/knowledge.py → services/knowledge.py）
-        ↓
-backend integrations/knowledge（client / schemas / adapter / exceptions）
-        ↓
-知识底座科研组 API
+Browser
+  ↓ same-origin
+Next.js /api/v1/*（BFF）
+  ↓ server-side forwarding + Better Auth/BFF credential
+FastAPI /api/v1/knowledge/*
+  ↓
+services/knowledge.py
+  ↓
+integrations/knowledge（client / schemas / adapter / exceptions）
+  ↓
+External Knowledge Base
 ```
 
-## 后端集成层（apps/backend/app/integrations/knowledge）
+浏览器只能访问同源 Next.js BFF，不能直接请求 FastAPI 或外部知识库。
+外部知识库地址只允许存在 Backend 服务端配置中。
 
-四类文件职责：
+## 代码边界
 
-| 文件 | 职责 |
+### Web
+
+| 路径 | 职责 |
 |---|---|
-| `client.py` | 怎么调用知识底座科研 API：地址 / HTTP / Header / Timeout / Retry |
-| `schemas.py` | 科研 API 自己的输入输出格式（snake_case） |
-| `adapter.py` | 把科研数据转换为深知业务数据（camelCase 契约） |
-| `exceptions.py` | 知识底座调用相关异常定义与转换 |
-| `mock_data.py` | Mock 数据源与 Mock 客户端（真实接入前的降级实现） |
+| `apps/web/clients/knowledge/types.ts` | Search / Detail / Graph / Error 的前端 wire type |
+| `apps/web/clients/knowledge/client.ts` | `KnowledgeClient` 与 `KnowledgeClientError` |
+| `apps/web/clients/knowledge/bff.ts` | 调用同源 `/api/v1/knowledge/*`，解析正式错误契约 |
+| `apps/web/clients/knowledge/mock.ts` | 显式开发、测试和 demo fixture 使用的 Mock Client |
+| `apps/web/clients/knowledge/index.ts` | Client 工厂；默认 BFF，显式 `source=mock` 才启用 Mock |
+| `apps/web/features/knowledge/retry.ts` | Knowledge 查询的局部 retry predicate |
+| `apps/web/features/knowledge/{search,paper,graph}` | 页面、交互和展示逻辑 |
 
-工厂 `get_knowledge_api()`：配置 `KNOWLEDGE_API_URL` 后走真实 HTTP 实现；未配置（当前阶段）使用 `MockKnowledgeApiClient`，Mock 与真实实现通过同一 `KnowledgeApiClient` 接口清晰区分。
+### Backend
 
-后端 API 路由（`api/knowledge.py`）：
+| 路径 | 职责 |
+|---|---|
+| `apps/backend/app/api/knowledge.py` | `/api/v1/knowledge/*` HTTP 边界、鉴权和错误状态 |
+| `apps/backend/app/services/knowledge.py` | Knowledge 业务服务边界 |
+| `apps/backend/app/integrations/knowledge/client.py` | 外部 HTTP、timeout 和外部异常映射 |
+| `apps/backend/app/integrations/knowledge/schemas.py` | 外部 Knowledge Base transport schema |
+| `apps/backend/app/integrations/knowledge/adapter.py` | 外部 snake_case/异构字段到 ShenZhi 契约的适配与 normalization |
+| `apps/backend/app/integrations/knowledge/exceptions.py` | 集成异常与正式错误类别 |
 
-- `POST /api/v1/knowledge/search` — 论文搜索
-- `GET  /api/v1/knowledge/paper?paperId=...` — 论文详情
-- `GET  /api/v1/knowledge/graph?paperId=...&depth=1` — 论文关系图谱（默认 depth=1）
+Backend 不提供自动 Mock fallback。未配置或不可用的外部 Knowledge Base
+会返回真实的 `UPSTREAM_UNAVAILABLE` / `TIMEOUT` 等错误。
 
-知识底座错误类别（`INVALID_ARGUMENT / NOT_FOUND / RATE_LIMITED / UPSTREAM_UNAVAILABLE / TIMEOUT / CONTRACT_VIOLATION / UNKNOWN`）由 `services/knowledge.py` 转换为深知业务错误码（21001–21007）。
+## 配置
 
-## 真实 API 使用手册对齐
+Web（`apps/web/.env.example`）：
 
-集成层 `schemas.py / client.py / adapter.py` 与《论文检索与知识图谱 API 使用手册》对齐：
+```dotenv
+# 默认/正式运行使用 BFF；仅显式开发、测试或 demo 时使用 mock。
+NEXT_PUBLIC_KNOWLEDGE_SOURCE=bff
+```
 
-| 能力 | 真实接口 | 集成层处理 |
+`NEXT_PUBLIC_KNOWLEDGE_SOURCE=mock` 才启用 `MockKnowledgeClient`；未配置或
+其他值都使用 BFF。BFF 请求失败时不会切换到 Mock。
+
+Backend（`apps/backend/.env.example`）：
+
+```dotenv
+KNOWLEDGE_BASE_API_URL=
+KNOWLEDGE_BASE_TIMEOUT_SEC=30
+```
+
+`KNOWLEDGE_BASE_API_URL` 和 Backend 的 BFF secret 只能注入服务端环境，不能
+使用 `NEXT_PUBLIC_` 前缀，也不能出现在浏览器 Network 请求中。
+
+## HTTP API
+
+| 能力 | ShenZhi API | 外部 API |
 |---|---|---|
-| 论文检索 | `POST /api/retrieval/search` | 请求 `conference`（非 venue）；响应 `conference` → 业务 `venue`，`state/query_parse/query_rewrite` 忽略 |
-| 论文详情 | `GET /api/kg/paper?paperId=...` | `venue / doi / pdf_url` 透传；引用数缺省为 `null`（≠0） |
-| 关系图谱 | `GET /api/kg/graph?paperId=...&depth=N` | 真实返回 `rootId + nodes + lines(from/to/text/data)`；adapter 转 `edges(sourceId/targetId/relation)`，节点 `data.type` → `kind` |
-| 服务状态 | `GET /api/health` | `client.health()`，不可用时映射 `UPSTREAM_UNAVAILABLE` |
+| 论文检索 | `POST /api/v1/knowledge/search` | `POST /api/retrieval/search` |
+| 论文详情 | `GET /api/v1/knowledge/paper?paperId=...` | `GET /api/kg/paper?paperId=...` |
+| 论文图谱 | `GET /api/v1/knowledge/graph?paperId=...&depth=1\|2` | `GET /api/kg/graph?paperId=...&depth=1\|2` |
 
-手册中当前不在首批范围内、**未接入**：
+Search 请求使用 `query`、`topK`、`yearFrom`、`yearTo`、`venue`、`author`、
+`keyword`、`subject`。Backend 只在 adapter 边界把它们映射为外部 API 所需的
+字段（例如 `top_k`、`year_gte`、`conference`）。
 
-- `POST /api/retrieval/multistep-search`（复杂关系检索，普通搜索用 `/api/retrieval/search`）
-- `GET /api/kg/search`（简单标题检索；前端中心论文搜索复用 `search()` 即可）
-- `GET /api/papers`、`/api/papers/venues`、`/api/papers/tracks`、`/api/categories`、`/api/conferences`（会议体系浏览）
-- `/api/auth/*`、`/api/favorites`（知识底座登录/收藏）
+图谱 `depth` 只支持 `1 | 2`，默认值为 `1`。Backend 可以返回异构节点和边；
+前端保持 `kind`、`relation` 为开放字符串，未知值使用默认展示。
 
-真实联调时：后端配置 `KNOWLEDGE_API_URL=http://47.110.47.12` 即自动走 `HTTPKnowledgeApiClient`；若上游字段有出入，只需在 `adapter.py` 内收敛，不影响 API 层与前端契约。
+## 稳定契约
 
-## 前端客户端分层（apps/web/clients/knowledge）
+- `id`、`paperId`、`rootId` 都是 opaque string，禁止按 `paper:`、`AAAI:` 等
+  内部格式解析。
+- `Search result id === Detail request paperId === Graph request paperId === Graph.rootId`。
+- `abstract`、`venue`、`year` 可为 `null`；`authors`、`keywords`、`subjects`
+  缺省为空数组。
+- `citationCount`、`referenceCount` 为 `null` 表示外部未提供，不能静默转成 `0`。
+- 外部数字字段允许 number 或 numeric string：`"2021" → 2021`、`"42" → 42`、
+  `"0.87" → 0.87`；空字符串变为 `null`，非法数字、非有限值和非法 integer
+  变为 `CONTRACT_VIOLATION`。
+- Graph `CITES` 统一表示 `sourceId` 引用了 `targetId`：
+  `sourceId === rootId` 是 References，`targetId === rootId` 是 Citations。
+- Graph 顶层保留 `provenance`；节点和边的 `kind` / `relation` 不因未知值抛错。
 
-| 文件 | 职责 |
+### Error Contract
+
+Knowledge API 错误响应使用字符串 code，不使用历史数字错误码：
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "safe user-facing message",
+  "retryable": false,
+  "requestId": "request-id-or-null"
+}
+```
+
+允许的 code 为 `NOT_FOUND`、`INVALID_ARGUMENT`、`RATE_LIMITED`、
+`UPSTREAM_UNAVAILABLE`、`TIMEOUT`、`CONTRACT_VIOLATION`、`UNKNOWN`。
+`message` 必须是安全的用户可见信息，不得包含外部 URL、traceback 或 secret。
+
+Knowledge 查询最多自动重试一次；`TIMEOUT`、`RATE_LIMITED`、
+`UPSTREAM_UNAVAILABLE` 只有在 `retryable=true` 时重试。`NOT_FOUND`、
+`INVALID_ARGUMENT`、`CONTRACT_VIOLATION` 在正式契约中不可重试；`UNKNOWN`
+也必须遵守 `retryable` 和最多一次的上限，不能无限重试。
+
+## 页面范围
+
+| 路由 | 行为 |
 |---|---|
-| `types.ts` | 契约类型（Search / Detail / Graph / Error）与关系语义常量 |
-| `client.ts` | `KnowledgeClient` 接口 + `KnowledgeClientError` |
-| `mock.ts` | `MockKnowledgeClient`：模拟 success / zero_results / loading / timeout / upstream_unavailable / not_found |
-| `bff.ts` | `BffKnowledgeClient`：真实联调时走 ShenZhi FastAPI（`/api/v1/knowledge/*`） |
-| `index.ts` | 工厂 `getKnowledgeClient()`：默认 Mock；设 `NEXT_PUBLIC_KNOWLEDGE_SOURCE=bff` 切换 BFF |
-
-页面只依赖 `KnowledgeClient` 接口，不直接 import mock 数据，因此真实联调时仅需切换工厂实现，页面无需大改。
-
-## Contract 要点
-
-- **id 是 opaque string**，禁止解析内部格式
-- `authors` 可能为空、`subjects` 上游覆盖不足、`score` 不是百分比
-- **`citationCount === null` 表示上游未提供**，UI 不得显示为 `0`（显示 `—` / 隐藏）
-- `kind` / `relation` 是开放字符串，未知类型必须有默认展示，禁止 `switch ... default: throw`
-- **CITES 语义**：`sourceId` 引用了 `targetId`；`sourceId===root` → References，`targetId===root` → Citations，列表与图谱筛选统一按此规则
-- 图谱默认 `depth=1`，不要默认 `depth=2`
-
-Mock 错误演示：搜索框输入 `timeout` / `不可用` / `未找到` / `无结果` 等关键词可触发对应状态。
-
-## 页面路由
-
-| 路由 | 页面 |
-|---|---|
-| `/knowledge/search` | 论文检索（搜索 + 筛选 + 结果 + 状态） |
+| `/knowledge/search` | 论文搜索、筛选、loading、zero-result、error |
 | `/knowledge/search/[paperId]` | 论文详情 |
-| `/knowledge/search/[paperId]/graph` | 论文关系图谱（三栏工作台） |
+| `/knowledge/search/[paperId]/graph` | fullGraph（保留异构节点/边）、References/Citations 筛选、节点详情 |
 
-图谱工作台为三栏：左（中心论文搜索 + 关联论文 + References/Citations 方向筛选）、中（SVG 图谱，支持环形 / 横向树 / 纵向树 / 力导向布局与深度 1–3）、右（节点详情，Paper 节点拉取详情，实体节点展示元信息）。
+当前 MVP 只打通 Search → Detail → Graph；暂不包含 Knowledge → Chat、
+multistep、会议浏览、ID resolver、scholar、patents、projects、funds、
+Deep Research 或 Auto Research。
 
-## 当前阶段与真实联调
+## Mock 规则
 
-- 当前使用 Mock 数据源（前端 `MockKnowledgeClient` + 后端 `MockKnowledgeApiClient`），页面与交互可独立开发联调
-- 后续真实联调：
-  1. 后端配置 `KNOWLEDGE_API_URL`（与科研组 API 汇合）
-  2. 前端设置 `NEXT_PUBLIC_KNOWLEDGE_SOURCE=bff`
-  3. 如科研侧字段变化，只在 `adapter.py` 内收敛，不动 API 层与前端
-
-## 首批业务范围（当前实现）
-
-- 论文搜索 → 论文详情 → 论文关系图谱
-- 暂不做：会议浏览 / 专利 / 学者 / 项目 / 基金 / multistep / 复杂关系查询 / 知识底座登录收藏
+Mock 只由 `NEXT_PUBLIC_KNOWLEDGE_SOURCE=mock` 显式启用，适用于 unit test、
+component test 和 demo fixture。真实 BFF 请求失败、Backend 未配置 upstream
+或 upstream 不可用时，都保持真实错误状态，不自动返回 Mock 数据。

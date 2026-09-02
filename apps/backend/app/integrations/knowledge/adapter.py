@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -84,8 +85,14 @@ def _string_list(value: Any) -> list[str]:
 def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
-    if isinstance(value, str) and not value.strip():
-        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise KnowledgeIntegrationError.contract_violation() from exc
     if isinstance(value, bool) or not isinstance(value, int):
         raise KnowledgeIntegrationError.contract_violation()
     return value
@@ -94,11 +101,26 @@ def _optional_int(value: Any) -> int | None:
 def _optional_number(value: Any) -> float | None:
     if value is None:
         return None
-    if isinstance(value, str) and not value.strip():
-        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise KnowledgeIntegrationError.contract_violation() from exc
+        if not math.isfinite(parsed):
+            raise KnowledgeIntegrationError.contract_violation()
+        return parsed
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise KnowledgeIntegrationError.contract_violation()
-    return float(value)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise KnowledgeIntegrationError.contract_violation() from exc
+    if not math.isfinite(parsed):
+        raise KnowledgeIntegrationError.contract_violation()
+    return parsed
 
 
 def _safe_property(value: Any) -> Any:

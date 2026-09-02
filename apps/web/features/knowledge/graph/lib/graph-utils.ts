@@ -140,6 +140,7 @@ export function filterGraphByDirection(
     if (dir === "both" || dir === direction) keep.add(node.id);
   }
   return {
+    ...graph,
     rootId: graph.rootId,
     nodes: graph.nodes.filter((node) => keep.has(node.id)),
     edges: graph.edges.filter(

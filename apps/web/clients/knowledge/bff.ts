@@ -1,9 +1,11 @@
 "use client";
 
-import { apiJson, ApiError } from "@/clients/backend/http";
+import { apiJson, ApiError } from "../backend/http";
 import { KnowledgeClientError, type KnowledgeClient } from "./client";
 import type {
+  KnowledgeErrorCode,
   KnowledgeGraph,
+  KnowledgeGraphDepth,
   KnowledgePaperDetail,
   KnowledgePaperHit,
   KnowledgeSearchParams,
@@ -12,31 +14,53 @@ import type {
 /**
  * 知识底座 BFF Client：经 ShenZhi FastAPI 访问知识底座科研组能力。
  *
- * 页面无感知：只需把 getKnowledgeClient() 的默认实现从 Mock 切到本实现，
- * 页面代码无需大改。请求统一走同源 /api/v1（Next.js BFF 转发）。
+ * 页面无感知：请求统一走同源 /api/v1（Next.js BFF 转发），不在浏览器
+ * 暴露 FastAPI 或外部知识库地址。
  */
 
-/** 后端知识错误码 → 契约错误码 */
-const BACKEND_ERROR_CODE_MAP: Record<number, KnowledgeClientError["code"]> = {
-  21001: "INVALID_ARGUMENT",
-  21002: "NOT_FOUND",
-  21003: "RATE_LIMITED",
-  21004: "UPSTREAM_UNAVAILABLE",
-  21005: "TIMEOUT",
-  21006: "CONTRACT_VIOLATION",
-  21007: "UNKNOWN",
-};
+const KNOWLEDGE_ERROR_CODES = new Set<KnowledgeErrorCode>([
+  "INVALID_ARGUMENT",
+  "NOT_FOUND",
+  "RATE_LIMITED",
+  "UPSTREAM_UNAVAILABLE",
+  "TIMEOUT",
+  "CONTRACT_VIOLATION",
+  "UNKNOWN",
+]);
 
 function toKnowledgeError(error: unknown): KnowledgeClientError {
   if (error instanceof KnowledgeClientError) return error;
   if (error instanceof ApiError) {
-    const code = BACKEND_ERROR_CODE_MAP[error.code] ?? "UNKNOWN";
-    const retryable = ["RATE_LIMITED", "UPSTREAM_UNAVAILABLE", "TIMEOUT"].includes(code);
-    return new KnowledgeClientError(code, error.message, { retryable });
+    if (typeof error.code === "string") {
+      const code = KNOWLEDGE_ERROR_CODES.has(error.code as KnowledgeErrorCode)
+        ? error.code as KnowledgeErrorCode
+        : "UNKNOWN";
+      return new KnowledgeClientError(code, error.message, {
+        retryable: error.retryable ?? false,
+        requestId: error.requestId,
+      });
+    }
+
+    const infrastructureCode = error.status === 504
+      ? "TIMEOUT"
+      : error.status >= 500
+        ? "UPSTREAM_UNAVAILABLE"
+        : "UNKNOWN";
+    return new KnowledgeClientError(infrastructureCode, "知识底座服务异常", {
+      retryable: error.retryable ?? error.status >= 500,
+      requestId: error.requestId,
+    });
   }
+
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+    return new KnowledgeClientError("TIMEOUT", "知识底座服务响应超时", {
+      retryable: true,
+    });
+  }
+
   return new KnowledgeClientError(
     "UNKNOWN",
-    error instanceof Error ? error.message : "知识底座服务异常",
+    "知识底座服务异常",
   );
 }
 
@@ -71,7 +95,7 @@ export class BffKnowledgeClient implements KnowledgeClient {
     }
   }
 
-  async graph(paperId: string, depth = 1): Promise<KnowledgeGraph> {
+  async graph(paperId: string, depth: KnowledgeGraphDepth = 1): Promise<KnowledgeGraph> {
     try {
       return await apiJson<KnowledgeGraph>(
         `/knowledge/graph?paperId=${encodeURIComponent(paperId)}&depth=${depth}`,
