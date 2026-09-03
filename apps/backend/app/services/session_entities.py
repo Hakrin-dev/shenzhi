@@ -24,16 +24,21 @@ class Message:
     task: asyncio.Task | None = None
     changed: asyncio.Event = field(default_factory=asyncio.Event)
     subscribers: int = 0
+    stop_requested: bool = False
 
     def emit(self, event: str, data: dict) -> None:
         self.events.append((event, data))
         self.changed.set()
 
     def public(self) -> dict:
-        return {"last_event_id": str(len(self.events)), **{k: getattr(self, k) for k in (
+        data = {"last_event_id": str(len(self.events)), **{k: getattr(self, k) for k in (
             'id', 'question', 'content', 'reasoning', 'status', 'references',
             'followups', 'duration_ms', 'error', 'warnings',
         )}}
+        grounding = self.settings.get('knowledge_grounding')
+        if grounding in {'grounded', 'unavailable', 'unverified'}:
+            data['knowledge_grounding'] = grounding
+        return data
 
 
 @dataclass

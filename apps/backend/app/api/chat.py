@@ -91,5 +91,6 @@ async def resume(message_id: str, owner: str = Depends(request_owner)):
     await stop_message(message)
     cursor = str(len(message.events))
     message.status, message.error, message.task = 'streaming', None, None
+    message.stop_requested = False
     await repository.persist_message(message)
     return ok({'session_id': session.id, 'message_id': message.id, 'last_event_id': cursor})

@@ -11,21 +11,23 @@ export interface SidebarChatHistoryItem {
 }
 
 export type AskSidebarAction =
-  | { type: "load"; item: SidebarChatHistoryItem }
-  | { type: "new" }
+  | { type: "reset"; requestId: number }
+  | { type: "load"; item: SidebarChatHistoryItem; targetPath?: string; requestId: number }
   | null;
 
 interface AskSidebarBridgeState {
   historyItems: SidebarChatHistoryItem[];
   activeHistoryId: string | null;
+  activeSessionId: string | null;
   pendingAction: AskSidebarAction;
   historyRefreshNonce: number;
-  setSnapshot: (
-    historyItems: SidebarChatHistoryItem[],
-    activeHistoryId: string | null,
-  ) => void;
-  requestLoad: (item: SidebarChatHistoryItem) => void;
-  requestNewChat: () => void;
+  nextActionId: number;
+  setHistoryItems: (historyItems: SidebarChatHistoryItem[]) => void;
+  setActiveHistoryId: (activeHistoryId: string | null) => void;
+  setActiveSessionId: (activeSessionId: string | null) => void;
+  removeHistoryItem: (id: string, source?: SidebarChatHistoryItem["source"]) => void;
+  requestReset: () => void;
+  requestLoad: (item: SidebarChatHistoryItem, targetPath?: string) => void;
   clearPending: () => void;
   bumpHistoryRefresh: () => void;
 }
@@ -33,12 +35,33 @@ interface AskSidebarBridgeState {
 export const useAskSidebarBridge = create<AskSidebarBridgeState>((set) => ({
   historyItems: [],
   activeHistoryId: null,
+  activeSessionId: null,
   pendingAction: null,
   historyRefreshNonce: 0,
-  setSnapshot: (historyItems, activeHistoryId) =>
-    set({ historyItems, activeHistoryId }),
-  requestLoad: (item) => set({ pendingAction: { type: "load", item } }),
-  requestNewChat: () => set({ pendingAction: { type: "new" } }),
+  nextActionId: 0,
+  setHistoryItems: (historyItems) => set({ historyItems }),
+  setActiveHistoryId: (activeHistoryId) => set({ activeHistoryId }),
+  setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
+  removeHistoryItem: (id, source) =>
+    set((state) => {
+      const matches = (item: SidebarChatHistoryItem) => item.id === id && (!source || item.source === source);
+      const activeItem = state.historyItems.find((item) => item.id === state.activeHistoryId);
+      return {
+        historyItems: state.historyItems.filter((item) => !matches(item)),
+        activeHistoryId: activeItem && matches(activeItem) ? null : state.activeHistoryId,
+        activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
+      };
+    }),
+  requestReset: () =>
+    set((state) => {
+      const requestId = state.nextActionId + 1;
+      return { nextActionId: requestId, pendingAction: { type: "reset", requestId } };
+    }),
+  requestLoad: (item, targetPath) =>
+    set((state) => {
+      const requestId = state.nextActionId + 1;
+      return { nextActionId: requestId, pendingAction: { type: "load", item, targetPath, requestId } };
+    }),
   clearPending: () => set({ pendingAction: null }),
   bumpHistoryRefresh: () =>
     set((s) => ({ historyRefreshNonce: s.historyRefreshNonce + 1 })),

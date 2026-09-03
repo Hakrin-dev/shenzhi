@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ComposerShell } from "@/features/chat/components/composer";
-import { SearchResults } from "@/features/search/components/search-results";
 import { getChatConfig } from "@/clients/backend/chat";
 import { askQueryString, saveAskDraft } from "@/features/chat/services/draft";
 import type { ComposerEntryMode } from "@/types";
@@ -15,29 +14,22 @@ const PLACEHOLDER_AI = "用自然语言提问，例如 Diffusion Policy 有什�
 /** 首页 Hero —— 简单搜索查论文库，智能搜索跳转问 AI */
 export function SearchHero({
   initialQuery = "",
-  onSearchActiveChange,
 }: {
   initialQuery?: string;
-  onSearchActiveChange?: (active: boolean) => void;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(initialQuery);
   const [entryMode, setEntryMode] = useState<ComposerEntryMode>("ai");
-  const [inlineSearch, setInlineSearch] = useState<string | null>(null);
   const [config, setConfig] = useState<ChatConfig | undefined>();
 
   useEffect(() => {
     void getChatConfig().then(setConfig);
   }, []);
 
-  useEffect(() => {
-    onSearchActiveChange?.(Boolean(inlineSearch));
-  }, [inlineSearch, onSearchActiveChange]);
-
   const send = (payload: ComposerSubmitPayload) => {
-    if (!payload.question) return;
+    if (!payload.question.trim()) return;
     if (payload.entryMode === "search") {
-      setInlineSearch(payload.question);
+      router.push(`/knowledge/search?q=${encodeURIComponent(payload.question)}`);
       return;
     }
     saveAskDraft(payload);
@@ -56,11 +48,6 @@ export function SearchHero({
         onEntryModeChange={setEntryMode}
         config={config}
       />
-      {inlineSearch && (
-        <div className="mt-6">
-          <SearchResults query={inlineSearch} />
-        </div>
-      )}
     </div>
   );
 }

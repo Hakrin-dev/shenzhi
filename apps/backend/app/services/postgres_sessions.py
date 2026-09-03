@@ -92,6 +92,7 @@ class PostgresSessionRepository:
                         followups=message.followups,
                         duration_ms=message.duration_ms,
                         error=message.error,
+                        settings=dict(message.settings),
                         completed_at=func.now(),
                     )
                 )

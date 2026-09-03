@@ -23,9 +23,9 @@ AI 生成（可选，问 AI 需要）:
 
 ```bash
 cd apps/backend
-pip install -r requirements.txt
+uv sync
 cp .env.example .env  # 在 .env 配置模型和可选搜索 Key
-uvicorn app.main:app --env-file .env --reload --port 8000
+uv run uvicorn app.main:app --env-file .env --reload --port 8000
 ```
 
 Web 环境变量 `BUSINESS_BACKEND_URL=http://127.0.0.1:8000`（仅服务端）。项目介绍见 [docs/dev/项目介绍.md](docs/dev/项目介绍.md)，进度见 [docs/dev/开发日志.md](docs/dev/开发日志.md)。
@@ -67,16 +67,24 @@ ECS:/opt/shenzhi, docker compose(80 → web:3000),约 1~3 分钟自动上线
 | `/scholars` | 学者画像(检索/排序/关注) | 深知-学者画像页.svg | [page.tsx](apps/web/app/scholars/page.tsx) |
 | `/scholars/[id]` | 学者详情(引用图表/发表列表) | 深知-学者详情页.svg | [ScholarDetailPage.tsx](apps/web/features/scholars/[id]/ScholarDetailPage.tsx) |
 | `/knowledge` | 知识库(文献库 + 在读表格) | 深知-知识库页面.svg | [KnowledgePage.tsx](apps/web/features/knowledge/KnowledgePage.tsx) |
+| `/knowledge/search` | 知识库论文检索(Simple Search) | — | [KnowledgeSearchPage.tsx](apps/web/features/knowledge/search/KnowledgeSearchPage.tsx) |
 | `/papers/[id]/graph` | 公域知识图谱(引用关系三栏页) | 知识图谱样页.png | [PaperGraphPage.tsx](apps/web/features/papers/[id]/graph/PaperGraphPage.tsx) |
 | `/knowledge/graph` | 私域知识图谱(发表×收藏分层双色) | 知识图谱样页.png | [KnowledgeGraphPage.tsx](apps/web/features/knowledge/graph/KnowledgeGraphPage.tsx) |
 | `/agents` | AI 研究助手(深度研究对话) | 深知-AI研究助手.svg | [ChatPage.tsx](apps/web/features/chat/ChatPage.tsx) |
+| `/agents/ask` | AI 研究助手(URL 会话入口) | — | [AskPage.tsx](apps/web/features/chat/ask/AskPage.tsx) |
+| `/search` | 旧搜索地址兼容重定向 | — | [page.tsx](apps/web/app/search/page.tsx) |
 
-导航联动与 `prototype_v1.html` 热区一致:搜索提交 → `/agents`;论文卡片 → `/papers/[id]`;作者/学者 → `/scholars/[id]`。
+导航联动与 `prototype_v1.html` 热区一致:简单搜索 → `/knowledge/search`;智能搜索 → `/agents/ask`;论文卡片 → `/papers/[id]`;作者/学者 → `/scholars/[id]`。
 
 ---
 
 Chat 已统一为 `features/chat → clients/backend → /api/v1 BFF → FastAPI`；`/agents` 与 `/agents/ask` 共用实现。
+简单搜索是论文检索入口，直接进入 `/knowledge/search` 的 Knowledge Search，不创建 Chat 会话或调用模型；智能搜索才进入 `/agents/ask` 的 Knowledge2Chat。
 当前 Session 为单进程临时内存数据，不绑定新的账号体系。架构、SSE、配置与边界见 [docs/chat/README.md](docs/chat/README.md)。
+
+Knowledge Base 是外部 Research Capability，FastAPI 后端统一通过
+`apps/backend/app/integrations/knowledge/` 接入。当前只承诺 Search、Paper Detail、
+Paper Graph 三项能力，不表述为完整知识底座已接入，也不在本轮接入 Chat Tool。
 
 ## 技术栈(当前实际)
 
@@ -100,7 +108,7 @@ Chat 已统一为 `features/chat → clients/backend → /api/v1 BFF → FastAPI
 shenzhi/
 ├── apps/
 │   ├── web/                  # Next.js Web；app 为薄路由，features 为页面实现
-│   └── backend/              # FastAPI：Chat / 检索 / 模型流 / 搜索 / 附件解析
+│   └── backend/              # FastAPI：Chat / 检索 / Knowledge Capability / 模型流 / 搜索 / 附件解析
 ├── infra/                    # Dockerfile、Compose 与部署文档
 ├── tests/visual/             # 页面、主题与图谱截图验证脚本
 ├── tools/brand/              # 品牌资源处理工具

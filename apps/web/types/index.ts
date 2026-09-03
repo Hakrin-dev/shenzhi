@@ -311,6 +311,7 @@ export type ComposerEntryMode = "search" | "ai";
 
 export type {
   ChatAttachment,
+  ChatCapabilities,
   ChatModelId,
   ChatReplyMode,
   ComposerSubmitPayload,

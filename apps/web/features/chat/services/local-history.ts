@@ -15,6 +15,7 @@ export interface LocalAskSession {
   mode: string;
   model: string;
   web_search: boolean;
+  knowledge_enabled?: boolean;
 }
 
 function readAll(): LocalAskSession[] {

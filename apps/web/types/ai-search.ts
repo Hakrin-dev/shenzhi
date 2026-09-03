@@ -4,6 +4,14 @@ export type ChatSessionType = "research" | "chat";
 
 export type ChatReplyMode = "fast" | "deep" | "idea" | "doubt";
 
+export interface KnowledgeCapability {
+  enabled: boolean;
+}
+
+export interface ChatCapabilities {
+  knowledge: KnowledgeCapability;
+}
+
 /** 具体大模型 ID，如 deepseek-chat、gpt-4o */
 export type ChatModelId = string;
 
@@ -40,6 +48,7 @@ export interface CreateChatSessionRequest {
   model: ChatModelId;
   web_search: boolean;
   attachments: ChatAttachment[];
+  capabilities: ChatCapabilities;
 }
 
 export interface SendChatMessageRequest {
@@ -48,6 +57,7 @@ export interface SendChatMessageRequest {
   model?: ChatModelId;
   web_search?: boolean;
   attachments?: ChatAttachment[];
+  capabilities?: ChatCapabilities;
 }
 
 export interface CreateChatSessionResponse {
@@ -58,6 +68,8 @@ export interface CreateChatSessionResponse {
 
 export type ChatMessageStatus = "streaming" | "done" | "failed" | "stopped";
 
+export type KnowledgeGroundingState = "grounded" | "unavailable" | "unverified";
+
 export type ChatSourceType =
   | "paper"
   | "patent"
@@ -67,16 +79,29 @@ export type ChatSourceType =
   | "web";
 
 export interface ChatReference {
-  ordinal: number;
-  source_type: ChatSourceType;
-  source_id: string;
+  /** Canonical Knowledge/Reference Snapshot fields. */
+  referenceId: string;
+  resourceType: ChatSourceType;
+  resourceId: string;
   title: string;
-  venue: string | null;
-  org: string | null;
-  authors: string;
-  citation_count: number;
-  recommended: boolean;
-  url: string | null;
+  content: string;
+  metadata: {
+    authors?: string[];
+    year?: number | null;
+    venue?: string | null;
+  };
+  provenance?: unknown;
+  score?: number | null;
+  /** Legacy display aliases retained while old persisted sessions drain. */
+  ordinal?: number;
+  source_type?: ChatSourceType;
+  source_id?: string;
+  venue?: string | null;
+  org?: string | null;
+  authors?: string;
+  citation_count?: number | null;
+  recommended?: boolean;
+  url?: string | null;
 }
 
 export interface StreamMetaEvent {
@@ -86,6 +111,7 @@ export interface StreamMetaEvent {
   arxiv_resolved?: number;
   context_truncated?: boolean;
   warnings?: string[];
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface StreamDeltaEvent {
@@ -104,11 +130,14 @@ export interface StreamFollowupsEvent {
 export interface StreamDoneEvent {
   duration_ms: number;
   status: ChatMessageStatus;
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface StreamErrorEvent {
-  code: number;
+  code: number | string;
   message: string;
+  category?: string;
+  knowledge_code?: string;
 }
 
 export interface ChatModelOption {
@@ -145,7 +174,7 @@ export interface ApiEnvelope<T> {
   message?: string;
 }
 
-/** 首页分流仍用 entryMode；发给生成接口的是 question / mode / model / web_search / attachments */
+/** Composer payload；Chat adapter 会补充 capabilities。 */
 export interface ComposerSubmitPayload {
   entryMode: "search" | "ai";
   question: string;
@@ -164,6 +193,7 @@ export interface ChatSessionSummary {
   mode: ChatReplyMode;
   model: ChatModelId;
   web_search: boolean;
+  capabilities?: ChatCapabilities;
 }
 
 export interface ChatStoredMessage {
@@ -178,6 +208,7 @@ export interface ChatStoredMessage {
   duration_ms: number;
   error: string | null;
   warnings: string[];
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {

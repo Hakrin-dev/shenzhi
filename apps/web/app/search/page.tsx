@@ -1,4 +1,4 @@
-import { SearchPage } from "@/features/search/SearchPage";
+import { redirect } from "next/navigation";
 
 export default async function Page({
   searchParams,
@@ -7,5 +7,6 @@ export default async function Page({
 }) {
   const { q = "" } = await searchParams;
 
-  return <SearchPage query={q} />;
+  const query = q.trim();
+  redirect(query ? `/knowledge/search?q=${encodeURIComponent(query)}` : "/knowledge/search");
 }

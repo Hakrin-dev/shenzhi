@@ -15,6 +15,9 @@ import {
 import { cn } from "@/lib/utils";
 import { deleteChatSession, listChatSessions, updateChatSession } from "@/clients/backend/chat";
 import { deleteLocalAskSession, listLocalAskSessions } from "@/features/chat/services/local-history";
+import { isMissingSessionError, messageForApiError } from "@/features/chat/services/errors";
+import { mergeHistorySources } from "@/features/chat/services/history-snapshot";
+import { askSessionUrl } from "@/features/chat/services/session-url";
 import {
   useAskSidebarBridge,
   type SidebarChatHistoryItem,
@@ -22,27 +25,6 @@ import {
 import { useSidebarStore } from "@/stores/sidebar";
 
 const HISTORY_KEY = "/agents/history";
-
-function mergeHistory(
-  db: Awaited<ReturnType<typeof listChatSessions>>["sessions"],
-  local: ReturnType<typeof listLocalAskSessions>,
-): SidebarChatHistoryItem[] {
-  return [
-    ...db.map((s) => ({
-      id: s.id,
-      title: s.title,
-      updatedAt: s.updated_at,
-      source: "db" as const,
-      favorite: s.favorite,
-    })),
-    ...local.map((s) => ({
-      id: s.id,
-      title: s.title,
-      updatedAt: s.updatedAt,
-      source: "local" as const,
-    })),
-  ].sort((a, b) => b.updatedAt - a.updatedAt);
-}
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -62,36 +44,55 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
   const router = useRouter();
   const bridgeItems = useAskSidebarBridge((s) => s.historyItems);
   const activeId = useAskSidebarBridge((s) => s.activeHistoryId);
+  const setActiveSessionId = useAskSidebarBridge((s) => s.setActiveSessionId);
   const refreshNonce = useAskSidebarBridge((s) => s.historyRefreshNonce);
+  const requestReset = useAskSidebarBridge((s) => s.requestReset);
   const requestLoad = useAskSidebarBridge((s) => s.requestLoad);
-  const requestNewChat = useAskSidebarBridge((s) => s.requestNewChat);
+  const clearPending = useAskSidebarBridge((s) => s.clearPending);
   const bumpHistoryRefresh = useAskSidebarBridge((s) => s.bumpHistoryRefresh);
   const storedOpen = useSidebarStore((s) => s.expanded[HISTORY_KEY]);
   const setExpanded = useSidebarStore((s) => s.setExpanded);
   const open = storedOpen ?? false;
 
-  const [fetched, setFetched] = useState<SidebarChatHistoryItem[]>([]);
   const [pending, setPending] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
+  const refreshSequence = useRef(0);
+
+  const setHistoryItems = useAskSidebarBridge((s) => s.setHistoryItems);
+  const removeHistoryItem = useAskSidebarBridge((s) => s.removeHistoryItem);
 
   const refresh = useCallback(() => {
+    const requestId = ++refreshSequence.current;
+    setHistoryError(null);
     void listChatSessions()
-      .then((data) => setFetched(mergeHistory(data.sessions, listLocalAskSessions())))
-      .catch(() => setFetched(mergeHistory([], listLocalAskSessions())));
-  }, []);
+      .then((data) => {
+        if (requestId !== refreshSequence.current) return;
+        // The backend response is authoritative. In particular, [] must
+        // replace an old bridge snapshot after a Memory repository restart.
+        setHistoryItems(mergeHistorySources(data.sessions, listLocalAskSessions()));
+      })
+      .catch((error) => {
+        if (requestId !== refreshSequence.current) return;
+        setHistoryItems(mergeHistorySources([], listLocalAskSessions()));
+        setHistoryError(messageForApiError(error));
+      });
+  }, [setHistoryItems]);
 
   useEffect(() => {
-    refresh();
+    queueMicrotask(refresh);
   }, [refresh, pathname, refreshNonce]);
 
   useEffect(() => {
     if (editingId) editRef.current?.focus();
   }, [editingId]);
 
-  const items = bridgeItems.length > 0 ? bridgeItems : fetched;
+  // The bridge is the single rendered snapshot. Never fall back to a stale
+  // local component copy when the authoritative backend list is empty.
+  const items = bridgeItems;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
@@ -101,22 +102,33 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
   const onAgentRoute = pathname === "/agents" || pathname.startsWith("/agents/ask");
 
   const openSession = (item: SidebarChatHistoryItem) => {
-    requestLoad(item);
-    if (pathname !== "/agents") router.push("/agents");
+    if (item.source === "db") {
+      clearPending();
+      router.push(askSessionUrl(item.id));
+      return;
+    }
+    setActiveSessionId(null);
+    requestLoad(item, "/agents");
+    const actualPathname = typeof window === "undefined" ? pathname : window.location.pathname;
+    if (actualPathname !== "/agents") router.push("/agents");
   };
 
   const newChat = () => {
-    requestNewChat();
-    router.push("/agents");
+    setActiveSessionId(null);
+    requestReset();
+    router.push(askSessionUrl(null));
   };
 
   const mutate = async (fn: () => Promise<void>) => {
     if (pending) return;
     setPending(true);
+    setHistoryError(null);
     try {
       await fn();
       refresh();
       bumpHistoryRefresh();
+    } catch (error) {
+      setHistoryError(messageForApiError(error));
     } finally {
       setPending(false);
     }
@@ -132,8 +144,8 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
       await updateChatSession(id, { title });
       refresh();
       bumpHistoryRefresh();
-    } catch {
-      refresh();
+    } catch (error) {
+      setHistoryError(messageForApiError(error));
     }
   };
 
@@ -192,6 +204,12 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
               className="h-8 w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
             />
           </div>
+
+          {historyError && (
+            <p role="alert" className="px-2 py-1 text-[12px] text-rose-500">
+              {historyError}
+            </p>
+          )}
 
           <div className="scrollbar-subtle max-h-48 space-y-0.5 overflow-y-auto py-0.5">
             {filtered.length === 0 ? (
@@ -285,14 +303,29 @@ export function SidebarChatHistory({ collapsed }: { collapsed?: boolean }) {
                             if (!window.confirm(`删除会话「${item.title}」？`)) return;
                             if (item.source === "db") {
                               void mutate(async () => {
-                                await deleteChatSession(item.id);
-                                if (activeId === item.id) requestNewChat();
+                                try {
+                                  await deleteChatSession(item.id);
+                                } catch (error) {
+                                  // DELETE is idempotent from the UI's point
+                                  // of view: a missing backend session already
+                                  // satisfies the desired final state.
+                                  if (!isMissingSessionError(error)) throw error;
+                                }
+                                removeHistoryItem(item.id, "db");
+                                if (activeId === item.id) {
+                                  requestReset();
+                                  router.push(askSessionUrl(null));
+                                }
                               });
                             } else {
                               deleteLocalAskSession(item.id);
+                              removeHistoryItem(item.id, "local");
                               refresh();
                               bumpHistoryRefresh();
-                              if (activeId === item.id) requestNewChat();
+                              if (activeId === item.id) {
+                                requestReset();
+                                router.push(askSessionUrl(null));
+                              }
                             }
                           }}
                           className="rounded-md bg-card p-1 text-faint shadow-sm ring-1 ring-line/60 hover:text-rose-500"

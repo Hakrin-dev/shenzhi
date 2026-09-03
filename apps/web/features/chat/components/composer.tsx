@@ -216,6 +216,7 @@ export function ComposerShell({
   onAttachmentsChange,
   config = FALLBACK_CHAT_CONFIG,
   busy = false,
+  disabled = false,
   onStop,
 }: {
   value: string;
@@ -235,11 +236,13 @@ export function ComposerShell({
   onAttachmentsChange?: (items: ChatAttachment[]) => void;
   config?: ChatConfig;
   busy?: boolean;
+  /** Blocks interaction while URL session hydration/stop confirmation runs. */
+  disabled?: boolean;
   onStop?: () => void;
 }) {
   const isHome = variant === "home";
   const [uploading, setUploading] = useState(false);
-  const canSend = Boolean(value.trim()) && !busy && !uploading;
+  const canSend = Boolean(value.trim()) && !busy && !disabled && !uploading;
 
   const [innerEntryMode, setInnerEntryMode] = useState<ComposerEntryMode>("ai");
   const [innerMode, setInnerMode] = useState<ChatReplyMode>("fast");
@@ -253,7 +256,7 @@ export function ComposerShell({
   const replyMode = replyModeProp ?? innerMode;
   const entryMode = entryModeProp ?? innerEntryMode;
   const setEntryMode = onEntryModeChange ?? setInnerEntryMode;
-  const isSmartSearch = !isHome || entryMode === "ai";
+  const isSmartSearch = entryMode === "ai";
   const depthMode =
     replyMode === "deep" || replyMode === "fast"
       ? (replyMode as "fast" | "deep")
@@ -295,7 +298,7 @@ export function ComposerShell({
 
   const submit = (intent?: ComposerEntryMode) => {
     const parsed = questionSchema.safeParse(value);
-    if (!parsed.success || busy || uploading) return;
+    if (!parsed.success || busy || disabled || uploading) return;
     onSend(buildPayload(intent));
   };
 
@@ -311,7 +314,7 @@ export function ComposerShell({
                 setAttachments(attachments.filter((_, idx) => idx !== i))
               }
               className="rounded-full bg-chip px-2.5 py-1 text-[11px] text-ink-2 hover:bg-panel"
-              disabled={uploading || busy}
+              disabled={uploading || busy || disabled}
               title={item.warning ? `${item.warning} · 点击移除` : "移除"}
             >
               {item.warning ? "⚠ " : ""}{item.title ?? item.ref_id ?? item.file_id ?? item.kind}
@@ -322,6 +325,7 @@ export function ComposerShell({
 
       <textarea
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (
@@ -330,7 +334,7 @@ export function ComposerShell({
             !e.nativeEvent.isComposing
           ) {
             e.preventDefault();
-            if (busy) return;
+            if (busy || disabled) return;
             if (isHome && entryMode === "search") {
               submit("search");
               return;
@@ -349,12 +353,10 @@ export function ComposerShell({
       />
 
       <div className="mt-1.5 flex items-center gap-1.5">
-        {isHome && (
-          <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
-        )}
+        <SearchModeSwitch mode={entryMode} onChange={setEntryMode} />
         <PlusMenu webSearch={webSearch} onWebSearchChange={setWebSearch} />
         <AttachmentMenu
-          disabled={busy}
+          disabled={busy || disabled}
           onUploadingChange={setUploading}
           accept={config.upload.accept.join(",")}
           maxFiles={Math.max(0, config.upload.max_files - attachments.length)}
