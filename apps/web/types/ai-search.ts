@@ -68,6 +68,8 @@ export interface CreateChatSessionResponse {
 
 export type ChatMessageStatus = "streaming" | "done" | "failed" | "stopped";
 
+export type KnowledgeGroundingState = "grounded" | "unavailable" | "unverified";
+
 export type ChatSourceType =
   | "paper"
   | "patent"
@@ -109,6 +111,7 @@ export interface StreamMetaEvent {
   arxiv_resolved?: number;
   context_truncated?: boolean;
   warnings?: string[];
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface StreamDeltaEvent {
@@ -127,6 +130,7 @@ export interface StreamFollowupsEvent {
 export interface StreamDoneEvent {
   duration_ms: number;
   status: ChatMessageStatus;
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface StreamErrorEvent {
@@ -204,6 +208,7 @@ export interface ChatStoredMessage {
   duration_ms: number;
   error: string | null;
   warnings: string[];
+  knowledge_grounding?: KnowledgeGroundingState;
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {

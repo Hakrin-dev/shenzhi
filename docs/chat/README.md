@@ -51,22 +51,35 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 Chat API 边界转换为 `capabilities.knowledge.enabled`；Chat 核心不读取该旧字段。
 文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
 
+### Simple Search / Smart Search
+
+两种入口是不同的产品能力，不是同一个 Chat 的不同回答强度：
+
+- Simple Search（简单搜索）是 Paper Search Engine。用户输入学者、领域、标题或主题关键词后，页面直接导航到 `/knowledge/search?q=...`，由 `features/knowledge/search` 调用 `clients/knowledge`，经同源 Next.js BFF 到 FastAPI Knowledge，展示真实论文结果。它不调用 `ModelProvider`，不创建 Chat Session/Message，不进入 Knowledge2Chat，也不对 Knowledge 失败做 LLM fallback；零结果和服务错误分别显示 Search Empty / Search Error。
+- Smart Search（智能搜索）是 Knowledge-grounded AI。它进入 `/agents/ask`，由 Chat 创建或继续会话，调用 Knowledge2Chat，再由模型生成带 Citation/Sources 的回答；Knowledge 不可用时沿用下文定义的透明普通回答降级。
+
+旧 `/search` 地址只做兼容重定向到 `/knowledge/search`，不再保留一套 inline Chat/Search 结果实现。
+
 ### Knowledge2Chat
 
-智能搜索开启时，`services/chat` 使用用户原始问题调用现有
+智能搜索开启时，`services/chat` 只对 Knowledge 检索 query 做少量确定性的问答壳归一化
+（不调用 LLM、不翻译、不改写原始消息），然后调用现有
 `services/knowledge → integrations/knowledge` Capability。SearchResponse 经
 `knowledge_context.KnowledgeContextBuilder` 过滤无 abstract 的结果、按现有返回顺序
 选取 Top-K，并生成稳定的 `referenceId`。原始论文 title、abstract 和必要 metadata
 只在运行时格式化为 `<reference_data>`，随本轮模型输入发送；用户原始问题本身不拼接
 该块。Chat 问题仍保存 1–2000 字原文；Knowledge 检索的 query 上限为 500 字，超过时
-明确返回 Knowledge `INVALID_ARGUMENT`，不截断、不调用模型。运行时资料使用确定性的
+按 Knowledge 不可用处理并走一次普通模型 fallback。运行时资料使用确定性的
 48,000 字符总预算和每篇摘要 4,000 字符上限；超限只截取
 runtime prefix，不调用 LLM 做摘要。Reference Snapshot 仍保存上游原始 abstract，便于
 历史恢复和 Sources 展示；资料中的换行和 delimiter 字符会被转义为数据文本。
 
 关闭智能搜索时不调用 Knowledge Capability，直接走普通 Chat。开启后若没有可用
-Evidence、Knowledge timeout 或 upstream unavailable，不降级为普通 Chat，而是在 SSE
-中返回可识别的 Knowledge retrieval error。`message_refs` 复用现有 JSONB 字段保存本轮
+Evidence、没有 usable abstract、Knowledge timeout 或 upstream unavailable，Chat 走一次
+不带 Knowledge `reference_data` 的普通模型回答，并在 metadata/warning 中明确“未使用知识
+底座”。有 Evidence 时首轮回答必须完整缓冲，只有出现至少一个可验证 `[n]` 才向前端发送；
+否则丢弃首轮文本，最多再调用一次不带 `reference_data` 的普通模型，标记为未形成可验证引用。
+两条路径都禁止伪造引用，单轮最多两次模型调用。`message_refs` 复用现有 JSONB 字段保存本轮
 实际使用的 Reference Snapshot（`referenceId/resourceType/resourceId/title/content/metadata`），
 因此不需要单独的 Knowledge2Chat migration。
 
@@ -82,15 +95,15 @@ data: {"text":"正文增量","reasoning":"可选推理增量"}
 
 | 事件 | 主要字段 | 语义 |
 | --- | --- | --- |
-| `meta` | `phase`, `read_count`, `ephemeral`, `warnings`, `context_truncated` | 阶段/来源数/临时存储/非致命告警 |
+| `meta` | `phase`, `read_count`, `ephemeral`, `warnings`, `context_truncated`, `knowledge_grounding` | 阶段/来源数/临时存储/非致命告警/Knowledge 状态 |
 | `delta` | `text?`, `reasoning?` | 增量追加，不是全文替换 |
 | `refs` | `references[]` | `referenceId/resourceType/resourceId` 来源快照；空数组不显示假引用 |
 | `followups` | `items[]` | 模型生成追问；失败可为空，不影响答案 |
 | `error` | `code:number`, `message`, `category?`, `knowledge_code?` | 致命错误，UI 标记失败 |
-| `done` | `duration_ms`, `status` | 终止状态 `done/stopped/failed` |
+| `done` | `duration_ms`, `status`, `knowledge_grounding?` | 终止状态 `done/stopped/failed` 与可选 Knowledge 状态 |
 
 正常：`meta → refs → meta → delta* → followups → done`。失败：`error → done(failed)`。间歇发送 SSE 注释 heartbeat。
-上游 `content` / `reasoning_content` 在 FastAPI 转换为 `delta`；Web 没有 A/B 模式或 `token/sources/thinking` 分支。
+上游 `content` / `reasoning_content` 在 FastAPI 转换为 `delta`；Web 只消费这一套 SSE 协议，Simple/Smart 是入口产品边界，不分叉为另一套流事件协议。
 
 重连只重放已有事件，不重复调用模型。续写保留同一消息 ID / 正文 / 推理 / 引用序号，返回 `last_event_id`；Client 用此游标只读新增事件。续写通过模型的继续提示实现，不承诺供应商字节级恢复。最后一个流订阅断开、用户 Stop 或应用退出都会取消模型 I/O。当前只允许续写会话最近一轮。
 

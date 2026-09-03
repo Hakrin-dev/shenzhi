@@ -1,5 +1,6 @@
 """Knowledge-backed Chat contract and orchestration tests."""
 
+import json
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -23,6 +24,20 @@ OWNER = {
     "x-shenzhi-anonymous-id": "00000000-0000-4000-8000-000000000101",
 }
 OWNER_KEY = "anon:00000000-0000-4000-8000-000000000101"
+
+
+def _events(text: str):
+    result = []
+    for block in text.split("\n\n"):
+        kind = data = None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                kind = line[7:]
+            if line.startswith("data: "):
+                data = json.loads(line[6:])
+        if kind:
+            result.append((kind, data))
+    return result
 
 
 def _context_api():
@@ -67,10 +82,13 @@ class RecordingKnowledge:
 
 class RecordingProvider:
     calls = []
+    answer = "依据 [1] 和 [99] 的回答。"
+    answers = []
 
     async def stream(self, messages, model, mode):
         self.calls.append(messages)
-        yield {"text": "依据 [1] 和 [99] 的回答。"}
+        answer = self.answers.pop(0) if self.answers else self.answer
+        yield {"text": answer}
 
     async def followups(self, question, answer):
         return []
@@ -158,6 +176,20 @@ class KnowledgeContextTests(unittest.TestCase):
 
         self.assertEqual(invalid, ["99"])
 
+    def test_valid_citation_ids_are_deduplicated(self):
+        builder_cls, _, _ = _context_api()
+        from app.services.knowledge_context import citation_reference_ids
+
+        bundle = builder_cls().build(KnowledgeSearchResponse(results=[
+            _paper("opaque-a", "Paper A", "Abstract A"),
+            _paper("opaque-b", "Paper B", "Abstract B"),
+        ]))
+
+        self.assertEqual(
+            citation_reference_ids("依据 [1]、[1] 和未知资料 [99]", bundle),
+            ["1"],
+        )
+
 
 class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -171,6 +203,8 @@ class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
         self.env.start()
         await repository.clear()
         RecordingProvider.calls = []
+        RecordingProvider.answer = "依据 [1] 和 [99] 的回答。"
+        RecordingProvider.answers = []
         self.provider_patch = patch.object(chat, "ModelProvider", RecordingProvider)
         self.provider_patch.start()
         self.knowledge = RecordingKnowledge(KnowledgeSearchResponse(results=[
@@ -216,12 +250,80 @@ class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<reference_data>", RecordingProvider.calls[0][-1]["content"])
         self.assertIn('"status": "done"', stream)
 
-    async def test_knowledge_enabled_searches_with_original_question(self):
-        created, stream = await self._create_and_stream(enabled=True, question="原始问题不要改写")
+    async def test_knowledge_answer_without_valid_citation_uses_one_ordinary_fallback(self):
+        candidate = "第一轮不可验证的回答，不应提前发送。"
+        fallback = "普通模型回答，未使用知识底座。"
+        RecordingProvider.answers = [candidate, fallback]
+
+        created, stream = await self._create_and_stream(enabled=True)
+        message = await repository.message(created["message_id"], OWNER_KEY)
+
+        self.assertEqual(len(RecordingProvider.calls), 2)
+        self.assertNotIn(candidate, stream)
+        self.assertIn(fallback, stream)
+        self.assertIn("本轮未能形成可验证的知识引用", stream)
+        self.assertIn('"knowledge_grounding": "unverified"', stream)
+        self.assertEqual(message.status, "done")
+        self.assertEqual(message.settings.get("knowledge_grounding"), "unverified")
+        self.assertNotIn("KNOWLEDGE_GROUNDING_FAILED", stream)
+
+    async def test_no_valid_citation_does_not_emit_candidate_even_if_it_mentions_unknown_id(self):
+        candidate = "只有未知引用 [99] 的候选回答。"
+        fallback = "不带引用的普通回答。"
+        RecordingProvider.answers = [candidate, fallback]
+
+        created, stream = await self._create_and_stream(enabled=True)
+        message = await repository.message(created["message_id"], OWNER_KEY)
+
+        self.assertNotIn(candidate, stream)
+        self.assertIn(fallback, stream)
+        self.assertEqual(message.status, "done")
+        self.assertTrue(any("可验证的知识引用" in warning for warning in message.warnings))
+
+    async def test_knowledge_answer_with_one_valid_citation_succeeds(self):
+        RecordingProvider.answer = "Transformer 的核心是自注意力机制 [1]。"
+
+        created, stream = await self._create_and_stream(enabled=True)
+        message = await repository.message(created["message_id"], OWNER_KEY)
+
+        self.assertIn('"status": "done"', stream)
+        self.assertNotIn("KNOWLEDGE_GROUNDING_FAILED", stream)
+        self.assertIn('"knowledge_grounding": "grounded"', stream)
+        self.assertEqual(message.settings.get("knowledge_grounding"), "grounded")
+        self.assertEqual(len(RecordingProvider.calls), 1)
+
+    async def test_repeated_valid_citation_still_succeeds(self):
+        RecordingProvider.answer = "结论 [1]，补充说明 [1]。"
+
+        _, stream = await self._create_and_stream(enabled=True)
+
+        self.assertIn('"status": "done"', stream)
+
+    async def test_only_unknown_citation_degrades_without_fake_citation(self):
+        RecordingProvider.answers = ["这个结论来自资料 [99]。", "普通回答。"]
+
+        created, stream = await self._create_and_stream(enabled=True)
+        message = await repository.message(created["message_id"], OWNER_KEY)
+
+        self.assertNotIn("这个结论来自资料 [99]", stream)
+        self.assertIn("普通回答。", stream)
+        self.assertIn('"knowledge_grounding": "unverified"', stream)
+        self.assertEqual(message.status, "done")
+
+    async def test_knowledge_disabled_citation_free_answer_remains_ordinary_success(self):
+        RecordingProvider.answer = "普通模型回答，不需要来源。"
+
+        _, stream = await self._create_and_stream(enabled=False)
+
+        self.assertIn('"status": "done"', stream)
+
+    async def test_knowledge_enabled_normalizes_only_the_retrieval_query(self):
+        created, stream = await self._create_and_stream(enabled=True, question="用一句话解释 Transformer。")
 
         self.assertEqual(len(self.knowledge.calls), 1)
-        self.assertEqual(self.knowledge.calls[0].query, "原始问题不要改写")
+        self.assertEqual(self.knowledge.calls[0].query, "Transformer")
         provider_user = RecordingProvider.calls[-1][-1]["content"]
+        self.assertIn("用一句话解释 Transformer。", provider_user)
         self.assertIn("Paper A", provider_user)
         self.assertIn("Original abstract A", provider_user)
         self.assertIn('"referenceId": "1"', stream)
@@ -240,26 +342,34 @@ class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
         )).json()["data"]
         self.assertTrue(detail["capabilities"]["knowledge"]["enabled"])
 
-    async def test_zero_results_fail_closed_without_model_fallback(self):
+    async def test_zero_results_fall_back_to_ordinary_answer_with_warning(self):
         self.knowledge.response = KnowledgeSearchResponse(results=[])
+        RecordingProvider.answer = "没有知识资料时的普通回答。"
 
-        _, stream = await self._create_and_stream(enabled=True)
+        created, stream = await self._create_and_stream(enabled=True)
+        message = await repository.message(created["message_id"], OWNER_KEY)
 
-        self.assertEqual(len(RecordingProvider.calls), 0)
-        self.assertIn("未检索到可用于回答的知识底座资料", stream)
+        self.assertEqual(len(RecordingProvider.calls), 1)
+        self.assertNotIn("<reference_data>", RecordingProvider.calls[0][-1]["content"])
+        self.assertIn("本轮未检索到可用于回答的知识资料", stream)
+        self.assertIn('"knowledge_grounding": "unavailable"', stream)
+        self.assertEqual(message.status, "done")
+        self.assertEqual(message.references, [])
 
-    async def test_unusable_abstracts_fail_closed_without_model_fallback(self):
+    async def test_unusable_abstracts_fall_back_to_ordinary_answer_with_warning(self):
         self.knowledge.response = KnowledgeSearchResponse(results=[
             _paper("no-abstract", "No Abstract", None),
             _paper("blank-abstract", "Blank Abstract", " "),
         ])
+        RecordingProvider.answer = "没有可用摘要时的普通回答。"
 
         _, stream = await self._create_and_stream(enabled=True)
 
-        self.assertEqual(len(RecordingProvider.calls), 0)
-        self.assertIn("未检索到可用于回答的知识底座资料", stream)
+        self.assertEqual(len(RecordingProvider.calls), 1)
+        self.assertIn("本轮未检索到可用于回答的知识资料", stream)
+        self.assertIn('"knowledge_grounding": "unavailable"', stream)
 
-    async def test_knowledge_timeout_is_retrieval_error_without_model_fallback(self):
+    async def test_knowledge_timeout_falls_back_to_ordinary_answer_with_warning(self):
         self.knowledge.error = KnowledgeServiceError(
             KnowledgeError(
                 code="TIMEOUT",
@@ -270,13 +380,14 @@ class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
             status_code=504,
         )
 
+        RecordingProvider.answer = "检索超时时的普通回答。"
         _, stream = await self._create_and_stream(enabled=True)
 
-        self.assertEqual(len(RecordingProvider.calls), 0)
-        self.assertIn("知识检索失败", stream)
-        self.assertIn("知识底座请求超时", stream)
+        self.assertEqual(len(RecordingProvider.calls), 1)
+        self.assertIn("知识检索服务暂时不可用", stream)
+        self.assertIn('"knowledge_grounding": "unavailable"', stream)
 
-    async def test_knowledge_upstream_unavailable_is_not_normal_chat(self):
+    async def test_knowledge_upstream_unavailable_falls_back_to_ordinary_answer(self):
         self.knowledge.error = KnowledgeServiceError(
             KnowledgeError(
                 code="UPSTREAM_UNAVAILABLE",
@@ -287,18 +398,21 @@ class Knowledge2ChatTests(unittest.IsolatedAsyncioTestCase):
             status_code=503,
         )
 
+        RecordingProvider.answer = "知识服务不可用时的普通回答。"
         _, stream = await self._create_and_stream(enabled=True)
 
-        self.assertEqual(len(RecordingProvider.calls), 0)
-        self.assertIn("知识检索失败", stream)
-        self.assertIn("知识底座暂不可用", stream)
+        self.assertEqual(len(RecordingProvider.calls), 1)
+        self.assertIn("知识检索服务暂时不可用", stream)
+        self.assertIn('"knowledge_grounding": "unavailable"', stream)
 
-    async def test_knowledge_query_limit_is_a_clear_fail_closed_error(self):
-        _, stream = await self._create_and_stream(enabled=True, question="问题" * 300)
+    async def test_knowledge_query_limit_falls_back_without_changing_chat_question(self):
+        question = "问题" * 300
+        RecordingProvider.answer = "问题过长时的普通回答。"
+        created, stream = await self._create_and_stream(enabled=True, question=question)
 
-        self.assertEqual(len(RecordingProvider.calls), 0)
-        self.assertIn("知识检索失败", stream)
-        self.assertIn("500", stream)
+        self.assertEqual(len(RecordingProvider.calls), 1)
+        self.assertIn(question, (await repository.message(created["message_id"], OWNER_KEY)).question)
+        self.assertIn("本轮未检索到可用于回答的知识资料", stream)
 
     async def test_legacy_smart_search_is_only_an_api_adapter(self):
         created = await self.client.post(

@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/common/layout/app-shell";
+import { normalizeInternalReturnTo } from "@/lib/navigation/internal-return-to";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +35,8 @@ function doiHref(doi: string): string {
 }
 
 /** 论文详情页 `/knowledge/search/[paperId]` */
-export function KnowledgePaperDetailPage({ paperId }: { paperId: string }) {
+export function KnowledgePaperDetailPage({ paperId, returnTo }: { paperId: string; returnTo?: string | null }) {
+  const safeReturnTo = normalizeInternalReturnTo(returnTo);
   const { data: paper, isPending, isError, error, refetch } = useQuery({
     queryKey: ["knowledge", "paper", paperId],
     queryFn: () => fetchPaper(paperId),
@@ -45,11 +47,11 @@ export function KnowledgePaperDetailPage({ paperId }: { paperId: string }) {
     <AppShell>
       <div className="mx-auto max-w-[860px] px-6 py-8 lg:px-8">
         <Link
-          href="/knowledge/search"
+          href={safeReturnTo ?? "/knowledge/search"}
           className="inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-primary"
         >
           <ArrowLeft className="size-4" />
-          返回论文检索
+          {safeReturnTo ? "返回对话" : "返回论文检索"}
         </Link>
 
         {isPending && (

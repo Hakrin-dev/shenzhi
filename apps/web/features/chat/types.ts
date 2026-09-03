@@ -5,6 +5,7 @@ import type {
   ChatModelId,
   ChatReference,
   ChatReplyMode,
+  KnowledgeGroundingState,
 } from "../../types/ai-search";
 
 export interface ChatTurn {
@@ -20,7 +21,17 @@ export interface ChatTurn {
   readCount?: number;
   durationMs?: number;
   messageId?: string;
+  lastEventId?: string;
+  resumeFromStreaming?: boolean;
   error?: string;
+  knowledgeGrounding?: KnowledgeGroundingState;
+}
+
+export interface ChatSessionPreferences {
+  mode: ChatReplyMode;
+  model: ChatModelId;
+  webSearch: boolean;
+  entryMode: "search" | "ai";
 }
 
 export interface ChatSendInput {

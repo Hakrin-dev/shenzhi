@@ -5,6 +5,7 @@ import uuid
 
 from sqlalchemy import select
 
+from app.core.errors import BusinessError
 from app.core.database import session_scope
 from app.models.chat import ChatMessageRow
 from app.services.postgres_sessions import PostgresSessionRepository
@@ -70,6 +71,17 @@ class MemoryRepositoryAsyncTests(unittest.IsolatedAsyncioTestCase):
         await repo.persist_message(message)
         listed = await repo.list('user:a')
         self.assertEqual(len(listed), 1)
+
+    async def test_backend_restart_makes_old_memory_session_a_normal_404(self):
+        old_repo = MemorySessionRepository()
+        session = await old_repo.create('user:a', 'q', {'type': 'chat', 'mode': 'fast', 'model': 'm', 'web_search': False})
+        restarted_repo = MemorySessionRepository()
+
+        with self.assertRaises(BusinessError) as caught:
+            await restarted_repo.get(session.id, 'user:a')
+
+        self.assertEqual(caught.exception.status, 404)
+        self.assertEqual(caught.exception.message, '会话不存在或已过期')
 
 
 if __name__ == '__main__':

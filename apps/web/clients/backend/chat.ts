@@ -90,16 +90,17 @@ export function sendChatMessage(
   );
 }
 
-export function stopChatMessage(messageId: string) {
+export function stopChatMessage(messageId: string, init?: RequestInit) {
   return apiJson<{ ok: boolean }>(`/chat/messages/${messageId}/stop`, {
     method: "POST",
+    ...init,
   });
 }
 
-export function resumeChatMessage(messageId: string) {
+export function resumeChatMessage(messageId: string, init?: RequestInit) {
   return apiJson<CreateChatSessionResponse>(
     `/chat/messages/${messageId}/resume`,
-    { method: "POST" },
+    { method: "POST", ...init },
   );
 }
 
@@ -189,8 +190,8 @@ export function listChatSessions() {
   return apiJson<{ sessions: ChatSessionSummary[]; ephemeral: boolean }>("/chat/sessions");
 }
 
-export function getChatSession(id: string) {
-  return apiJson<ChatSessionDetail>(`/chat/sessions/${encodeURIComponent(id)}`);
+export function getChatSession(id: string, init?: RequestInit) {
+  return apiJson<ChatSessionDetail>(`/chat/sessions/${encodeURIComponent(id)}`, init);
 }
 
 export function updateChatSession(id: string, patch: { title?: string; favorite?: boolean }) {

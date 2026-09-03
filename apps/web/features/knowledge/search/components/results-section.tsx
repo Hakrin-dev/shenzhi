@@ -13,8 +13,7 @@ import {
 } from "./search-states";
 
 async function fetchSearch(params: KnowledgeSearchParams) {
-  const client = getKnowledgeClient();
-  return client.search(params);
+  return getKnowledgeClient().search(params);
 }
 
 /** 论文搜索结果区 —— 负责 loading / empty / error 三种状态的区分 */

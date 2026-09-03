@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Copy, RotateCcw, Sparkles } from "lucide-react";
 import type { ChatTurn } from "../types";
+import { referenceIdOf } from "../services/reference-navigation";
 import { CitationScope } from "./citations";
 import { ErrorBubble } from "./error-bubble";
 import { MarkdownContent } from "./markdown-content";
@@ -18,14 +19,20 @@ function AssistantTurn({ turn, canResume, busy, onResume, onFollowup }: {
   onFollowup: (question: string) => void;
 }) {
   const [copyState, setCopyState] = useState("");
-  const streaming = turn.status === "streaming";
+  // A persisted status is historical data. Only the current hook-owned
+  // generation may make a turn render as actively streaming.
+  const streaming = busy && turn.status === "streaming";
   const failed = turn.status === "failed";
   const stopped = turn.status === "stopped";
   const warnings = turn.warnings ?? [];
   const followups = turn.followups ?? [];
+  const citationEnabled = !turn.knowledgeGrounding
+    || turn.knowledgeGrounding === "grounded";
 
   return (
-    <CitationScope referenceIds={turn.references.map((reference) => reference.referenceId ?? reference.ordinal ?? "")}>
+    <CitationScope referenceIds={citationEnabled
+      ? turn.references.map((reference) => referenceIdOf(reference) ?? "")
+      : []}>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft">
           <Sparkles className="size-4 text-primary" />
@@ -38,6 +45,7 @@ function AssistantTurn({ turn, canResume, busy, onResume, onFollowup }: {
               durationMs={turn.durationMs}
               warnings={warnings}
               streaming={streaming}
+              knowledgeGrounding={turn.knowledgeGrounding}
             />
           )}
 
@@ -81,7 +89,11 @@ function AssistantTurn({ turn, canResume, busy, onResume, onFollowup }: {
             </div>
           )}
 
-          <ReferenceGrid references={turn.references ?? []} />
+          <ReferenceGrid
+            references={turn.references ?? []}
+            answer={turn.content}
+            knowledgeGrounding={turn.knowledgeGrounding}
+          />
 
           <div className="flex gap-3 text-xs text-muted">
             {turn.content && (

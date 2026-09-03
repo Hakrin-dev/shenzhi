@@ -29,7 +29,7 @@ class FakeProvider:
     async def stream(self, messages, model, mode):
         self.calls.append(messages)
         yield {'reasoning': '分析过程'}
-        yield {'text': '这是一个带公式 $x^2$ 的回答，用于验证流式输出。'}
+        yield {'text': '这是一个带公式 $x^2$ 的回答，用于验证流式输出 [1]。'}
     async def followups(self, question, answer):
         return ['继续解释？', '如何验证？']
 

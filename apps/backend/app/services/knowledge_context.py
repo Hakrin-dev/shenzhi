@@ -248,13 +248,30 @@ def format_reference_data(
     return format_reference_data_with_status(bundle, max_chars=max_chars).text
 
 
+def _citation_ids(answer: str) -> Iterable[str]:
+    return (match.group(1) for match in re.finditer(r"\[(\d+)\]", answer))
+
+
+def citation_reference_ids(
+    answer: str,
+    bundle: EvidenceBundle | Iterable[KnowledgeContextItem],
+) -> list[str]:
+    """Return valid citation IDs once, preserving their first appearance."""
+    valid = {item.reference_id for item in _reference_items(bundle)}
+    seen: set[str] = set()
+    cited: list[str] = []
+    for reference_id in _citation_ids(answer):
+        if reference_id in valid and reference_id not in seen:
+            seen.add(reference_id)
+            cited.append(reference_id)
+    return cited
+
+
 def validate_citations(answer: str, bundle: EvidenceBundle | Iterable[KnowledgeContextItem]) -> list[str]:
     """Return citation numbers in the answer that are absent from the evidence."""
-    items = bundle.items if isinstance(bundle, EvidenceBundle) else list(bundle)
-    valid = {item.reference_id for item in items}
+    valid = {item.reference_id for item in _reference_items(bundle)}
     invalid: list[str] = []
-    for match in re.finditer(r"\[(\d+)\]", answer):
-        reference_id = match.group(1)
+    for reference_id in _citation_ids(answer):
         if reference_id not in valid and reference_id not in invalid:
             invalid.append(reference_id)
     return invalid
@@ -266,6 +283,7 @@ __all__ = [
     "KnowledgeContextBuilder",
     "KnowledgeContextItem",
     "REFERENCE_CONTEXT_MAX_CHARS",
+    "citation_reference_ids",
     "format_reference_data",
     "format_reference_data_with_status",
     "snapshots_for_bundle",

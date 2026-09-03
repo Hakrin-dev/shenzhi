@@ -45,3 +45,33 @@ test("citation rendering keeps an unknown reference as ordinary text", () => {
   assert.equal(isKnownCitation("1", known), true);
   assert.equal(isKnownCitation("99", known), false);
 });
+
+test("restored degraded Knowledge turns do not infer a read count or citation state", () => {
+  const turns = conversation.restoreTurns({
+    id: "session",
+    title: "question",
+    favorite: false,
+    updated_at: 1,
+    mode: "fast",
+    model: "model",
+    web_search: false,
+    capabilities: { knowledge: { enabled: true } },
+    messages: [{
+      last_event_id: "3",
+      id: "message",
+      question: "question",
+      content: "ordinary fallback",
+      reasoning: "",
+      status: "done",
+      references: [],
+      followups: [],
+      duration_ms: 1,
+      error: null,
+      warnings: ["knowledge unavailable"],
+      knowledge_grounding: "unavailable",
+    }],
+  });
+
+  assert.equal(turns[1]?.knowledgeGrounding, "unavailable");
+  assert.equal(turns[1]?.readCount, undefined);
+});

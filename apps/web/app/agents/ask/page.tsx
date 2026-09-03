@@ -1,4 +1,5 @@
 import { AskPage } from "@/features/chat/ask/AskPage";
+import { normalizeAskSessionId } from "@/features/chat/services/session-url";
 import type { ChatReplyMode } from "@/types/ai-search";
 
 const MODES: ChatReplyMode[] = ["fast", "deep", "idea", "doubt"];
@@ -15,9 +16,12 @@ export default async function Page({
     mode?: string;
     model?: string;
     web_search?: string;
+    session?: string;
   }>;
 }) {
-  const { q = "", mode, model, web_search } = await searchParams;
+  const { q = "", mode, model, web_search, session } = await searchParams;
+  const initialSessionId = normalizeAskSessionId(session);
+  const invalidSession = session !== undefined && initialSessionId === null;
 
   return (
     <AskPage
@@ -25,6 +29,8 @@ export default async function Page({
       initialMode={asMode(mode)}
       initialModel={model}
       initialWebSearch={web_search === undefined ? undefined : web_search === "1"}
+      initialSessionId={initialSessionId}
+      invalidSession={invalidSession}
     />
   );
 }

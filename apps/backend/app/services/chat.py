@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from pydantic import ValidationError
 from app.core.config import MAX_HISTORY_CHARS
 from app.core.errors import BusinessError
@@ -12,11 +13,13 @@ from app.services.knowledge_context import (
     EvidenceBundle,
     KnowledgeContextBuilder,
     KnowledgeContextItem,
+    citation_reference_ids,
     format_reference_data_with_status,
     snapshots_for_bundle,
     validate_citations,
 )
 from app.services.model_provider import ModelProvider, resolve_model
+from app.services.knowledge_query import normalize_knowledge_query
 from app.services.sessions import Message, Session, repository
 from app.services.web_search import web_search
 from app.schemas.chat import capabilities_for_body
@@ -30,10 +33,12 @@ STYLE_PROMPTS = {
 }
 
 KNOWLEDGE_TOP_K = 10
-NO_KNOWLEDGE_EVIDENCE = (
-    '未检索到可用于回答的知识底座资料。'
-    '可尝试调整问题，或关闭“智能搜索”使用普通问答。'
-)
+KNOWLEDGE_GROUNDING_GROUNDED = 'grounded'
+KNOWLEDGE_GROUNDING_UNAVAILABLE = 'unavailable'
+KNOWLEDGE_GROUNDING_UNVERIFIED = 'unverified'
+NO_KNOWLEDGE_WARNING = '本轮未检索到可用于回答的知识资料，以下回答未使用知识底座。'
+KNOWLEDGE_SERVICE_WARNING = '知识检索服务暂时不可用，以下回答未使用知识底座。'
+KNOWLEDGE_CITATION_WARNING = '本轮未能形成可验证的知识引用，以下回答未作为知识增强结果。'
 
 
 # Constructed once so Chat has one server-side Capability boundary. The
@@ -41,17 +46,23 @@ NO_KNOWLEDGE_EVIDENCE = (
 knowledge_service = KnowledgeService()
 
 
-class KnowledgeChatError(BusinessError):
-    """Fail-closed Chat error with a machine-readable Knowledge category."""
+@dataclass(frozen=True)
+class KnowledgeSearchOutcome:
+    evidence: EvidenceBundle
+    warning: str | None = None
 
-    def __init__(self, code: int, message: str, status: int, knowledge_code: str):
-        super().__init__(code, message, status)
-        self.category = 'knowledge_retrieval'
-        self.knowledge_code = knowledge_code
+
+@dataclass(frozen=True)
+class ReferenceContext:
+    context_items: list[KnowledgeContextItem]
+    references: list[dict]
+    knowledge_items: list[KnowledgeContextItem]
+    knowledge_grounding: str | None
 
 
 async def prepare_message(body, owner: str, session: Session | None = None):
     settings = dict(session.settings) if session else {'type': body.type}
+    settings.pop('knowledge_grounding', None)
     settings.update({k: getattr(body, k) for k in ('mode', 'model', 'web_search') if getattr(body, k) is not None})
     capabilities = capabilities_for_body(body)
     if capabilities is not None:
@@ -180,55 +191,46 @@ def _web_item(item: dict, reference_id: str) -> KnowledgeContextItem | None:
     )
 
 
-async def _search_knowledge(question: str) -> EvidenceBundle:
+async def _search_knowledge(question: str) -> KnowledgeSearchOutcome:
+    query = normalize_knowledge_query(question)
     try:
-        request = KnowledgeSearchRequest.model_validate({'query': question, 'topK': KNOWLEDGE_TOP_K})
-    except ValidationError as error:
-        raise KnowledgeChatError(
-            21002,
-            '知识检索失败：问题过长，知识检索最多支持 500 字',
-            422,
-            'INVALID_ARGUMENT',
-        ) from error
+        request = KnowledgeSearchRequest.model_validate({'query': query, 'topK': KNOWLEDGE_TOP_K})
+    except ValidationError:
+        return KnowledgeSearchOutcome(EvidenceBundle(items=[]), NO_KNOWLEDGE_WARNING)
     try:
         response = await knowledge_service.search(request)
-    except KnowledgeServiceError as error:
-        raise KnowledgeChatError(
-            21002,
-            f'知识检索失败：{error.error.message}',
-            error.status_code,
-            error.error.code,
-        ) from error
-    except Exception as error:
-        raise KnowledgeChatError(
-            21002,
-            '知识检索失败：知识底座暂不可用',
-            503,
-            'UNKNOWN',
-        ) from error
+    except KnowledgeServiceError:
+        return KnowledgeSearchOutcome(EvidenceBundle(items=[]), KNOWLEDGE_SERVICE_WARNING)
+    except Exception:
+        return KnowledgeSearchOutcome(EvidenceBundle(items=[]), KNOWLEDGE_SERVICE_WARNING)
 
     evidence = KnowledgeContextBuilder(top_k=KNOWLEDGE_TOP_K).build(response)
     if not evidence.items:
-        raise KnowledgeChatError(21001, NO_KNOWLEDGE_EVIDENCE, 422, 'NO_USABLE_EVIDENCE')
-    return evidence
+        return KnowledgeSearchOutcome(evidence, NO_KNOWLEDGE_WARNING)
+    return KnowledgeSearchOutcome(evidence)
 
 
 async def _references_for_message(
     message: Message,
-) -> tuple[list[KnowledgeContextItem], list[dict]]:
+) -> ReferenceContext:
     existing_items = _snapshot_items(message.references)
     existing_knowledge = [item for item in existing_items if item.resource_type == 'paper']
     knowledge_items: list[KnowledgeContextItem] = []
     references: list[dict] = []
+    knowledge_grounding: str | None = None
 
     if _knowledge_enabled(message):
         if existing_knowledge:
             knowledge_items = existing_knowledge
             references = list(message.references)
         else:
-            evidence = await _search_knowledge(message.question)
-            knowledge_items = list(evidence.items)
-            references = snapshots_for_bundle(evidence)
+            outcome = await _search_knowledge(message.question)
+            knowledge_items = list(outcome.evidence.items)
+            references = snapshots_for_bundle(outcome.evidence)
+            if outcome.warning:
+                message.warnings.append(outcome.warning)
+        if not knowledge_items:
+            knowledge_grounding = KNOWLEDGE_GROUNDING_UNAVAILABLE
     elif message.references:
         # Resume/replay keeps even legacy display refs visible, but only
         # complete current snapshots enter the runtime evidence context.
@@ -249,73 +251,250 @@ async def _references_for_message(
                 continue
             context_items.append(web)
             references.append(web.snapshot())
-    return context_items, references
+    return ReferenceContext(context_items, references, knowledge_items, knowledge_grounding)
+
+
+def _dedupe_warnings(message: Message) -> None:
+    message.warnings = list(dict.fromkeys(message.warnings))
+
+
+def _generation_meta(
+    message: Message,
+    *,
+    context_truncated: bool,
+    read_count: int | None = None,
+    knowledge_grounding: str | None = None,
+) -> dict:
+    data = {
+        'phase': 'generating',
+        'context_truncated': context_truncated,
+        'warnings': message.warnings,
+    }
+    if read_count is not None:
+        data['read_count'] = read_count
+    if knowledge_grounding is not None:
+        data['knowledge_grounding'] = knowledge_grounding
+    return data
+
+
+def _check_generation_budget(message: Message, text: str, reasoning: str) -> None:
+    if (len(message.content) + len(text) + len(message.reasoning) + len(reasoning) > 200_000
+            or len(message.events) > 50_000):
+        raise BusinessError(20004, '生成内容超过临时会话限制，请新建会话')
+
+
+async def _stream_emitted(provider, messages: list[dict], message: Message) -> None:
+    """Stream an ordinary answer directly to the client."""
+    async for delta in provider.stream(messages, message.settings['model'], message.settings['mode']):
+        text = delta.get('text', '')
+        reasoning = delta.get('reasoning', '')
+        _check_generation_budget(message, text, reasoning)
+        message.content += text
+        message.reasoning += reasoning
+        message.emit('delta', delta)
+
+
+async def _collect_candidate(
+    provider,
+    messages: list[dict],
+    message: Message,
+    buffer: list[dict] | None = None,
+) -> tuple[str, list[dict]]:
+    """Buffer a Knowledge candidate so unverifiable text never reaches SSE."""
+    content = message.content
+    reasoning = message.reasoning
+    deltas = buffer if buffer is not None else []
+    async for delta in provider.stream(messages, message.settings['model'], message.settings['mode']):
+        text = delta.get('text', '')
+        delta_reasoning = delta.get('reasoning', '')
+        _check_generation_budget(message, text, delta_reasoning)
+        content += text
+        reasoning += delta_reasoning
+        deltas.append(delta)
+    return content, deltas
+
+
+def _commit_candidate(message: Message, deltas: list[dict]) -> None:
+    for delta in deltas:
+        message.content += delta.get('text', '')
+        message.reasoning += delta.get('reasoning', '')
+        message.emit('delta', delta)
 
 
 async def generate(message: Message) -> None:
     started = time.monotonic()
+    knowledge_grounding: str | None = None
+    knowledge_enabled = False
+    candidate_in_progress = False
+    candidate_deltas: list[dict] = []
+    candidate_context_truncated = False
     try:
         session = await repository.session_for_message(message)
-        if _knowledge_enabled(message) or message.settings.get('web_search'):
+        knowledge_enabled = _knowledge_enabled(message)
+        if not knowledge_enabled:
+            message.settings.pop('knowledge_grounding', None)
+        if knowledge_enabled or message.settings.get('web_search'):
             message.emit('meta', {'phase': 'retrieving', 'ephemeral': not repository.is_durable, 'warnings': message.warnings})
-        context_items, references = await _references_for_message(message)
+        reference_context = await _references_for_message(message)
+        context_items = reference_context.context_items
+        references = reference_context.references
+        knowledge_items = reference_context.knowledge_items
+        knowledge_grounding = reference_context.knowledge_grounding
         if message.settings.get('web_search'):
             message.emit('meta', {'phase': 'web_search'})
         message.references = references
         message.emit('refs', {'references': references})
-        context = ''
-        if context_items:
+        _dedupe_warnings(message)
+        provider = ModelProvider()
+
+        has_knowledge_evidence = knowledge_enabled and bool(knowledge_items)
+        if knowledge_enabled and not has_knowledge_evidence:
+            knowledge_grounding = KNOWLEDGE_GROUNDING_UNAVAILABLE
+            message.settings['knowledge_grounding'] = knowledge_grounding
+            # Web Search remains an independent capability.  Knowledge
+            # failures must not leak an empty/fake paper context into the
+            # ordinary fallback prompt.
+            fallback_items = [item for item in context_items if item.resource_type != 'paper']
+            context = ''
+            context_truncated = False
+            if fallback_items:
+                formatted_context = format_reference_data_with_status(fallback_items)
+                context = formatted_context.text
+                if formatted_context.truncated:
+                    message.warnings.append('知识参考资料过长，运行时上下文已按预算截断')
+                    context_truncated = True
+            messages, history_truncated = model_messages(session, message, context)
+            if history_truncated:
+                message.warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
+            _dedupe_warnings(message)
+            message.emit('meta', _generation_meta(
+                message,
+                context_truncated=history_truncated or context_truncated or any('截断' in w for w in message.warnings),
+                knowledge_grounding=knowledge_grounding,
+            ))
+            await _stream_emitted(provider, messages, message)
+        elif has_knowledge_evidence:
             formatted_context = format_reference_data_with_status(context_items)
             context = formatted_context.text
             if formatted_context.truncated:
                 message.warnings.append('知识参考资料过长，运行时上下文已按预算截断')
-        messages, history_truncated = model_messages(session, message, context)
-        if history_truncated:
-            message.warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
-        message.warnings = list(dict.fromkeys(message.warnings))
-        message.emit('meta', {'phase': 'generating', 'read_count': len(references),
-            'context_truncated': history_truncated or any('截断' in w for w in message.warnings),
-            'warnings': message.warnings})
-        provider = ModelProvider()
-        async for delta in provider.stream(messages, message.settings['model'], message.settings['mode']):
-            if len(message.content) + len(message.reasoning) > 200_000 or len(message.events) > 50_000:
-                raise BusinessError(20004, '生成内容超过临时会话限制，请新建会话')
-            message.content += delta.get('text', '')
-            message.reasoning += delta.get('reasoning', '')
-            message.emit('delta', delta)
+            messages, history_truncated = model_messages(session, message, context)
+            if history_truncated:
+                message.warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
+            _dedupe_warnings(message)
+            context_truncated = history_truncated or any('截断' in w for w in message.warnings)
+            # Do not expose a read count as grounded until the buffered
+            # candidate has produced at least one citation we can validate.
+            candidate_context_truncated = context_truncated
+            message.emit('meta', _generation_meta(
+                message,
+                context_truncated=context_truncated,
+            ))
+            candidate_in_progress = True
+            candidate_content, candidate_deltas = await _collect_candidate(
+                provider, messages, message, candidate_deltas
+            )
+            candidate_in_progress = False
+            cited = citation_reference_ids(candidate_content, context_items)
+            if cited:
+                knowledge_grounding = KNOWLEDGE_GROUNDING_GROUNDED
+                message.settings['knowledge_grounding'] = knowledge_grounding
+                invalid = validate_citations(candidate_content, context_items)
+                if invalid:
+                    message.warnings.append(
+                        '回答包含无法验证的引用：' + '、'.join(f'[{item}]' for item in invalid)
+                    )
+                _dedupe_warnings(message)
+                message.emit('meta', _generation_meta(
+                    message,
+                    context_truncated=context_truncated,
+                    read_count=len(references),
+                    knowledge_grounding=knowledge_grounding,
+                ))
+                _commit_candidate(message, candidate_deltas)
+            else:
+                # The candidate has never touched message.content/events. It
+                # is discarded before the one permitted ordinary retry.
+                knowledge_grounding = KNOWLEDGE_GROUNDING_UNVERIFIED
+                message.settings['knowledge_grounding'] = knowledge_grounding
+                message.warnings.append(KNOWLEDGE_CITATION_WARNING)
+                _dedupe_warnings(message)
+                message.emit('meta', _generation_meta(
+                    message,
+                    context_truncated=context_truncated,
+                    knowledge_grounding=knowledge_grounding,
+                ))
+                fallback_messages, fallback_history_truncated = model_messages(session, message, '')
+                if fallback_history_truncated and not history_truncated:
+                    message.warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
+                    _dedupe_warnings(message)
+                await _stream_emitted(provider, fallback_messages, message)
+        else:
+            # Knowledge OFF preserves the existing ordinary Chat path.
+            context = ''
+            context_truncated = False
+            if context_items:
+                formatted_context = format_reference_data_with_status(context_items)
+                context = formatted_context.text
+                if formatted_context.truncated:
+                    message.warnings.append('知识参考资料过长，运行时上下文已按预算截断')
+                    context_truncated = True
+            messages, history_truncated = model_messages(session, message, context)
+            if history_truncated:
+                message.warnings.append("历史上下文超出 60,000 字，已省略较早轮次")
+            _dedupe_warnings(message)
+            message.emit('meta', _generation_meta(
+                message,
+                context_truncated=history_truncated or context_truncated or any('截断' in w for w in message.warnings),
+                read_count=len(references) if references else None,
+            ))
+            await _stream_emitted(provider, messages, message)
         if not message.content:
             raise BusinessError(20004, '模型未返回正文，请重试', 502)
-        if context_items:
+        if context_items and not has_knowledge_evidence:
             invalid = validate_citations(message.content, context_items)
             if invalid:
                 message.warnings.append(
                     '回答包含无法验证的引用：' + '、'.join(f'[{item}]' for item in invalid)
                 )
-                message.warnings = list(dict.fromkeys(message.warnings))
+                _dedupe_warnings(message)
                 message.emit('meta', {'warnings': message.warnings})
         message.emit('meta', {'phase': 'followups'})
         message.followups = await provider.followups(message.question, message.content)
         message.emit('followups', {'items': message.followups})
         message.status = 'done'
     except asyncio.CancelledError:
+        if message.stop_requested and candidate_in_progress:
+            knowledge_grounding = KNOWLEDGE_GROUNDING_UNVERIFIED
+            message.settings['knowledge_grounding'] = knowledge_grounding
+            message.warnings.append(KNOWLEDGE_CITATION_WARNING)
+            _dedupe_warnings(message)
+            message.emit('meta', _generation_meta(
+                message,
+                context_truncated=candidate_context_truncated,
+                knowledge_grounding=knowledge_grounding,
+            ))
+            _commit_candidate(message, candidate_deltas)
         message.status = 'stopped'
     except BusinessError as exc:
         message.status, message.error = 'failed', exc.message
         error_data = {'code': exc.code, 'message': exc.message}
-        if isinstance(exc, KnowledgeChatError):
-            error_data.update({'category': exc.category, 'knowledge_code': exc.knowledge_code})
         message.emit('error', error_data)
     except Exception:
         message.status, message.error = 'failed', '生成服务发生错误，请重试'
         message.emit('error', {'code': 20004, 'message': message.error})
     finally:
         message.duration_ms += int((time.monotonic() - started) * 1000)
-        message.emit('done', {'duration_ms': message.duration_ms, 'status': message.status})
+        done = {'duration_ms': message.duration_ms, 'status': message.status}
+        if knowledge_grounding is not None:
+            done['knowledge_grounding'] = knowledge_grounding
+        message.emit('done', done)
         await repository.persist_message(message)
         await repository.touch(message.session_id)
 
 
 async def stop_message(message: Message) -> None:
+    message.stop_requested = True
     if message.task and not message.task.done():
         message.task.cancel()
         with suppress(asyncio.CancelledError):

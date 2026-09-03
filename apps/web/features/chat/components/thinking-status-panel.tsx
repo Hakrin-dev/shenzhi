@@ -10,6 +10,7 @@ import {
   Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { KnowledgeGroundingState } from "@/types/ai-search";
 
 /** Agent B 风格：阶段 / 来源数 / 耗时 / 截断与附件告警 */
 export function ThinkingStatusPanel({
@@ -18,22 +19,26 @@ export function ThinkingStatusPanel({
   durationMs,
   warnings = [],
   streaming,
+  knowledgeGrounding,
 }: {
   thought: string;
   readCount?: number;
   durationMs?: number;
   warnings?: string[];
   streaming?: boolean;
+  knowledgeGrounding?: KnowledgeGroundingState;
 }) {
   const [open, setOpen] = useState(true);
+  const degraded = knowledgeGrounding === "unavailable" || knowledgeGrounding === "unverified";
+  const effectiveReadCount = degraded ? undefined : readCount;
   const items = useMemo(() => {
     const rows: { icon: typeof Sparkles; label: string; value: string; tone?: "danger" }[] = [];
     if (thought) rows.push({ icon: Sparkles, label: "阶段", value: thought });
-    if (typeof readCount === "number") {
+    if (typeof effectiveReadCount === "number") {
       rows.push({
         icon: BookOpenCheck,
         label: "已阅读",
-        value: readCount === 0 ? "检索中…" : `${readCount} 项来源`,
+        value: effectiveReadCount === 0 ? "检索中…" : `${effectiveReadCount} 项来源`,
       });
     }
     if (typeof durationMs === "number" && durationMs > 0) {
@@ -47,7 +52,7 @@ export function ThinkingStatusPanel({
       rows.push({ icon: AlertTriangle, label: "告警", value: warning, tone: "danger" });
     });
     return rows;
-  }, [thought, readCount, durationMs, warnings]);
+  }, [thought, effectiveReadCount, durationMs, warnings]);
 
   if (!items.length && !streaming) return null;
 
@@ -61,7 +66,13 @@ export function ThinkingStatusPanel({
         {open ? <ChevronDown className="size-3.5 text-faint" /> : <ChevronRight className="size-3.5 text-faint" />}
         <Sparkles className={cn("size-3.5", streaming ? "animate-pulse text-primary" : "text-muted")} />
         <span className="text-[12px] font-medium text-ink-2">
-          {streaming ? "思考中…" : "思考完成"}
+          {streaming
+            ? "思考中…"
+            : knowledgeGrounding === "unavailable"
+              ? "知识检索未生效"
+              : knowledgeGrounding === "unverified"
+                ? "未形成可验证引用"
+                : "思考完成"}
         </span>
       </button>
       {open && (
