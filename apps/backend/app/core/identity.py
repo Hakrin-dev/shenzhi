@@ -16,6 +16,13 @@ class RequestIdentity:
     subject_id: str
 
 
+@dataclass(frozen=True)
+class MigrationIdentity:
+    """Trusted target account and source browser identity for Chat claim only."""
+    target_owner: str
+    source_owner: str
+
+
 def require_bff(request: Request) -> None:
     secret = os.getenv('BACKEND_BFF_SECRET', '')
     if secret:
@@ -54,6 +61,23 @@ def request_owner(request: Request) -> str:
     identity = request_identity(request)
     prefix = 'user' if identity.kind == 'user' else 'anon'
     return f'{prefix}:{identity.subject_id}'
+
+
+def migration_identity(request: Request) -> MigrationIdentity:
+    """Parse the dedicated dual-identity contract without weakening normal requests."""
+    require_bff(request)
+    user_id = request.headers.get('x-shenzhi-user-id')
+    anonymous_id = request.headers.get('x-shenzhi-source-anonymous-id')
+    if user_id is None or anonymous_id is None or not _valid_user_id(user_id):
+        raise BusinessError(10001, '请通过 Web 登录后认领匿名会话', 401)
+    try:
+        source_id = str(UUID(anonymous_id))
+    except ValueError:
+        raise BusinessError(10001, '无效的匿名会话来源', 401) from None
+    return MigrationIdentity(
+        target_owner=f'user:{user_id}',
+        source_owner=f'anon:{source_id}',
+    )
 
 
 def _valid_user_id(value: str) -> bool:

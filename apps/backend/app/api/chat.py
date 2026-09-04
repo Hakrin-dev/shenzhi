@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import StreamingResponse
 from app.core.config import MAX_FILES, UPLOAD_ACCEPT, model_config
 from app.core.errors import BusinessError
-from app.core.identity import request_owner, require_bff
+from app.core.identity import MigrationIdentity, migration_identity, request_owner, require_bff
 from app.core.responses import ok
-from app.schemas.chat import CreateSessionBody, FollowupBody, UpdateSessionBody
+from app.schemas.chat import AnonymousClaimResult, CreateSessionBody, FollowupBody, UpdateSessionBody
 from app.services.chat import prepare_message, stop_message, stream_events
 from app.services.sessions import repository
 
@@ -28,6 +28,15 @@ def chat_config(_credential: None = Depends(require_bff)):
 @router.get('/sessions')
 async def list_sessions(owner: str = Depends(request_owner)):
     return ok({'sessions': await repository.list(owner), 'ephemeral': not repository.is_durable})
+
+
+@router.post('/anonymous-claim')
+async def claim_anonymous_sessions(identity: MigrationIdentity = Depends(migration_identity)):
+    result = await repository.claim_anonymous_sessions(
+        identity.source_owner,
+        identity.target_owner,
+    )
+    return ok(AnonymousClaimResult(**result).model_dump())
 
 
 @router.post('/sessions')
