@@ -67,3 +67,9 @@ def capabilities_for_body(
     if legacy is not None and 'capabilities' not in body.model_fields_set:
         return {'knowledge': {'enabled': legacy}}
     return configured.model_dump()
+
+
+class AnonymousClaimResult(BaseModel):
+    moved_count: int = Field(ge=0)
+    skipped_streaming_count: int = Field(ge=0)
+    durable: bool

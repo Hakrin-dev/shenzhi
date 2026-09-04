@@ -11,7 +11,8 @@ app/agents/page.tsx 或 app/agents/ask/page.tsx（URL 兼容）
   → services/conversation（建会话/续问编排、历史数据适配）
   → services/local-history（仅后端不可用时的浏览器降级缓存，见下文）
   → clients/backend/{chat,http,sse,uploads,search}
-  → Next.js app/api/v1/[...path] → clients/backend/forward（BFF）
+  → Next.js app/api/v1/[...path] → clients/backend/forward（通用单身份 BFF）
+     或 app/api/chat/anonymous-claim（专用双身份 BFF）
   → FastAPI api/{chat,search,uploads}
   → services/chat
       ├─ model_provider（OpenAI-compatible HTTP）
@@ -19,7 +20,7 @@ app/agents/page.tsx 或 app/agents/ask/page.tsx（URL 兼容）
       ├─ retrieval（仅保留 dev 论文搜索接口）
       ├─ web_search（Tavily → SearXNG）
       ├─ document_parser / upload_reader
-      └─ sessions（临时 Repository）
+      └─ sessions（Memory / PostgreSQL Repository）
 ```
 
 - 页面只组合 Feature；Chat 专用 UI 在 `features/chat/components`。
@@ -37,6 +38,7 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 | GET | `/chat/config` | 已配置模型、回答模式、附件限制；不含 Key |
 | POST | `/search/explore` | 保留 dev 论文检索 |
 | GET / POST | `/chat/sessions` | 列表 / 创建会话及首轮消息 |
+| POST | `/chat/anonymous-claim` | 登录后将当前浏览器已完成匿名会话归入账号（仅专用 BFF） |
 | GET / PATCH / DELETE | `/chat/sessions/{id}` | 详情 / 标题与收藏 / 删除 |
 | POST | `/chat/sessions/{id}/messages` | 续问（服务端构造多轮上下文） |
 | GET | `/chat/messages/{id}/stream` | SSE，可携带 `Last-Event-ID` |
@@ -50,6 +52,15 @@ JSON 使用 `{code: 0, data: ...}` 或 `{code, message}`；错误同时使用适
 `fast/deep/idea/doubt`，附件最多 5 个。旧调用方可以暂时发送 `smartSearch`，仅在
 Chat API 边界转换为 `capabilities.knowledge.enabled`；Chat 核心不读取该旧字段。
 文件引用为 `{kind:"file", file_id, title}`；正文仅在 Backend 保存与注入。续问可省略模型/模式/联网参数以继承会话设置。
+
+### 匿名会话归属切换
+
+- 浏览器只向同源 `POST /api/chat/anonymous-claim` 发送空 POST，不传用户 ID、匿名 ID 或 owner。
+- 专用 Next.js Route 从 Better Auth Session 读取目标用户，并从 `shenzhi-chat-anon` HttpOnly Cookie 读取来源匿名 UUID；普通 `/api/v1` 转发仍只注入一个主身份。
+- FastAPI 专用端点只接受 BFF 注入的 `X-ShenZhi-User-Id` 与 `X-ShenZhi-Source-Anonymous-Id`，请求体不能指定来源或目标。
+- PostgreSQL 在一个事务中只更新没有 `streaming` 消息的 Session owner；Session ID 和 Message 行保持不变。重复或多标签并发调用不会复制数据。
+- streaming Session 保持匿名归属；生成完成后刷新页面可再次安全认领。内存模式返回 `durable=false`，不宣称已完成持久化切换。
+- Chat Coordinator 在当前页面的登录 Session 稳定后对该用户尝试一次；只有 `durable=true` 且 `moved_count>0` 时才通过当前 Chat lifecycle 清空旧选择并刷新历史。失败不会影响登录和 Chat，页面重载可重试。
 
 ### Simple Search / Smart Search
 
@@ -143,7 +154,7 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 - 配置 `CHAT_DATABASE_URL` 后启用 PostgreSQL 持久化（见 `PERSISTENCE-PLAN.md`）：会话与消息跨重启保留，`ephemeral: false`；流式生成仍绑定单 worker 进程内缓存。迁移：`cd apps/backend && uv run alembic -c alembic.ini upgrade head`。
 - BFF 继续使用 dev 的 Better Auth 获取用户身份；不改登录、注册、邮箱验证、OAuth、PostgreSQL schema。
 - BFF 清除浏览器伪造的用户/内部凭据头，再注入经 Better Auth 验证的用户 ID。匿名请求使用 HttpOnly、SameSite=Lax 随机会话 cookie，不按 IP 共用数据。
-- 所有会话/消息/上传操作校验临时 owner。不同用户、匿名与登录后数据不自动迁移，过期附件需要重传。
+- 所有会话/消息/上传操作校验 owner。登录后仅通过上述专用端点认领同一浏览器的已完成匿名会话；不同用户或不同匿名浏览器之间仍严格隔离，过期附件需要重传。
 - Backend 不读取 Better Auth 数据库，不引入 B 的 ORM/用户系统。
 - 未配置 `BACKEND_BFF_SECRET` 时 Web 与 Backend 均默认拒绝。仅 loopback 本地开发可在两端显式设置 `BACKEND_ALLOW_INSECURE_LOCAL_BFF=true`；非 loopback 部署必须设置同一高熵 Secret，并只允许 BFF 访问 FastAPI。现有 infra/CI 不自动部署新后端。
 - Better Auth 正常返回空 Session 时 BFF 按匿名会话转发；Better Auth 调用抛错时 BFF 返回 503，不会静默降级为匿名用户。
@@ -156,4 +167,4 @@ Web 仅配置 `BUSINESS_BACKEND_URL` 和 `BACKEND_BFF_SECRET`。模型/搜索 Ke
 - 一旦后端返回 `session_id`，**不再**写入本地缓存，并清除已晋升的本地条目；侧栏以 `/chat/sessions` 列表为准。
 - 侧栏合并展示时，本地条目标记为「本地」，不可收藏/重命名；成功接入后端后不应出现同一会话的双条目。
 
-**后续边界**：PostgreSQL 持久化、与 Better Auth 用户关联及匿名会话归属策略、跨 worker 分发、共享链接/权限/保留期限、限流与成本配额。这次没有设计或执行数据库 migration，没有迁移 B 的 `SharedSession` 数据库和公共分享功能。持久化实现方案见 `PERSISTENCE-PLAN.md`。
+**后续边界**：跨 worker 流式状态分发、共享链接/权限/保留期限、限流与成本配额。这次没有新增数据库 migration，也没有迁移 B 的 `SharedSession` 数据库和公共分享功能。持久化实现方案见 `PERSISTENCE-PLAN.md`。

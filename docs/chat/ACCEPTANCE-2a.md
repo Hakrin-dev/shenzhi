@@ -48,6 +48,20 @@
 | C-12 | Pass（`tests.test_persistence` + 上表） |
 | M-01 | Skip（2a 后置） |
 
+### 2026-09-02 · 方向三 PostgreSQL 认领验收
+
+环境：本机 PostgreSQL 16，`shenzhi_chat`，Alembic `001_chat_tables`。测试仅使用本机开发数据库，不记录连接凭据。
+
+| 项目 | 结果 | 证据 |
+| --- | --- | --- |
+| E-01 / E-02 | Pass | PostgreSQL 接受连接；`alembic_version=001_chat_tables`；存在 `chat_sessions`、`chat_messages`。 |
+| M-01 匿名→账号 owner 切换 | Pass | `tests.test_persistence` 7/7：完成会话仅更新 owner，Message/Session ID 保持；streaming 跳过、完成后重试成功；并发调用只有一次移动。 |
+| Chat API（PostgreSQL 模式） | Pass | `tests.test_chat_api` 10/10；claim 结果正确反映 `durable=true`。 |
+| Chat API（内存模式） | Pass | `tests.test_chat_api` 10/10；claim 保持 `durable=false`，临时容量限制保持有效。 |
+| 2a 持久化验收 | Pass | `tests.test_acceptance_2a` 11/11。Windows asyncio 关闭连接时输出资源清理告警，但没有测试失败或数据库断言失败。 |
+
+说明：本批次验证了后端持久化链路与匿名认领事务。Better Auth 登录后的实际浏览器页面联调仍需在启动 Web/Backend 后单独验收。
+
 ### 复跑命令
 
 ```powershell

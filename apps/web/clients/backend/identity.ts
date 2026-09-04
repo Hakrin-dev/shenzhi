@@ -43,3 +43,17 @@ export function attachIdentity(
   }
   backendHeaders.set("X-ShenZhi-Anonymous-Id", anonymousId);
 }
+
+/** Writes the dedicated dual identity used only by anonymous Chat claim. */
+export function attachMigrationIdentity(
+  backendHeaders: Headers,
+  userId: string,
+  anonymousId: string,
+) {
+  backendHeaders.delete("x-shenzhi-user-id");
+  backendHeaders.delete("x-shenzhi-user-email");
+  backendHeaders.delete("x-shenzhi-anonymous-id");
+  backendHeaders.delete("x-shenzhi-source-anonymous-id");
+  backendHeaders.set("X-ShenZhi-User-Id", userId);
+  backendHeaders.set("X-ShenZhi-Source-Anonymous-Id", anonymousId);
+}

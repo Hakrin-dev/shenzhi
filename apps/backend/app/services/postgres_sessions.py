@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.core.database import dispose_engine, get_session_factory, session_scope
@@ -276,6 +276,32 @@ class PostgresSessionRepository:
                     ChatSessionRow.owner == owner,
                 )
             )
+
+    async def claim_anonymous_sessions(self, source_owner: str, target_owner: str) -> dict:
+        streaming_exists = exists(
+            select(ChatMessageRow.id).where(
+                ChatMessageRow.session_id == ChatSessionRow.id,
+                ChatMessageRow.status == 'streaming',
+            )
+        )
+        async with session_scope() as db:
+            skipped = await db.scalar(
+                select(func.count())
+                .select_from(ChatSessionRow)
+                .where(ChatSessionRow.owner == source_owner, streaming_exists)
+            )
+            moved = await db.scalars(
+                update(ChatSessionRow)
+                .where(ChatSessionRow.owner == source_owner, ~streaming_exists)
+                .values(owner=target_owner, updated_at=func.now())
+                .returning(ChatSessionRow.id)
+            )
+            moved_count = len(moved.all())
+        return {
+            'moved_count': moved_count,
+            'skipped_streaming_count': int(skipped or 0),
+            'durable': True,
+        }
 
     def prune(self) -> None:
         cutoff = time.time() - self.ttl

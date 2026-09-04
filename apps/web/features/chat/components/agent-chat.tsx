@@ -16,6 +16,7 @@ import type { ChatAttachment, ChatModelId, ChatReplyMode, ComposerSubmitPayload,
 import type { ComposerEntryMode } from "@/types";
 import { DEFAULT_CHAT_MODEL } from "@/lib/data/chat-models";
 import { useAuth } from "@/components/auth/auth-provider";
+import { AnonymousClaimCoordinator } from "./anonymous-claim-coordinator";
 
 const SUGGESTIONS = [
   "帮我总结一下扩散模型在机器人控制中的最新进展",
@@ -54,12 +55,15 @@ export function AgentChat(props: AgentChatProps) {
   }
 
   return (
-    <ChatWorkspace
-      key={chatIdentityScope(session?.user.id)}
-      {...props}
-      question={initialQuestionConsumed ? "" : props.question}
-      onInitialQuestion={() => setInitialQuestionConsumed(true)}
-    />
+    <>
+      <AnonymousClaimCoordinator />
+      <ChatWorkspace
+        key={chatIdentityScope(session?.user.id)}
+        {...props}
+        question={initialQuestionConsumed ? "" : props.question}
+        onInitialQuestion={() => setInitialQuestionConsumed(true)}
+      />
+    </>
   );
 }
 
